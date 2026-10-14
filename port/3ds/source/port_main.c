@@ -78,14 +78,22 @@ static void shim_libultra_init(void) {
 static bool platform_init(void) {
     /* New 3DS: 804 MHz + L2 cache (no-op on Old 3DS). The CIA exheader asks
      * for it too, but the 3dsx path only gets it from this call. */
+#ifdef PM3DS_SIM_O3DS
+    osSetSpeedupEnable(false);   /* test build: Old 3DS CPU speed on a New 3DS */
+#else
     osSetSpeedupEnable(true);
+#endif
     gfxInitDefault();
     gfxSet3D(false);
     /* the bottom screen is drawn with citro3d (platform/bottom_screen.c); the
      * text console is only brought up for fatal errors */
     romfsInit();
 
-    C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
+    /* GPU command buffer for one frame. The default 256 KB overflowed in busy
+     * scenes with the 3D slider up (every list is drawn once per eye), and
+     * citro3d answers an overflow with svcBreak. gfx_present.c also stops
+     * drawing before it fills up (CMDBUF_STOP). */
+    C3D_Init(PM3DS_CMDBUF_BYTES);
     C3D_FrameRate(30.0f);   /* one game step per pass; 60 with interpolation (gfx_present.c) */
 
     pm3ds_log_init();

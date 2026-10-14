@@ -41,6 +41,12 @@
  * after observing `FATAL: heap init (33554432 bytes) failed` on hardware. */
 #define PM3DS_HEAP_BYTES    (8u * 1024u * 1024u)    /* 8 MB arena */
 
+/* GPU command buffer per frame (C3D_Init); the default 256 KB overflowed in
+ * stereo. Overridable for measurements. */
+#ifndef PM3DS_CMDBUF_BYTES
+#define PM3DS_CMDBUF_BYTES  (1024u * 1024u)
+#endif
+
 #define PM3DS_RETRACE_HZ    60
 #define PM3DS_N64_CPU_HZ    46875000u
 

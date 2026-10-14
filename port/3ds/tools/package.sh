@@ -54,7 +54,7 @@ fi
 if [[ " $WANT " == *" cia "* ]]; then
     # makerom takes the romfs root from the rsf (RomFs: RootPath: romfs),
     # relative to the working directory
-    cp "$PORT/cia/app.rsf" "$OUT/app.rsf"
+    cp "${RSF:-$PORT/cia/app.rsf}" "$OUT/app.rsf"
     ver() { sed -n "s/^#define PM3DS_VERSION_$1 *\([0-9]*\).*/\1/p" "$PORT/include/pm3ds_brand.h"; }
     (cd "$OUT" && "$MAKEROM" -f cia -o "$NAME.cia" -elf "$NAME.elf" -rsf app.rsf \
         -icon "$ICON" -banner "$BANNER" -target t -exefslogo \

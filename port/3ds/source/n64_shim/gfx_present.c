@@ -530,8 +530,22 @@ void gfx_backend_flush(gfx_state_t *st) {
 }
 
 static unsigned g_stat_offscreen;
+/* Share of the GPU command buffer (PM3DS_CMDBUF_BYTES) the game's lists may
+ * use; the rest stays for the bottom screen and the end of the frame. A frame
+ * that would go past it loses its remaining draws instead of crashing
+ * (citro3d's GPUCMD_Add calls svcBreak on overflow). */
+#define CMDBUF_STOP 0.85f
+static bool g_cmdbuf_full;
+/* live fill level (C3D_GetCmdBufUsage is only updated when a frame ends) */
+static float cmdbuf_use(void) {
+    u32 *buf, size, offset;
+    GPUCMD_GetBuffer(&buf, &size, &offset);
+    return size ? (float)offset / (float)size : 0.0f;
+}
+static float g_cmdbuf_peak;   /* highest use in a frame, for the PERF line */
 static bool begin_prims(gfx_state_t *st, bool rect, int nverts) {
     if (!g_draw_enabled || !(st->cimg_is_screen || st->cimg_rtt)) { g_stat_offscreen++; return false; }
+    if (g_cmdbuf_full) return false;
     if (g_vcount + nverts > FRAME_MAX_VERTS) {
         static int warned;
         if (!warned++) pm3ds_log(PM3DS_LOG_WARN, "gfx: frame vertex budget (%d) exhausted", FRAME_MAX_VERTS);
@@ -539,6 +553,15 @@ static bool begin_prims(gfx_state_t *st, bool rect, int nverts) {
     }
     if (st->dirty || !g_state_valid || rect != g_applied_rect || st->tex_tile != g_applied_tile) {
         gfx_backend_flush(st);
+        /* commands are only added here (state + the draw of the batch) */
+        float use = cmdbuf_use();
+        if (use > g_cmdbuf_peak) g_cmdbuf_peak = use;
+        if (use > CMDBUF_STOP) {
+            static int warned;
+            if (!warned++) pm3ds_log(PM3DS_LOG_WARN, "gfx: GPU command buffer nearly full, dropping the rest of the frame");
+            g_cmdbuf_full = true;
+            return false;
+        }
         apply_state(st, rect);
         st->dirty = 0;
     }
@@ -780,6 +803,7 @@ static void render_lists(const void *const *lists, int nlists) {
 
     g_vcount = g_batch_start = 0;
     g_state_valid = false;
+    g_cmdbuf_full = false;
     g_draw_enabled = true;
     g_stat_draws = 0;
     pm3ds_tstat_ops = pm3ds_tstat_tris = pm3ds_tstat_rects = pm3ds_tstat_culled = 0;
@@ -791,6 +815,9 @@ static void render_lists(const void *const *lists, int nlists) {
      * (see pm3ds_stereo_shift); the first list is the background, which is
      * pushed to infinity. Mono costs nothing extra. */
     float slider = osGet3DSliderState();
+#ifdef PM3DS_FORCE_STEREO   /* debug builds: the emulator's slider stays at 0 */
+    slider = 1.0f;
+#endif
     bool stereo = slider > 0.02f;
     static bool stereo_on;
     if (stereo != stereo_on) {
@@ -1010,8 +1037,10 @@ drawn:
                 pm3ds_log(PM3DS_LOG_INFO, "PERF2 audio=%.1f%% engine=%.1f%% up=%u", aud, eng, pm3ds_tstat_uploads);
                 pm3ds_t_audio = pm3ds_t_audio_engine = 0;
             }
-            pm3ds_log(PM3DS_LOG_INFO, "PERF fps=%.1f game=%.2fms render=%.2fms idle=%.2fms tris=%u draws=%u up=%u",
-                      fps, ms_game, ms_rend, ms_wait, pm3ds_tstat_tris, g_stat_draws, pm3ds_tstat_uploads);
+            pm3ds_log(PM3DS_LOG_INFO, "PERF fps=%.1f game=%.2fms render=%.2fms idle=%.2fms tris=%u draws=%u up=%u cmd=%.0f%%",
+                      fps, ms_game, ms_rend, ms_wait, pm3ds_tstat_tris, g_stat_draws, pm3ds_tstat_uploads,
+                      g_cmdbuf_peak * 100.0f);
+            g_cmdbuf_peak = 0.0f;
             pm3ds_tstat_uploads = 0;
             last_tick = now;
             last_frame = g_frame_no;

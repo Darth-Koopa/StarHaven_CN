@@ -123,6 +123,9 @@ int pm3ds_audio_init(void) {
      * thread; Old 3DS (or a refused core) keeps the shared-core setup. */
     bool n3ds = false;
     APT_CheckNew3DS(&n3ds);
+#ifdef PM3DS_SIM_O3DS
+    n3ds = false;   /* test build: Old 3DS thread setup */
+#endif
     s_audio_core = -1;
     s_audio_thread = NULL;
     if (n3ds) {
