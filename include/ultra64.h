@@ -22,6 +22,10 @@
 #ifndef _ULTRA64_H_
 #define _ULTRA64_H_
 
+#ifdef __3DS__
+#include "../port/3ds/include/ultra64.h"
+#else
+
 #include <PR/ultratypes.h>
 #include <PR/rcp.h>
 #include <PR/os.h>
@@ -37,4 +41,6 @@
 #include <PR/ultraerror.h>
 #include <PR/ultralog.h>
 
-#endif
+#endif /* __3DS__ */
+
+#endif /* _ULTRA64_H_ */

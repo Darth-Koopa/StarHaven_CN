@@ -1,4 +1,5 @@
 #include "common.h"
+#include "map.h"
 
 extern s32 ShowMessageScreenOffsetX;
 extern s32 ShowMessageScreenOffsetY;
@@ -64,6 +65,29 @@ s32 _show_message(Evt* script, s32 isInitialCall, s32 mode) {
             ShowMessageScreenOffsetY = evt_get_variable(script, *args++);
         }
 
+#ifdef _3DS
+        {   /* port: a missing speaker/listener NPC read NULL->pos (data abort on
+             * hardware); skip the line and report it instead */
+            extern void pm3ds_log(int, const char*, ...);
+            extern MapConfig* get_current_map_config(void);
+            s32 missing = -999;
+            if (speakerNpcID != NPC_PLAYER && resolve_npc(script, speakerNpcID) == nullptr) {
+                missing = speakerNpcID;
+            }
+            if (mode == SHOW_MESSAGE_SPEAK_TO_NPC && resolve_npc(script, evt_get_variable(script, args[0])) == nullptr) {
+                missing = evt_get_variable(script, args[0]);
+            }
+            if (missing != -999) {
+                MapConfig* mc = get_current_map_config();
+                pm3ds_log(3, "speech skipped: NPC %d not found (mode %d, map %s, script %p at %p)",
+                          missing, mode, mc != nullptr ? mc->id : "-", script, script->ptrReadPos);
+                if (mode == SHOW_MESSAGE_END_SPEECH) {
+                    close_message(gCurrentPrintContext);
+                }
+                return ApiStatus_DONE2;
+            }
+        }
+#endif
         switch (mode) {
             case SHOW_MESSAGE_SPEAK_TO_PLAYER:
                 msgID = evt_get_variable(script, *args++);

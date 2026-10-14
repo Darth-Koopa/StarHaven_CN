@@ -14,6 +14,19 @@
 #include "sprite/npc/BattleLakilester.h"
 #include "sprite/npc/Twink.h"
 
+#ifdef _3DS
+// taps on the bottom screen's copy of these menus (port/3ds/source/n64_shim/touch_menu.c)
+#include "pm3ds_touch_menu.h"
+bool pm3ds_tm_poll(s32 kind);
+s32 pm3ds_tm_index(void);
+bool pm3ds_tm_pending(void);
+bool pm3ds_tm_confirm(void);
+s32 pm3ds_tm_scroll(s32 sel, s32 first, s32 count, s32 visible);
+#define TOUCH_A() pm3ds_tm_confirm()
+#else
+#define TOUCH_A() false
+#endif
+
 extern HudScript HES_YellowArrow;
 
 extern HudScript HES_MenuFlee;
@@ -763,7 +776,12 @@ s32 btl_main_menu_update(void) {
             }
             break;
         case BTL_MENU_STATE_CHOOSING:
-            if (battleStatus->curButtonsPressed & BUTTON_A) {
+#ifdef _3DS
+            if (pm3ds_tm_poll(PM3DS_TM_WHEEL)) {
+                BattleMenu_CurPos = pm3ds_tm_index() - BattleMenu_HomePos;
+            }
+#endif
+            if ((battleStatus->curButtonsPressed & BUTTON_A) || TOUCH_A()) {
                 if (WheelOptionEnabled[BattleMenu_CurPos + BattleMenu_HomePos] == true) {
                     sfx_play_sound(SOUND_MENU_NEXT);
                     BattleMenuState = BTL_MENU_STATE_SUBMENU_OPEN;
@@ -1410,6 +1428,11 @@ s32 btl_submenu_moves_update(void) {
             break;
         case BTL_SUBMENU_MOVES_STATE_CHOOSING:
             MovesPrevCursorPos = MovesCursorPos;
+#ifdef _3DS
+            if (pm3ds_tm_poll(PM3DS_TM_MOVES)) {
+                MovesCursorPos = pm3ds_tm_index();
+            }
+#endif
             if (battleStatus->curButtonsHeld & (BUTTON_STICK_UP | BUTTON_Z)) {
                 if (MovesCursorPos > 0) {
                     MovesCursorPos--;
@@ -1456,8 +1479,13 @@ s32 btl_submenu_moves_update(void) {
                 }
             }
 
+#ifdef _3DS
+            if (pm3ds_tm_pending()) {   // a tap can jump further than the one-row scroll above
+                MovesVisibleStart = pm3ds_tm_scroll(MovesCursorPos, MovesVisibleStart, MovesOptionCount, 6);
+            }
+#endif
             MovesVisibleEnd = MovesVisibleStart + 6;
-            if (battleStatus->curButtonsPressed & BUTTON_A) {
+            if ((battleStatus->curButtonsPressed & BUTTON_A) || TOUCH_A()) {
                 if (MovesOptionEnabled[MovesOptionIndexMap[MovesCursorPos]] == 1) {
                     sfx_play_sound(SOUND_MENU_NEXT);
                     MovesMenuState = BTL_SUBMENU_MOVES_STATE_SELECT;
@@ -2155,6 +2183,11 @@ s32 btl_submenu_strats_update(void) {
         case BTL_SUBMENU_STRATS_STATE_CHOOSING:
             if (!ShowingErrorMessage) {
                 StratsPrevCursorPos = StratsCursorPos;
+#ifdef _3DS
+                if (pm3ds_tm_poll(PM3DS_TM_STRATS)) {
+                    StratsCursorPos = pm3ds_tm_index();
+                }
+#endif
 
                 // only wrap selection on stick press, not when held
                 if (battleStatus->curButtonsHeld & BUTTON_STICK_UP) {
@@ -2197,7 +2230,7 @@ s32 btl_submenu_strats_update(void) {
                     StratsVisibleEnd = StratsOptionCount;
                 }
 
-                if (battleStatus->curButtonsPressed & BUTTON_A) {
+                if ((battleStatus->curButtonsPressed & BUTTON_A) || TOUCH_A()) {
                     if (StratsOptionEnabled[StratsCursorPos] == 1) {
                         sfx_play_sound(SOUND_MENU_NEXT);
                         StratsMenuState = BTL_SUBMENU_STRATS_STATE_SELECT;
@@ -5362,13 +5395,18 @@ void btl_state_update_select_target(void) {
                 }
             }
 
+#ifdef _3DS
+            if (pm3ds_tm_poll(PM3DS_TM_TARGET) && (battleStatus->curTargetListFlags & TARGET_FLAG_SELECT_ONE)) {
+                actor->selectedTargetIndex = selectedTargetIndex = pm3ds_tm_index();
+            }
+#endif
             if (battleStatus->curButtonsPressed & BUTTON_B) {
                 sfx_play_sound(SOUND_MENU_BACK);
                 gBattleSubState = BTL_SUBSTATE_SELECT_TARGET_CANCEL;
                 break;
             }
 
-            if (battleStatus->curButtonsPressed & BUTTON_A) {
+            if ((battleStatus->curButtonsPressed & BUTTON_A) || TOUCH_A()) {
                 sfx_play_sound(SOUND_MENU_NEXT);
                 BattleMenu_ChooseDelay = 8;
                 BattleMenu_SwapDelay = 4;

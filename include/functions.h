@@ -266,8 +266,18 @@ f32 sin_deg(f32 x);
 f32 cos_deg(f32 x);
 f32 sin_rad(f32 x);
 f32 cos_rad(f32 x);
+#ifndef __3DS__
 s32 round(f32);
+#endif
+
+// The game defines a custom 4-argument atan2 inside many source files.
+// Provide a macro wrapper so references to atan2 resolve to our stub.
+#ifdef __3DS__
+#define atan2(startX, startZ, endX, endZ) pm_atan2(startX, startZ, endX, endZ)
+f32 pm_atan2(f32 startX, f32 startZ, f32 endX, f32 endZ);
+#else
 f32 atan2(f32 startX, f32 startZ, f32 endX, f32 endZ);
+#endif
 f32 clamp_angle(f32 theta);
 s32 sign(s32 value);
 

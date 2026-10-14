@@ -1,4 +1,7 @@
 #include "common.h"
+#ifdef _3DS
+int pm3ds_settings_text_speed(void);   // port/3ds/source/platform/pm3ds_settings.c
+#endif
 #include "ld_addrs.h"
 #include "message_ids.h"
 #include "sprite.h"
@@ -15,7 +18,11 @@ enum RewindArrowStates {
     REWIND_ARROW_STATE_CHANGE_COLOR_BACK = 4,
 };
 
-#ifdef SHIFT
+#if defined(PM3DS_PORT_ROM_ADDRS) && !VERSION_PAL
+// 3DS port: the real cart offset (pm3ds_rom_layout.h), not the SHIFT link stub
+#include "pm3ds_rom_layout.h"
+#define MSG_ROM_START PM3DS_CART(PM3DS_ROM_MSG)
+#elif defined(SHIFT)
 #define MSG_ROM_START (s32)msg_ROM_START
 #elif VERSION_JP
 #define MSG_ROM_START 0x1D40000
@@ -23,7 +30,7 @@ enum RewindArrowStates {
 #define MSG_ROM_START 0x1B83000
 #endif
 
-#if VERSION_PAL
+#if PAL_TIMING // 3DS: NTSC timing (macros.h)
 #define CHOICE_POINTER_MOVE_RATE 5.0
 #else
 #define CHOICE_POINTER_MOVE_RATE 6.0
@@ -51,12 +58,23 @@ u8 MessageSingular[] = { MSG_CHAR_READ_ENDL, MSG_CHAR_READ_END };
 #if VERSION_PAL
 s32 gCurrentLanguage = 0;
 
+#ifdef PM3DS_PORT_ROM_ADDRS
+// 3DS port: real PAL cart offsets (the *_ROM_START symbols are stubs here),
+// tagged with the 0x10000000 cart domain (port/3ds/include/pm3ds_addr.h).
+void* D_PAL_8014AE50[] = {
+    [LANGUAGE_EN] = (void*)(0x10000000 + 0x2030000),
+    [LANGUAGE_DE] = (void*)(0x10000000 + 0x21B0000),
+    [LANGUAGE_FR] = (void*)(0x10000000 + 0x2330000),
+    [LANGUAGE_ES] = (void*)(0x10000000 + 0x24B0000),
+};
+#else
 void* D_PAL_8014AE50[] = {
     [LANGUAGE_EN] = msg_pal_en_ROM_START,
     [LANGUAGE_DE] = msg_pal_de_ROM_START,
     [LANGUAGE_FR] = msg_pal_fr_ROM_START,
     [LANGUAGE_ES] = msg_pal_es_ROM_START,
 };
+#endif
 #endif
 
 s16 gNextMessageBuffer = 0;
@@ -430,6 +448,12 @@ s32 _update_message(MessagePrintState* printer) {
 
                     }
                 }
+#ifdef _3DS
+                // 3DS port: "Instant" text speed (Options page) acts like a tap of A
+                if (pm3ds_settings_text_speed() == 2 && !(printer->stateFlags & (MSG_STATE_FLAG_20 | MSG_STATE_FLAG_10)) && !cond) {
+                    printer->stateFlags |= MSG_STATE_FLAG_PRINT_QUICKLY;
+                }
+#endif
             // fallthrough
             case MSG_WINDOW_STATE_INIT:
                 charsToPrint = printer->charsPerChunk;
@@ -447,6 +471,14 @@ s32 _update_message(MessagePrintState* printer) {
                         printer->curPrintDelay = 0;
                     }
                 }
+#ifdef _3DS
+                // 3DS port: "Fast" text speed prints as if A were held (not for timed text)
+                if (pm3ds_settings_text_speed() == 1 && !(printer->stateFlags & (MSG_STATE_FLAG_20 | MSG_STATE_FLAG_10)) &&
+                    charsToPrint < 6) {
+                    charsToPrint = 6;
+                    printer->curPrintDelay = 0;
+                }
+#endif
                 if ((printer->curPrintDelay == 0) || --printer->curPrintDelay == 0) {
                     msg_copy_to_print_buffer(printer, charsToPrint, 0);
                 }
@@ -460,7 +492,11 @@ s32 _update_message(MessagePrintState* printer) {
                 printer->curLinePos += printer->windowScrollRate;
                 if ((printer->stateFlags & MSG_STATE_FLAG_PRINT_QUICKLY) ||
                     (!(printer->stateFlags & (MSG_STATE_FLAG_10 | MSG_STATE_FLAG_4)) &&
-                    (gGameStatusPtr->curButtons[0] & BUTTON_A)))
+                    (gGameStatusPtr->curButtons[0] & BUTTON_A))
+#ifdef _3DS
+                    || (pm3ds_settings_text_speed() != 0 && !(printer->stateFlags & (MSG_STATE_FLAG_10 | MSG_STATE_FLAG_4)))
+#endif
+                    )
                 {
                     printer->curLinePos += (s32)(6 / DT);
                 }
@@ -1390,11 +1426,18 @@ void dma_load_msg(u32 msgID, void* dest) {
     u8* offset[2]; // start, end
 
     dma_copy(addr, addr + 4, &offset[0]); // Load section offset
+#ifdef PM3DS_PORT_ROM_ADDRS
+    offset[0] = (u8*)__builtin_bswap32((u32)offset[0]); // big-endian table
+#endif
 
     new_langPtr = langPtr;
     new_langPtr = offset[0] + ((u32) new_langPtr);
     addr = new_langPtr + ((msgID & 0xFFFF) * 4);
     dma_copy(addr, addr + 8, &offset); // Load message start and end offsets
+#ifdef PM3DS_PORT_ROM_ADDRS
+    offset[0] = (u8*)__builtin_bswap32((u32)offset[0]);
+    offset[1] = (u8*)__builtin_bswap32((u32)offset[1]);
+#endif
 
     // Load the msg data
     dma_copy(&langPtr[(u32)offset[0]], &langPtr[(u32)offset[1]], dest);
@@ -1405,9 +1448,16 @@ void dma_load_msg(u32 msgID, void* dest) {
     u8* offset[2]; // start, end
 
     dma_copy(addr, addr + 4, &offset[0]); // Load section offset
+#ifdef PM3DS_PORT_ROM_ADDRS
+    offset[0] = (u8*)__builtin_bswap32((u32)offset[0]); // big-endian table
+#endif
 
     addr = MSG_ROM_START + offset[0] + (msgID & 0xFFFF) * 4;
     dma_copy(addr, addr + 8, &offset); // Load message start and end offsets
+#ifdef PM3DS_PORT_ROM_ADDRS
+    offset[0] = (u8*)__builtin_bswap32((u32)offset[0]);
+    offset[1] = (u8*)__builtin_bswap32((u32)offset[1]);
+#endif
 
     // Load the msg data
     dma_copy(MSG_ROM_START + offset[0], MSG_ROM_START + offset[1], dest);
@@ -1447,7 +1497,7 @@ MessagePrintState* _msg_get_printer_for_msg(s32 msgID, bool* donePrintingWriteba
     }
 
     srcBuffer = (s8*) msgID;
-    if (msgID >= 0) {
+    if (MSG_IS_ID(msgID)) {
         srcBuffer = load_message_to_buffer((s32)srcBuffer);
     }
 
@@ -1481,7 +1531,7 @@ MessagePrintState* _msg_get_printer_for_msg(s32 msgID, bool* donePrintingWriteba
 s32 msg_printer_load_msg(s32 msgID, MessagePrintState* printer) {
     s8* buffer;
 
-    if (msgID >= 0) {
+    if (MSG_IS_ID(msgID)) {
         buffer = load_message_to_buffer(msgID);
     } else {
         buffer = (s8*) msgID;
@@ -1529,7 +1579,7 @@ void set_message_text_var(s32 msgID, s32 index) {
     s32 i;
     u8* msgVars;
 
-    if (msgID >= 0) {
+    if (MSG_IS_ID(msgID)) {
         mallocSpace = general_heap_malloc(0x400);
         dma_load_msg(msgID, mallocSpace);
         msgID = (s32)mallocSpace;
@@ -1722,7 +1772,7 @@ void get_msg_properties(s32 msgID, s32* height, s32* width, s32* maxLineChars, s
         return;
     }
 
-    if (msgID >= 0) {
+    if (MSG_IS_ID(msgID)) {
         buffer = general_heap_malloc(0x400);
         dma_load_msg(msgID, buffer);
         message = buffer;
@@ -2018,7 +2068,7 @@ void draw_msg(s32 msgID, s32 posX, s32 posY, s32 opacity, s32 palette, u8 style)
         printer = &stackPrinter;
         initialize_printer(printer, 1, 0);
 
-        if (msgID < 0) {
+        if (!MSG_IS_ID(msgID)) {
             printer->srcBuffer = (u8*)msgID;
         } else {
             mallocSpace = general_heap_malloc(0x400);

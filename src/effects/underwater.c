@@ -163,6 +163,21 @@ void underwater_appendGfx(void* effect) {
     s32 i, j;
 
     gDPPipeSync(gMainGfxPos++);
+#ifdef _3DS
+    // The N64 copies the framebuffer into the z-buffer and redraws it through
+    // a wavy mesh; the port renders on the GPU and has no such copy, so the
+    // mesh would show whatever sits in that buffer. Keep the water tint, as a
+    // translucent overlay, without the ripple (PM_CC_48 adds the water colour
+    // times its alpha to the scene; blend IN*A + MEM does the same).
+    gDPSetCycleType(gMainGfxPos++, G_CYC_1CYCLE);
+    gDPSetRenderMode(gMainGfxPos++, CVG_DST_SAVE | ZMODE_OPA | FORCE_BL | GBL_c1(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_1),
+                     CVG_DST_SAVE | ZMODE_OPA | FORCE_BL | GBL_c2(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_1));
+    gDPSetCombineMode(gMainGfxPos++, G_CC_PRIMITIVE, G_CC_PRIMITIVE);
+    gDPSetPrimColor(gMainGfxPos++, 0, 0, data->waterColor.r, data->waterColor.g, data->waterColor.b, alpha >> 1);
+    gDPFillRectangle(gMainGfxPos++, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    gDPPipeSync(gMainGfxPos++);
+    return;
+#endif
     gSPSegment(gMainGfxPos++, 0x09, VIRTUAL_TO_PHYSICAL(((EffectInstance*)effect)->shared->graphics));
     gDPSetColorImage(gMainGfxPos++, G_IM_FMT_RGBA, G_IM_SIZ_16b, SCREEN_WIDTH, nuGfxZBuffer);
     gSPDisplayList(gMainGfxPos++, D_09000528_3B9F98);

@@ -168,7 +168,25 @@ typedef enum ExtraTileTypes {
     EXTRA_TILE_4                    = 4, // only use-case may be a mistake? unused and mostly unimplemented
 } ExtraTileTypes;
 
+#if defined(PM3DS_BIG_MAPSHAPE)
+/* 3DS port: the nominal 0x8000 is far too small for real map shapes and lets
+ * `decode_yay0(compressedData, &gMapShapeData)` overrun the buffer.
+ *
+ * MEASURED on device (MAPSHAPE forensics): the attract-mode demo's shape
+ * decompresses to 0x13AE0 (80,608) bytes, and its own header pointers reach
+ * offset 0x131F0 — so the data genuinely occupies ~0x14000, not 0x8000.
+ * On N64 gMapShapeData sits at 0x80210000 (derivable from the heaps.c BSS
+ * layout: D_8020A000[0x6000] ends exactly there) and the shape therefore spans
+ * 0x80210000..0x80223AE0, running well past its own declared array. The N64 got
+ * away with it because the following BSS was unused; on the port it silently
+ * corrupts whatever the linker placed next.
+ *
+ * Enlarged only for the port so N64/matching builds keep the original layout.
+ * Costs BSS, nothing else. */
+#define SHAPE_SIZE_LIMIT 0x40000
+#else
 #define SHAPE_SIZE_LIMIT 0x8000
+#endif
 
 typedef struct ShapeFileHeader {
     /* 0x00 */ ModelNode* root;

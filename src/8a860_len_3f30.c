@@ -2,6 +2,19 @@
 #include "hud_element.h"
 #include "message_ids.h"
 
+#ifdef _3DS
+// taps on the bottom screen's copy of the list (port/3ds/source/n64_shim/touch_menu.c)
+#include "pm3ds_touch_menu.h"
+bool pm3ds_tm_poll(s32 kind);
+s32 pm3ds_tm_index(void);
+bool pm3ds_tm_pending(void);
+bool pm3ds_tm_confirm(void);
+s32 pm3ds_tm_scroll(s32 sel, s32 first, s32 count, s32 visible);
+#define TOUCH_A() pm3ds_tm_confirm()
+#else
+#define TOUCH_A() false
+#endif
+
 #define LINE_HEIGHT 13
 
 extern HudScript HES_HandPointer;
@@ -946,6 +959,11 @@ s32 popup_menu_update(void) {
             }
 
             PopupMenu_PrevSelectedIndex = PopupMenu_SelectedIndex;
+#ifdef _3DS
+            if (pm3ds_tm_poll(PM3DS_TM_POPUP)) {
+                PopupMenu_SelectedIndex = pm3ds_tm_index();
+            }
+#endif
 
             // change selection on up input
             if (gGameStatusPtr->heldButtons[0] & (BUTTON_STICK_UP | BUTTON_Z) &&
@@ -1003,8 +1021,15 @@ s32 popup_menu_update(void) {
                 PopupMenu_LastDisplayIndex = PopupMenu_FirstDisplayIndex + PopupMenu_MaxDisplayableEntryCount;
             }
 
+#ifdef _3DS
+            if (pm3ds_tm_pending()) {   // a tap can jump further than the scroll above
+                PopupMenu_FirstDisplayIndex = pm3ds_tm_scroll(PopupMenu_SelectedIndex, PopupMenu_FirstDisplayIndex,
+                                                              gPopupMenu->numEntries, PopupMenu_MaxDisplayableEntryCount);
+                PopupMenu_LastDisplayIndex = PopupMenu_FirstDisplayIndex + PopupMenu_MaxDisplayableEntryCount;
+            }
+#endif
             // make selection on A button input
-            if (gGameStatusPtr->pressedButtons[0] & BUTTON_A) {
+            if ((gGameStatusPtr->pressedButtons[0] & BUTTON_A) || TOUCH_A()) {
                 switch (gPopupMenu->popupType) {
                     case POPUP_MENU_READ_LETTER:
                         sfx_play_sound(SOUND_MENU_NEXT);

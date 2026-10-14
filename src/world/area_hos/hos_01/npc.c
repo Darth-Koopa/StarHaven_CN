@@ -105,14 +105,14 @@ EvtScript N(EVS_Scene_StarSpiritsPlea) = {
     Call(EnableModel, MODEL_7, true)
     SetF(MV_AlphaAmt_Others, Float(-80.0))
     Loop(20 * DT)
-#if VERSION_PAL
+#if PAL_TIMING // 3DS: NTSC timing (macros.h)
         AddF(MV_AlphaAmt_Others, Float(7.203))
 #else
         AddF(MV_AlphaAmt_Others, Float(6.0))
 #endif
         Wait(1)
     EndLoop
-#if VERSION_PAL
+#if PAL_TIMING // 3DS: NTSC timing (macros.h)
     SetF(MV_AlphaAmt_Others, Float(40.0))
 #endif
     Call(EnableNpcShadow, NPC_Mamar, true)

@@ -90,11 +90,25 @@ void reset_player_status(void) {
         gGameStatusPtr->peachBakingIngredient = PEACH_BAKING_NONE;
     }
 
+#ifdef _3DS
+    // the matching code below walks from DefaultWalkSpeed through adjacent
+    // globals, which GCC does not lay out in declaration order
+    {
+        extern f32 DefaultWalkSpeed;
+        extern f32 D_800F7B78;
+        playerStatus->walkSpeed = DefaultWalkSpeed;
+        playerStatus->runSpeed = DefaultMoveSpeed;
+        playerStatus->maxJumpSpeed = D_800F7B78;
+        (void)floatsTemp;
+        (void)one;
+    }
+#else
     // TODO required to match
     floatsTemp = &(&DefaultMoveSpeed)[-1]; // index of 0 does not work
     playerStatus->walkSpeed = *floatsTemp++ * one;
     playerStatus->runSpeed = *floatsTemp++ * one;
     playerStatus->maxJumpSpeed = *floatsTemp++ * one;
+#endif
 
     set_action_state(ACTION_STATE_IDLE);
 

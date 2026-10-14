@@ -400,7 +400,7 @@ API_CALLABLE(PlayerFaceNpc) {
 
         if (npcID == NPC_SELF) {
             npc = get_npc_safe(script->owner2.npcID);
-        } else if (npcID < EVT_LIMIT) {
+        } else if (EVT_IS_PTR(npcID)) {
             npc = (Npc*)npcID;
         } else {
             npc = get_npc_safe(npcID);

@@ -16,7 +16,7 @@ typedef struct PartyImage {
 } PartyImage;
 
 API_CALLABLE(N(LoadPartyImage)) {
-    #ifdef SHIFT
+    #if defined(SHIFT) || defined(_3DS) // palette+raster decoded as one blob
     static PartyImage img;
     #else
     static PAL_BIN palette[PARTY_IMAGE_PALETTE_SIZE];
@@ -28,7 +28,7 @@ API_CALLABLE(N(LoadPartyImage)) {
     u32 decompressedSize;
     void* compressed = load_asset_by_name(PARTY_IMAGE, &decompressedSize);
 
-    #ifdef SHIFT
+    #if defined(SHIFT) || defined(_3DS) // palette+raster decoded as one blob
     decode_yay0(compressed, &img);
     #else
     decode_yay0(compressed, palette);
@@ -36,7 +36,7 @@ API_CALLABLE(N(LoadPartyImage)) {
 
     general_heap_free(compressed);
 
-    #ifdef SHIFT
+    #if defined(SHIFT) || defined(_3DS) // palette+raster decoded as one blob
     image.raster = img.raster;
     image.palette = img.palette;
     #else

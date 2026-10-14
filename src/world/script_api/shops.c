@@ -908,6 +908,12 @@ API_CALLABLE(MakeShop) {
 
     itemDataPositions = (ShopItemLocation*) var1;
     inventory = (ShopItemData*) var2;
+#ifdef _3DS
+    {   // the randomizer's stock for this shop (port/3ds/source/n64_shim/rando.c)
+        ShopItemData* pm3ds_rando_shop(ShopItemData* inventory);
+        inventory = pm3ds_rando_shop(inventory);
+    }
+#endif
     prices = (ShopSellPriceData*) var3;
     inventoryItemFlags = var4;
 

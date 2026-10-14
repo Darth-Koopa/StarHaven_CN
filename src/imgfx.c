@@ -211,6 +211,48 @@ extern Addr flip_card_2_header;
 extern Addr flip_card_3_header;
 extern Addr cymbal_crush_header;
 
+#ifdef PM3DS_PORT_ROM_ADDRS
+// 3DS port: the *_header symbols are offsets into the VRAM-0 imgfx_data
+// segment (stubs here). Offsets from ver/<version>/splat.yaml (the same for PAL
+// and US); the segment is read from the cart at its real offset, tagged with the
+// cart domain.
+#include "pm3ds_rom_layout.h"
+#undef imgfx_data_ROM_START
+#define imgfx_data_ROM_START ((u8*)PM3DS_CART(PM3DS_ROM_IMGFX_DATA))
+u8* ImgFXAnimOffsets[] = {
+    (u8*)0x14358, // shock
+    (u8*)0x18200, // shiver
+    (u8*)0x1A858, // vertical_pipe_curl
+    (u8*)0x1E830, // horizontal_pipe_curl
+    (u8*)0x29458, // startle
+    (u8*)0x314E0, // flutter_down
+    (u8*)0x33498, // unfurl
+    (u8*)0x38988, // get_in_bed
+    (u8*)0x39228, // spirit_capture
+    (u8*)0x5B7A8, // unused_1
+    (u8*)0x7CF10, // unused_2
+    (u8*)0x86490, // unused_3
+    (u8*)0x96258, // tutankoopa_gather
+    (u8*)0xA1820, // tutankoopa_swirl_2
+    (u8*)0xACDE8, // tutankoopa_swirl_1
+    (u8*)0xBBF68, // shuffle_cards
+    (u8*)0xC0490, // flip_card_1
+    (u8*)0xC49B8, // flip_card_2
+    (u8*)0xC6150, // flip_card_3
+    (u8*)0xCA380, // cymbal_crush
+};
+
+static void imgfx_swap16(void* p) { u8* b = p; u8 t = b[0]; b[0] = b[1]; b[1] = t; }
+static void imgfx_swap32(void* p) { u32* w = p; *w = __builtin_bswap32(*w); }
+static void imgfx_swap_vtx(ImgFXVtx* v, s32 n) {
+    s32 i;
+    for (i = 0; i < n; i++) {
+        imgfx_swap16(&v[i].ob[0]);
+        imgfx_swap16(&v[i].ob[1]);
+        imgfx_swap16(&v[i].ob[2]);
+    }
+}
+#else
 // all relative to imgfx_data_ROM_START
 u8* ImgFXAnimOffsets[] = {
     [IMGFX_ANIM_SHOCK]                 shock_header,
@@ -234,6 +276,7 @@ u8* ImgFXAnimOffsets[] = {
     [IMGFX_ANIM_FLIP_CARD_3]           flip_card_3_header,
     [IMGFX_ANIM_CYMBAL_CRUSH]          cymbal_crush_header,
 };
+#endif
 
 void imgfx_cache_instance_data(ImgFXState* state);
 void imgfx_clear_instance_data(ImgFXState* state);
@@ -1217,6 +1260,14 @@ ImgFXAnimHeader* imgfx_load_anim(ImgFXState* state) {
         state->curAnimOffset = romStart;
 
         dma_copy(state->curAnimOffset, state->curAnimOffset + sizeof(*anim), anim);
+#ifdef PM3DS_PORT_ROM_ADDRS
+        imgfx_swap32(&anim->keyframesOffset);
+        imgfx_swap32(&anim->gfxOffset);
+        imgfx_swap16(&anim->vtxCount);
+        imgfx_swap16(&anim->gfxCount);
+        imgfx_swap16(&anim->keyframesCount);
+        imgfx_swap16(&anim->flags);
+#endif
 
         if (state->vtxBufs[0] != nullptr) {
             imgfx_add_to_cache(state->vtxBufs[0], 1);
@@ -1245,6 +1296,12 @@ ImgFXAnimHeader* imgfx_load_anim(ImgFXState* state) {
         romEnd = romStart + anim->gfxCount * sizeof(Gfx);
         dma_copy(romStart, romEnd, state->gfxBufs[0]);
         dma_copy(romStart, romEnd, state->gfxBufs[1]);
+#ifdef PM3DS_PORT_ROM_ADDRS
+        for (i = 0; i < anim->gfxCount * 2; i++) {
+            imgfx_swap32((u32*)state->gfxBufs[0] + i);
+            imgfx_swap32((u32*)state->gfxBufs[1] + i);
+        }
+#endif
 
         // Search through the state's displaylists for vertex commands
         // and adjust their addresses to point into the vertex buffers
@@ -1325,10 +1382,16 @@ void imgfx_mesh_anim_update(ImgFXState* state) {
     curKeyframe = heap_malloc(header->vtxCount * sizeof(ImgFXVtx));
     romStart = (u8*)((s32)imgfx_data_ROM_START + (s32) header->keyframesOffset + curKeyIdx * header->vtxCount * sizeof(ImgFXVtx));
     dma_copy(romStart, romStart + header->vtxCount * sizeof(ImgFXVtx), curKeyframe);
+#ifdef PM3DS_PORT_ROM_ADDRS
+    imgfx_swap_vtx(curKeyframe, header->vtxCount);
+#endif
     if (keyframeInterval > 1) {
         nextKeyframe = heap_malloc(header->vtxCount * sizeof(*nextKeyframe));
         romStart = (u8*)((s32)imgfx_data_ROM_START + (s32) header->keyframesOffset + nextKeyIdx * header->vtxCount * sizeof(ImgFXVtx));
         dma_copy(romStart, romStart + header->vtxCount * sizeof(ImgFXVtx), nextKeyframe);
+#ifdef PM3DS_PORT_ROM_ADDRS
+        imgfx_swap_vtx(nextKeyframe, header->vtxCount);
+#endif
     }
 
     lerpAlpha = (f32) curSubframe / (f32) keyframeInterval;

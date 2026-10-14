@@ -44,6 +44,25 @@ EvtScript N(GiveCoinReward) = {
     End
 };
 
+#ifdef _3DS
+// The randomizer may have put another item in this gift (port/3ds/source/
+// n64_shim/rando.c): ask it, show that, and add it whatever its kind.
+// The out-index variables are the ones the original adds wrote.
+ApiStatus pm3ds_RandoGift(Evt* script, bool isInitialCall);
+ApiStatus pm3ds_RandoAddGift(Evt* script, bool isInitialCall);
+#define PM3DS_GIVE_REWARD(itemID, type, outIdx) \
+    Set(LVar0, itemID) \
+    Set(LVar1, type) \
+    Call(pm3ds_RandoGift) \
+    ExecWait(N(GiveItemReward)) \
+    Call(pm3ds_RandoAddGift, LVar0, LVar1, outIdx)
+
+#define EVT_GIVE_KEY_REWARD(itemID) PM3DS_GIVE_REWARD(itemID, ITEM_TYPE_KEY, 0)   // 0: no output
+#define EVT_GIVE_BADGE_REWARD(itemID) PM3DS_GIVE_REWARD(itemID, ITEM_TYPE_BADGE, LVar0)
+#define EVT_GIVE_BADGE_REWARD_ALT(itemID, outIdx) PM3DS_GIVE_REWARD(itemID, ITEM_TYPE_BADGE, outIdx)
+#define EVT_GIVE_CONSUMABLE_REWARD(itemID) PM3DS_GIVE_REWARD(itemID, ITEM_TYPE_CONSUMABLE, LVar1)
+#define EVT_GIVE_CONSUMABLE_REWARD_ALT(itemID) PM3DS_GIVE_REWARD(itemID, ITEM_TYPE_CONSUMABLE, LVar0)
+#else
 #define EVT_GIVE_KEY_REWARD(itemID) \
     Set(LVar0, itemID) \
     Set(LVar1, ITEM_TYPE_KEY) \
@@ -73,6 +92,8 @@ EvtScript N(GiveCoinReward) = {
     Set(LVar1, ITEM_TYPE_CONSUMABLE) \
     ExecWait(N(GiveItemReward)) \
     Call(AddItem, itemID, LVar0)
+
+#endif
 
 #define EVT_GIVE_STAR_PIECE() \
     Set(LVar0, ITEM_STAR_PIECE) \

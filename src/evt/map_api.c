@@ -508,6 +508,15 @@ API_CALLABLE(MakeLocalVertexCopy) {
 }
 
 void modify_collider_family_flags(s32 index, s32 flags, s32 mode) {
+#ifdef PM3DS_PORT_ROM_ADDRS
+    /* 3DS port: collision load is deferred (see load_hit_data, M10.3), so the
+     * list may be NULL. Indexing NULL here recursed through the null page —
+     * reached with zero input via the attract demo's EVS_SetupBridge. Same
+     * guard on every colliderList/zone consumer below. */
+    if (gCollisionData.colliderList == NULL) {
+        return;
+    }
+#endif
     Collider* collider = &gCollisionData.colliderList[index];
 
     if (collider->nextSibling >= 0) {
@@ -541,6 +550,11 @@ API_CALLABLE(ModifyColliderFlags) {
     s32 mode = evt_get_variable(script, *args++);
     s32 index = evt_get_variable(script, *args++);
     s32 flags = evt_get_variable(script, *args++);
+#ifdef PM3DS_PORT_ROM_ADDRS
+    if (gCollisionData.colliderList == NULL) {
+        return ApiStatus_DONE2;
+    }
+#endif
     Collider* collider = &gCollisionData.colliderList[index];
 
     if (collider->firstChild >= 0) {
@@ -572,6 +586,12 @@ API_CALLABLE(ResetFromLava) {
     CollisionStatus* collisionStatus = &gCollisionStatus;
     Collider* collider;
     LavaReset* lavaReset;
+
+#ifdef PM3DS_PORT_ROM_ADDRS
+    if (gCollisionData.colliderList == NULL) {
+        return ApiStatus_DONE2;
+    }
+#endif
 
     if (isInitialCall) {
         lavaReset = gLavaResetList = (LavaReset*)evt_get_variable(script, *args++);
@@ -659,6 +679,11 @@ API_CALLABLE(UpdateColliderTransform) {
 }
 
 void set_zone_enabled(s32 zoneID, s32 enabled) {
+#ifdef PM3DS_PORT_ROM_ADDRS
+    if (gZoneCollisionData.colliderList == NULL) {
+        return;
+    }
+#endif
     Collider* zone = &gZoneCollisionData.colliderList[zoneID];
 
     if (zone->nextSibling >= 0) {
@@ -682,6 +707,11 @@ API_CALLABLE(SetZoneEnabled) {
     Bytecode* args = script->ptrReadPos;
     s32 zoneID = evt_get_variable(script, *args++);
     s32 enabled = evt_get_variable(script, *args++);
+#ifdef PM3DS_PORT_ROM_ADDRS
+    if (gZoneCollisionData.colliderList == NULL) {
+        return ApiStatus_DONE2;
+    }
+#endif
     Collider* zone = &gZoneCollisionData.colliderList[zoneID];
 
     if (zone->firstChild >= 0) {

@@ -396,6 +396,12 @@ s32 make_item_entity(s32 itemID, f32 x, f32 y, f32 z, s32 itemSpawnMode, s32 pic
     if (pickupFlagIndex <= EVT_GAME_FLAG_CUTOFF) {
         pickupFlagIndex = EVT_INDEX_OF_GAME_FLAG(pickupFlagIndex);
     }
+#ifdef _3DS
+    {   // 3DS port: the randomizer's item for this flagged spot (port/3ds/source/n64_shim/rando.c)
+        extern s32 pm3ds_rando_item(s32 itemID, s32 flagIndex, s32* spawnMode);
+        itemID = pm3ds_rando_item(itemID, pickupFlagIndex, &itemSpawnMode);
+    }
+#endif
 
     if (pickupFlagIndex > 0) {
         switch (itemSpawnMode) {

@@ -324,6 +324,18 @@ s32 load_effect(s32 effectIndex) {
     // If no empty space was found, panic
     ASSERT(i < ARRAY_COUNT(gEffectSharedData));
 
+#ifdef PM3DS_NATIVE_WORLD
+    // 3DS port: effect code and its graphics data (src/effects/gfx/*.c) are
+    // linked into the binary and referenced by native pointer, so there is no
+    // overlay to map or copy. graphics stays null; gSPSegment(0x09, null) is
+    // ignored by the translator's segment table.
+    sharedData->graphics = nullptr;
+    sharedData->effectIndex = effectIndex;
+    sharedData->instanceCounter = 0;
+    sharedData->flags = FX_SHARED_DATA_LOADED;
+    return 1;
+#endif
+
     // Map space for the effect
     osMapTLB(i, OS_PM_4K, effectEntry->dmaDest, (s32)(gEffectDataBuffer[i]) & 0xFFFFFF, -1, -1);
 

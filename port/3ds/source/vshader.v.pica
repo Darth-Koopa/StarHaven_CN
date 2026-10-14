@@ -1,0 +1,38 @@
+; vshader.v.pica — F3DEX2 translator vertex shader (M12).
+;
+; The RSP work (MVP, lighting, fog, viewport) is done on the CPU in
+; gfx_translate.c; this shader only applies the fixed `screen` matrix that
+; maps homogeneous N64 pixel coordinates onto the rotated 400x240 top screen
+; and the PICA depth range (see gfx_present.c), and normalises the u8 colour.
+;
+; Inputs:  v0 = position (x, y, z, w)   N64 pixel space, homogeneous
+;          v1 = colour   (u8 r, g, b, a)
+;          v2 = uv0      (normalised, texture unit 0)
+;          v3 = uv1      (normalised, texture unit 1)
+
+.out outpos position
+.out outclr color
+.out outuv0 texcoord0
+.out outuv1 texcoord1
+
+.fvec screen[4]
+
+.constf consts(0.00392156862745, 1.0, 0.0, 0.0)
+
+.alias inpos v0
+.alias inclr v1
+.alias inuv0 v2
+.alias inuv1 v3
+
+.proc main
+    dp4 outpos.x, screen[0], inpos
+    dp4 outpos.y, screen[1], inpos
+    dp4 outpos.z, screen[2], inpos
+    dp4 outpos.w, screen[3], inpos
+
+    mul outclr, consts.xxxx, inclr
+    mov outuv0, inuv0
+    mov outuv1, inuv1
+
+    end
+.end

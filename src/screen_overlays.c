@@ -8,7 +8,13 @@ BSS s32 screen_overlay_frontType;
 BSS f32 screen_overlay_frontProgress;
 BSS s32 screen_overlay_backType;
 BSS f32 screen_overlay_backProgress;
+#ifdef _3DS
+// read as a 160x120 RGBA16 image by D_8014EA48 (the battle-start iris draws it
+// outside the star); on the N64 the BSS after it was zero, here it is not
+BSS s32 D_80156910[160 * 120 / 2];
+#else
 BSS s32 D_80156910;
+#endif
 ScreenOverlay ScreenOverlays[2];
 
 ScreenTransition CurrentScreenTransition = TRANSITION_END_DEMO_SCENE_BLACK;
@@ -114,7 +120,13 @@ Gfx D_8014E9A8[] = {
     gsDPSetDepthSource(G_ZS_PRIM),
     gsDPSetPrimDepth(20, 0),
     gsDPSetRenderMode(G_RM_ZB_XLU_SURF, G_RM_ZB_XLU_SURF2),
+#ifdef _3DS
+    // a rectangle has no shade on the RDP (it reads 0), so this fill outside the
+    // stencil is black; the translator gives rectangles white shade
+    gsDPSetCombineLERP(0, 0, 0, 0, 1, 0, PRIMITIVE, 0, 0, 0, 0, 0, 1, 0, PRIMITIVE, 0),
+#else
     gsDPSetCombineMode(PM_CC_SCREEN_OVERLAY, PM_CC_SCREEN_OVERLAY),
+#endif
     gsSPClearGeometryMode(G_CULL_BOTH | G_LIGHTING | G_SHADING_SMOOTH),
     gsSPSetGeometryMode(G_ZBUFFER | G_SHADE),
     gsDPSetColorDither(G_CD_MAGICSQ),
@@ -172,6 +184,11 @@ Gfx D_8014EA48[] = {
     gsSP2Triangles(20, 22, 21, 0, 23, 21, 22, 0),
     gsDPPipeSync(),
     gsDPSetDepthSource(G_ZS_PIXEL)
+#ifdef _3DS
+    // falls through into the next file's data on N64; nothing useful follows
+    // here, so end the list
+    , gsSPEndDisplayList()
+#endif
 };
 
 void _render_transition_stencil(u8 stencilType, f32 progress, ScreenOverlay* overlay) {
@@ -320,6 +337,17 @@ void _render_transition_stencil(u8 stencilType, f32 progress, ScreenOverlay* ove
             break;
         case OVERLAY_START_BATTLE:
             s0 = progress;
+#ifdef PM3DS_DRAWLOG_FRAME
+            {   // debug: log the draws of one mid-transition frame
+                extern uint32_t pm3ds_drawlog_frame;
+                extern uint32_t pm3ds_gfx_frame_number(void);
+                static s32 armed;
+                if (!armed && s0 > 120) {
+                    armed = true;
+                    pm3ds_drawlog_frame = pm3ds_gfx_frame_number() + 1;
+                }
+            }
+#endif
             gDPSetPrimColor(gMainGfxPos++, 0, 0, 0, 0, 0, 0);
             guTranslate(&matrixStack[gMatrixListPos], x1, SCREEN_HEIGHT - y1, 0.0f);
             gSPMatrix(gMainGfxPos++, &matrixStack[gMatrixListPos++], G_MTX_PUSH | G_MTX_LOAD | G_MTX_MODELVIEW);

@@ -609,6 +609,9 @@ void update_player(void) {
     CollisionStatus* collisionStatus = &gCollisionStatus;
     GameStatus* gameStatus;
 
+#ifdef PM3DS_TITLE_DBG
+    { extern void pm3ds_nan_watch(const char*); pm3ds_nan_watch("update_player:enter"); }
+#endif
     update_partner_timers();
 
     if ((playerStatus->timeInAir > 100) || (playerStatus->pos.y < -2000.0f)) {

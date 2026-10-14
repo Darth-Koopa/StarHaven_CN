@@ -53,7 +53,7 @@ void state_init_intro(void) {
             startup_set_fade_screen_alpha(0);
 
             IntroOverlayAlpha = 0;
-#if VERSION_PAL
+#if PAL_TIMING // 3DS: NTSC timing (macros.h)
             IntroFrontFadeAlpha = 14;
 #else
             IntroFrontFadeAlpha = 12;

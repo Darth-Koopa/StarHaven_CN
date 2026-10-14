@@ -9,7 +9,18 @@ u16 StarShrineLightBeamAlpha = 255;
 extern s32 ShadingOffsetsBuffer[2];
 extern u8 PackedShadingData[0x100];
 
+#ifdef _3DS
+// pm_sprite_shading_profiles segment (pm3ds_rom_layout.h): 0x1D0-byte offsets
+// table, then the packed lighting data. Cart-tagged so dma_copy reads the ROM.
+#include "pm3ds_rom_layout.h"
+#undef sprite_shading_profiles_ROM_START
+#define sprite_shading_profiles_ROM_START ((u8*)PM3DS_CART(PM3DS_ROM_SHADING))
+#define sprite_shading_profiles_data_ROM_START ((u8*)PM3DS_CART(PM3DS_ROM_SHADING + 0x1D0))
+#define SHADING_BE32(i) (ShadingOffsetsBuffer[i] = __builtin_bswap32(ShadingOffsetsBuffer[i]))
+#else
 extern Addr sprite_shading_profiles_data_ROM_START;
+#define SHADING_BE32(i)
+#endif
 
 API_CALLABLE(SetSpriteShading) {
     Bytecode* args = script->ptrReadPos;
@@ -33,11 +44,14 @@ API_CALLABLE(SetSpriteShading) {
     romStart = (s32)sprite_shading_profiles_ROM_START;
     romEnd = romStart + 8;
     dma_copy((u8*) shadingGroupOffset + romStart, (u8*) shadingGroupOffset + romEnd, ShadingOffsetsBuffer);
+    SHADING_BE32(0);
+    SHADING_BE32(1);
 
     // load offset to shading data
     romStart = shadingProfileOffset + (s32)sprite_shading_profiles_ROM_START;
     data = ShadingOffsetsBuffer[0];
     dma_copy((u8*)ShadingOffsetsBuffer[1] + romStart, (u8*)ShadingOffsetsBuffer[1] + romStart + 4, ShadingOffsetsBuffer);
+    SHADING_BE32(0);
 
     // load shading data
     dataOffset = (s32)sprite_shading_profiles_data_ROM_START + data + ShadingOffsetsBuffer[0];

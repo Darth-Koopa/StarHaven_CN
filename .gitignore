@@ -23,6 +23,10 @@ ctx.c.m2c
 build.ninja
 .ninja*
 *.ld
+# generated, but needed to link (null segments for unported overlays); regenerate with
+# port/3ds/tools/gen_link_syms.py <link log> when new _ROM_START refs appear
+!port/3ds/m11_syms.ld
+!port/3ds/m11_syms_us.ld
 !src/map_shape.ld
 *.elf
 *.z64
@@ -66,3 +70,8 @@ build/
 compile_commands.json
 
 /ver/*/asm/data/rsp/*.s
+
+# Claude Code scheduler/runtime state — never track
+.claude/
+port/3ds/build_world.log
+port/3ds/build_assets/

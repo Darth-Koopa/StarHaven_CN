@@ -11,10 +11,17 @@
 #include "sprite/npc/WorldSushie.h"
 #include "sprite/npc/WorldLakilester.h"
 
+#ifdef _3DS
+extern s8 gPauseBufferPal1[512 + 15752];
+extern s8 gPauseBufferPal2[512 + 15752];
+#define gPauseBufferImg1 (gPauseBufferPal1 + 512)
+#define gPauseBufferImg2 (gPauseBufferPal2 + 512)
+#else
 extern s8 gPauseBufferPal1[512];
 extern s8 gPauseBufferImg1[15752];
 extern s8 gPauseBufferPal2[512];
 extern s8 gPauseBufferImg2[15752];
+#endif
 
 void pause_partners_draw_contents(MenuPanel* menu, s32 baseX, s32 baseY, s32 width, s32 height, s32 opacity, s32 darkening);
 void pause_partners_draw_title(MenuPanel* menu, s32 baseX, s32 baseY, s32 width, s32 height, s32 opacity, s32 darkening);

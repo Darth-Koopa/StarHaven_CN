@@ -1,4 +1,7 @@
 #include "common.h"
+#ifdef _3DS
+#include "pm3ds_gfx_tags.h"
+#endif
 #include "nu/nusys.h"
 #include "include_asset.h"
 
@@ -766,8 +769,20 @@ s32 draw_box(s32 flags, WindowStyle windowStyle, s32 posX, s32 posY, s32 posZ, s
         gDPSetCycleType(gMainGfxPos++, G_CYC_1CYCLE);
         if(fpDrawContents != nullptr) {
             if (quads != nullptr) {
+#ifdef _3DS
+                // Rotating/scaling windows (flip-in animations) render their contents
+                // into a texture with the RDP first. The port does that with a GPU
+                // texture when the tag below precedes the target; without one, the
+                // strips would sample stale memory, so the contents are left out.
+                bool pm3ds_gfx_rtt_available(void);
+                void* mdl_address = pm3ds_gfx_rtt_available() ? mdl_get_next_texture_address(width * height * 2) : nullptr;
+#else
                 void* mdl_address = mdl_get_next_texture_address(width * height * 2);
+#endif
                 if(mdl_address != 0) {
+#ifdef _3DS
+                    gDPNoOpTag(gMainGfxPos++, PM3DS_GFX_TAG_BOX_RTT);
+#endif
                     gDPSetColorImage(gMainGfxPos++, G_IM_FMT_RGBA, G_IM_SIZ_16b, width, OS_K0_TO_PHYSICAL(mdl_address));
                     gDPSetScissor(gMainGfxPos++, G_SC_NON_INTERLACE, 0, 0, width, height);
                     gDPSetCycleType(gMainGfxPos++, G_CYC_FILL);

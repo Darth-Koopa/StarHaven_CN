@@ -1,7 +1,14 @@
 #include "jan_04.h"
 
+#ifdef _3DS
+// decode_yay0 writes palette+raster as one blob; keep them contiguous
+BSS struct { PAL_BIN palette[256]; IMG_BIN raster[0x3D90]; } N(partyImage);
+#define jan_04_palette (jan_04_partyImage.palette)
+#define jan_04_raster (jan_04_partyImage.raster)
+#else
 BSS PAL_BIN N(palette)[256];
 BSS IMG_BIN N(raster)[0x3D90]; // similar to LoadPartyImage include but with D_8024A290 in the middle randomly
+#endif
 BSS Evt* D_8024A290;
 BSS char D_8024A294[0xC]; // padding?
 BSS MessageImageData N(image);

@@ -2036,7 +2036,7 @@ Bytecode* evt_find_label(Evt* script, s32 arg1) {
     Bytecode* ret = script->ptrReadPos;
     s32 i;
 
-    if (arg1 < EVT_LIMIT) {
+    if (EVT_IS_PTR(arg1)) {
         return (Bytecode*) arg1;
     }
 

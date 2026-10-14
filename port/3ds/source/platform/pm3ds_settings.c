@@ -1,0 +1,127 @@
+/*
+ * pm3ds_settings.c — player options, kept in <SD folder>/port.cfg as
+ * key=value lines (unknown keys are ignored, so older and newer builds can
+ * share the file). Edited from the bottom screen's Options page.
+ */
+#include <3ds.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "pm3ds_brand.h"
+#include "pm3ds_rando.h"
+#include "pm3ds_settings.h"
+
+#define CFG_PATH PM3DS_SD_DIR "/port.cfg"
+
+extern bool pm3ds_fps60;                       /* n64_shim/gfx_interp.c */
+extern void pm3ds_set_view_mode(int mode);     /* n64_shim/gfx_present.c */
+
+pm3ds_settings_t pm3ds_cfg;
+bool pm3ds_ff_button_on;
+
+static const uint32_t s_key_bits[KEY_IDX_COUNT] = {
+    KEY_A, KEY_B, KEY_X, KEY_Y, KEY_L, KEY_R, KEY_ZL, KEY_ZR,
+    KEY_START, KEY_SELECT, KEY_DUP, KEY_DDOWN, KEY_DLEFT, KEY_DRIGHT,
+    KEY_CSTICK_UP, KEY_CSTICK_DOWN, KEY_CSTICK_LEFT, KEY_CSTICK_RIGHT,
+};
+static const char *const s_key_names[KEY_IDX_COUNT] = {
+    "A", "B", "X", "Y", "L", "R", "ZL", "ZR",
+    "START", "SELECT", "D-Up", "D-Down", "D-Left", "D-Right",
+    "C-Up", "C-Down", "C-Left", "C-Right",
+};
+static const char *const s_act_names[ACT_COUNT] = {
+    "-", "A", "B", "Z", "R", "L", "Start",
+    "C-Up", "C-Down", "C-Left", "C-Right", "Fast >>",
+};
+static const char *const s_key_cfg[KEY_IDX_COUNT] = {
+    "a", "b", "x", "y", "l", "r", "zl", "zr", "start", "select",
+    "dup", "ddown", "dleft", "dright", "cup", "cdown", "cleft", "cright",
+};
+
+/* Paper Mario's controls on a 3DS without ZL/ZR/C-stick, plus the extras:
+ * N64 C buttons on the D-pad (the game never reads the N64 D-pad), X/Y as
+ * partner ability / partner menu, ZR held for fast-forward. */
+void pm3ds_settings_default_keymap(uint8_t *m) {
+    static const uint8_t def[KEY_IDX_COUNT] = {
+        ACT_A, ACT_B, ACT_C_DOWN, ACT_C_LEFT, ACT_Z, ACT_R, ACT_C_LEFT, ACT_FAST_FORWARD,
+        ACT_START, ACT_L, ACT_C_UP, ACT_C_DOWN, ACT_C_LEFT, ACT_C_RIGHT,
+        ACT_C_UP, ACT_C_DOWN, ACT_C_LEFT, ACT_C_RIGHT,
+    };
+    memcpy(m, def, sizeof def);
+}
+
+uint32_t pm3ds_settings_key_bit(int k) { return k >= 0 && k < KEY_IDX_COUNT ? s_key_bits[k] : 0; }
+const char *pm3ds_settings_key_name(int k) { return k >= 0 && k < KEY_IDX_COUNT ? s_key_names[k] : "?"; }
+const char *pm3ds_settings_action_name(int a) { return a >= 0 && a < ACT_COUNT ? s_act_names[a] : "?"; }
+
+static void apply(void) {
+    pm3ds_set_view_mode(pm3ds_cfg.view_mode);
+    pm3ds_fps60 = pm3ds_cfg.fps60;
+}
+
+void pm3ds_settings_load(void) {
+    pm3ds_cfg.view_mode = 2;   /* Wide */
+    pm3ds_cfg.fps60 = true;
+    pm3ds_cfg.text_speed = TEXT_NORMAL;
+    pm3ds_cfg.ff_speed = 3;
+    pm3ds_cfg.ff_toggle = false;
+    pm3ds_cfg.rando_flags = PM3DS_RANDO_COINS | PM3DS_RANDO_SHOPS | PM3DS_RANDO_GIFTS;
+    pm3ds_settings_default_keymap(pm3ds_cfg.keymap);
+    FILE *f = fopen(CFG_PATH, "r");
+    if (f) {
+        char line[80], name[32];
+        while (fgets(line, sizeof line, f)) {
+            int v;
+            if (sscanf(line, "view_mode=%d", &v) == 1) pm3ds_cfg.view_mode = v % 3;
+            else if (sscanf(line, "view_fill=%d", &v) == 1) pm3ds_cfg.view_mode = v ? 1 : 0;   /* older builds */
+            else if (sscanf(line, "fps60=%d", &v) == 1) pm3ds_cfg.fps60 = v != 0;
+            else if (sscanf(line, "text_speed=%d", &v) == 1 && v >= 0 && v < TEXT_SPEEDS) pm3ds_cfg.text_speed = v;
+            else if (sscanf(line, "ff_speed=%d", &v) == 1 && v >= 2 && v <= 4) pm3ds_cfg.ff_speed = v;
+            else if (sscanf(line, "ff_toggle=%d", &v) == 1) pm3ds_cfg.ff_toggle = v != 0;
+            else if (sscanf(line, "rando_flags=%d", &v) == 1) pm3ds_cfg.rando_flags = (unsigned)v & PM3DS_RANDO_ALL;
+            else if (sscanf(line, "rando=%d", &v) == 1 && v >= 1 && v <= 3) {   /* older builds: a mode */
+                static const unsigned modes[4] = { 0, PM3DS_RANDO_ON | PM3DS_RANDO_SHOPS | PM3DS_RANDO_GIFTS,
+                    PM3DS_RANDO_ON | PM3DS_RANDO_COINS | PM3DS_RANDO_SHOPS | PM3DS_RANDO_GIFTS, PM3DS_RANDO_ALL & ~PM3DS_RANDO_HIDDEN };
+                pm3ds_cfg.rando_flags = modes[v];
+            }
+            else if (sscanf(line, "key_%31[a-z]=%d", name, &v) == 2 && v >= 0 && v < ACT_COUNT) {
+                for (int k = 0; k < KEY_IDX_COUNT; k++)
+                    if (!strcmp(name, s_key_cfg[k])) pm3ds_cfg.keymap[k] = (uint8_t)v;
+            }
+        }
+        fclose(f);
+    }
+    apply();
+}
+
+void pm3ds_settings_save(void) {
+    apply();
+    FILE *f = fopen(CFG_PATH, "w");
+    if (!f) return;
+    fprintf(f, "view_mode=%d\nfps60=%d\ntext_speed=%d\nff_speed=%d\nff_toggle=%d\nrando_flags=%u\n", pm3ds_cfg.view_mode,
+            pm3ds_cfg.fps60, pm3ds_cfg.text_speed, pm3ds_cfg.ff_speed, pm3ds_cfg.ff_toggle, pm3ds_cfg.rando_flags);
+    for (int k = 0; k < KEY_IDX_COUNT; k++) fprintf(f, "key_%s=%d\n", s_key_cfg[k], pm3ds_cfg.keymap[k]);
+    fclose(f);
+}
+
+/* once per game step, from the main loop */
+static bool s_ff_held;
+void pm3ds_ff_poll(void) {
+    u32 held = hidKeysHeld();
+    bool now = false;
+    for (int k = 0; k < KEY_IDX_COUNT; k++)
+        if (pm3ds_cfg.keymap[k] == ACT_FAST_FORWARD && (held & s_key_bits[k])) now = true;
+    static bool was;
+    if (pm3ds_cfg.ff_toggle) {
+        if (now && !was) pm3ds_ff_button_on = !pm3ds_ff_button_on;
+        s_ff_held = false;
+    } else {
+        s_ff_held = now;
+    }
+    was = now;
+}
+
+bool pm3ds_fast_forward(void) { return s_ff_held || pm3ds_ff_button_on; }
+
+int pm3ds_settings_text_speed(void) { return pm3ds_cfg.text_speed; }   /* src/msg.c */
+unsigned int pm3ds_random_seed(void) { return (unsigned)osGetTime() ^ ((unsigned)svcGetSystemTick() * 2654435761u); }

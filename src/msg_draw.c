@@ -202,7 +202,27 @@ void draw_message_window(MessagePrintState* printer) {
 #define MSG_EPILOGUE_TEXT_Y     -2
 #endif
 
-#if VERSION_PAL
+#ifdef _3DS
+// would msg_draw_speech_arrow draw the tail of a normal bubble whose top is at windowY?
+static bool pm3ds_tail_fits(MessagePrintState* printer, s32 windowY) {
+    s32 targetY = windowY + MSG_NORMAL_WIN_HEIGHT - 4;
+    bool right = printer->style == MSG_STYLE_CENTER || (printer->style != MSG_STYLE_LEFT && printer->initOpenPos.x >= 160);
+    s32 targetX = MSG_NORMAL_X + MSG_NORMAL_WIN_WIDTH * (right ? 0.7f : 0.3f);
+    s32 angle;
+
+    if (printer->initOpenPos.x == 0) {
+        return true;   // no tail
+    }
+    if (dist2D(printer->initOpenPos.x, printer->initOpenPos.y, targetX, targetY) < 10) {
+        return false;
+    }
+    angle = atan2(targetX, targetY, printer->initOpenPos.x, printer->initOpenPos.y) - 180;
+    return abs(angle) < 70;   // the arrow gives up at 75; keep a margin for the speaker moving
+}
+#endif
+
+
+#if PAL_TIMING // 3DS: NTSC timing (macros.h)
 #define MSG_FADE_IN_DURATION 6
 #define MSG_FADE_OUT_DURATION 4
 #else
@@ -417,7 +437,25 @@ void appendGfx_message(MessagePrintState* printer, s16 posX, s16 posY, u16 addit
                         if (printer->style == MSG_STYLE_RIGHT || printer->style == MSG_STYLE_LEFT || printer->style == MSG_STYLE_CENTER) {
                             straightWidth = MSG_NORMAL_WIDTH;
                             printer->windowBasePos.x = MSG_NORMAL_X;
+#ifdef _3DS
+                            {
+                                // Fill/Wide views crop to the TV-safe area (y >= 20), which
+                                // cut off the bubble's top edge, so open it there instead --
+                                // unless the tail would only be drawn from the N64 spot (a tall
+                                // speaker like Bowser: see pm3ds_tail_fits). Decided when the bubble
+                                // opens, so it does not jump while the speaker moves.
+                                // Original view keeps the N64 spot.
+                                extern int pm3ds_view_mode(void);
+                                static s8 lowered[8];
+                                s32 slot = ((u32)printer / sizeof(*printer)) % ARRAY_COUNT(lowered);   // one per printer
+                                if (printer->windowState == MSG_WINDOW_STATE_OPENING && printer->fadeInCounter == 0) {
+                                    lowered[slot] = pm3ds_tail_fits(printer, 20) || !pm3ds_tail_fits(printer, 13);
+                                }
+                                printer->windowBasePos.y = (pm3ds_view_mode() != 0 && lowered[slot]) ? 20 : 13;
+                            }
+#else
                             printer->windowBasePos.y = 13;
+#endif
                             printer->windowSize.x = MSG_NORMAL_WIN_WIDTH;
                             printer->windowSize.y = MSG_NORMAL_WIN_HEIGHT;
                             msg_drawState->textStartPos[0] = 26;
@@ -611,7 +649,7 @@ void appendGfx_message(MessagePrintState* printer, s16 posX, s16 posY, u16 addit
                             if (printer->fadeOutCounter >= MSG_FADE_OUT_DURATION) {
                                 printer->stateFlags |= MSG_STATE_FLAG_1;
                             }
-#if VERSION_PAL
+#if PAL_TIMING // 3DS: NTSC timing (macros.h)
                             frameAlpha = -(printer->fadeOutCounter * 57) - 1;
 #else
                             frameAlpha = -(printer->fadeOutCounter * 46) - 1;
@@ -1313,7 +1351,7 @@ void appendGfx_message(MessagePrintState* printer, s16 posX, s16 posY, u16 addit
                         charPosY += rand_int(10000) % 2;
                     }
                     if (msg_drawState->effectFlags & MSG_FX_FLAG_WAVE) {
-#if VERSION_PAL
+#if PAL_TIMING // 3DS: NTSC timing (macros.h)
                         f32 waveFreqX = 20.0 - (msg_drawState->msgScale.x - 1.0) * 5.0;
                         f32 waveFreqY = 45.0 - (msg_drawState->msgScale.x - 1.0) * 15.0;
                         f32 wavePhaseX = printer->effectFrameCounter * waveFreqX * 1.2f;
@@ -1329,7 +1367,7 @@ void appendGfx_message(MessagePrintState* printer, s16 posX, s16 posY, u16 addit
                         charPosY += cosine(wavePhaseX - charOffset + 180.0 + 90.0) * (msg_drawState->msgScale.y - 1.0 + 1.6);
                     }
                     if (msg_drawState->effectFlags & MSG_FX_FLAG_GLOBAL_WAVE) {
-#if VERSION_PAL
+#if PAL_TIMING // 3DS: NTSC timing (macros.h)
                         f32 waveFreqX = 20.0 - (msg_drawState->msgScale.x - 1.0) * 5.0;
                         f32 wavePhaseX = gMsgGlobalWaveCounter * waveFreqX * 1.2f;
                         f32 charOffset = (u32) msg_drawState->visiblePrintedCount * 45;

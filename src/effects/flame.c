@@ -181,6 +181,13 @@ void flame_appendGfx(void* effect) {
 
     if (LastFlameRenderFrame != gGameStatusPtr->frameCounter) {
         LastFlameRenderFrame = gGameStatusPtr->frameCounter;
+#ifdef _3DS
+        {   /* the fire texture comes from RDP render-to-texture passes the
+             * port cannot run; fx_flame_sim.c computes them on the CPU */
+            void pm3ds_flame_simulate(int uls, int ult);
+            pm3ds_flame_simulate(uls, ult);
+        }
+#endif
         gSPDisplayList(gMainGfxPos++, D_09000918_3544C8);
         gDPSetTileSize(gMainGfxPos++, 1, uls, ult, uls + 128, ult + 256);
         gSPDisplayList(gMainGfxPos++, D_090009E0_354590);

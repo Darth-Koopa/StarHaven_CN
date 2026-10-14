@@ -7,6 +7,13 @@ extern u8 EnvelopeReleaseDefaultFast[];
 extern u8 BgmTicksRates[8];
 extern u8 BgmCustomEnvLookup[40];
 
+// custom envelopes are u16 (cmd << 8 | arg) words read back as a u8 stream
+#ifdef _3DS
+#define ENV_BE16(v) ((u16)((((v) & 0xFF) << 8) | (((v) >> 8) & 0xFF)))
+#else
+#define ENV_BE16(v) (v)
+#endif
+
 extern void (*SefCmdHandlers[])(SoundManager*, SoundPlayer*);
 extern void (*SeqCmdHandlers[])(BGMPlayer*, BGMPlayerTrack*);
 extern u8 SeqCmdArgCounts[];
@@ -820,7 +827,7 @@ void au_bgm_clear_custom_note_press(BGMPlayer* player, s32 index) {
     player->customEnvelopeWritePos[index] = 0;
 
     for (i = 0; i < 9; i++) {
-        *pos++ = 0xFF00;
+        *pos++ = ENV_BE16(0xFF00);
     }
 }
 
@@ -1014,6 +1021,28 @@ void au_bgm_player_update_stop(BGMPlayer* player) {
     player->masterState = BGM_PLAY_STATE_IDLE;
     player->nextUpdateStep = BGM_DEFAULT_UPDATE_STEP;
 }
+
+#ifdef _3DS
+// The args arrive as big-endian bytes in raw[]; the handlers read them through
+// the SeqArgs union's u16/u32 fields, which on N64 (BE) see the stream order.
+static void pm3ds_seq_args_fix_endian(SeqArgs* args, u8 opcode) {
+    u8* r = args->raw;
+    u8 t;
+
+    switch (opcode) {
+        case 0xE4: // time, value
+            t = r[2]; r[2] = r[3]; r[3] = t;
+            // fallthrough
+        case 0xE0: case 0xE5: case 0xEF: case 0xF6: case 0xFC: case 0xFE:
+            t = r[0]; r[0] = r[1]; r[1] = t;
+            break;
+        case 0xFD: // u32 eventInfo
+            t = r[0]; r[0] = r[3]; r[3] = t;
+            t = r[1]; r[1] = r[2]; r[2] = t;
+            break;
+    }
+}
+#endif
 
 #define POST_BGM_READ() \
 if (track->detourLength != 0) {\
@@ -1380,6 +1409,19 @@ void au_bgm_player_update_playing(BGMPlayer *player) {
                                 POST_BGM_READ();
                             }
                             bgm_args_done:
+#ifdef _3DS
+                            if (opcode < 0xE0) {
+                                // no handler (the table index would be negative)
+                                static s32 warned;
+                                if (warned++ < 4) {
+                                    extern void pm3ds_log(int, const char*, ...);
+                                    pm3ds_log(3, "audio: bad seq opcode %02X song %d pos %p", opcode,
+                                              (int)player->songID, (void*)track->bgmReadPos);
+                                }
+                                continue;
+                            }
+                            pm3ds_seq_args_fix_endian(&player->seqCmdArgs, opcode);
+#endif
                             CurrentSeqCmdHandler = SeqCmdHandlers[opcode - 0xE0];
                             CurrentSeqCmdHandler(player, track);
                         }
@@ -1834,9 +1876,9 @@ void au_BGMCmd_FF_Special(BGMPlayer* player, BGMPlayerTrack* track) {
                 writePos = player->customEnvelopeWritePos[i];
                 if (writePos < ARRAY_COUNT(player->customPressEnvelopes[i]) - 1) {
                     if (arg1 >= ARRAY_COUNT(BgmCustomEnvLookup)) {
-                        player->customPressEnvelopes[i][writePos] = (arg1 << 8) + arg2;
+                        player->customPressEnvelopes[i][writePos] = ENV_BE16((arg1 << 8) + arg2);
                     } else {
-                        player->customPressEnvelopes[i][writePos] = (BgmCustomEnvLookup[arg1] << 8) + arg2;
+                        player->customPressEnvelopes[i][writePos] = ENV_BE16((BgmCustomEnvLookup[arg1] << 8) + arg2);
                     }
                     player->customEnvelopeWritePos[i] = writePos + 1;
                 }

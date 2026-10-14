@@ -46,7 +46,7 @@
 
 #define ARRAY_COUNT(arr) (s32)(sizeof(arr) / sizeof(arr[0]))
 
-#if !defined(PERMUTER) && !defined(M2CTX) && defined(OLD_GCC)
+#if defined(OLD_GCC) && OLD_GCC
 #define NOP_FIX __asm__(".set nogpopt");
 #define NOP_UNFIX __asm__(".set gpopt");
 #else
@@ -62,10 +62,27 @@
 #define MAP_RODATA_PAD(n,name) const s32 N(rodata_pad_##name)[n] = {};
 #define MAP_STATIC_PAD(n,name) BSS s32 N(static_pad_##name)[n];
 
+#ifdef _3DS
+// 3DS port: there is no KSEG0 split; every pointer the game hands the GBI is
+// a host pointer. Subtracting 0x80000000 turned them into 0x8xxxxxxx values
+// that the translator's segment resolver could only mangle.
+#define PHYSICAL_TO_VIRTUAL(addr) (void*)(addr)
+#define VIRTUAL_TO_PHYSICAL(addr) (u32)(addr)
+#else
 #define PHYSICAL_TO_VIRTUAL(addr) (void*)((u32)(addr) + 0x80000000)
 #define VIRTUAL_TO_PHYSICAL(addr) (u32)((u8*)(addr) - 0x80000000)
+#endif
 
-#ifdef DEBUG
+#if defined(PM3DS_ASSERT_LOG)
+/* 3DS port: without DEBUG the fallback below turns every failed ASSERT into a
+ * SILENT INFINITE LOOP -- no message, no crash, just a frozen main thread. That
+ * is how the title-screen hang presented and it cost a whole build/run/
+ * instrument cycle to localize. Route it through the port logger instead
+ * (port/3ds/source/n64_shim/m9_assert_shim.c), which reports statement/file/
+ * line and returns so the frame can continue. */
+void pm3ds_assert_failed(const char* statement, const char* file, int line);
+#define IS_DEBUG_PANIC(statement, file, line) pm3ds_assert_failed(statement, file, line)
+#elif defined(DEBUG)
 #define IS_DEBUG_PANIC(statement, file, line) is_debug_panic(statement, file, line)
 #else
 #define IS_DEBUG_PANIC(statement, file, line) do {} while(true)
@@ -126,11 +143,39 @@ typedef s32 Difficulty2D[AC_DIFFICULTY_LEN][2];
 
 #define LAST_DEMO_SCENE_IDX 18
 
+// A "message" argument is either a message ID ((section << 16) | index) or a
+// pointer to text. On N64 text pointers are KSEG0 (negative as s32). 3DS host
+// pointers are positive, but nothing that can hold text sits below .rodata
+// (>= 0x37F000), and message IDs stay below 0x300000 (~0x2F sections).
+#ifdef _3DS
+#define MSG_IS_ID(v) ((u32)(v) < 0x00300000)
+#else
+#define MSG_IS_ID(v) ((s32)(v) >= 0)
+#endif
+
+// Same idea for NPC IDs / position indices / label numbers vs pointers, which
+// N64 code tells apart with `x < EVT_LIMIT`. On 3DS the pointers are positive
+// (>= the image base); the IDs stay small or are small negative constants.
+#ifdef _3DS
+#define EVT_IS_PTR(v) ((s32)(v) <= EVT_LIMIT || (s32)(v) >= 0x00100000)
+#else
+#define EVT_IS_PTR(v) ((s32)(v) < EVT_LIMIT)
+#endif
+
 #define WORLD_ENTITY_HEAP_SIZE 0x17FF0
+#ifdef _3DS
+// 3DS port: 4x headroom. Same allocator as N64 (src/43F0.c), but the port
+// keeps a few extra allocations on these heaps and RAM is not the limit.
+#define COLLISION_HEAP_SIZE 0x60000
+#define GENERAL_HEAP_SIZE 0x150000
+#define SPRITE_HEAP_SIZE 0x100000
+#define BATTLE_HEAP_SIZE 0x96000
+#else
 #define COLLISION_HEAP_SIZE 0x18000
 #define GENERAL_HEAP_SIZE 0x54000
 #define SPRITE_HEAP_SIZE 0x40000
 #define BATTLE_HEAP_SIZE 0x25800
+#endif
 #define FRAME_BUFFER_SIZE 0x25800
 
 #define CAM_NEAR_CLIP 16
@@ -249,6 +294,29 @@ typedef s32 Difficulty2D[AC_DIFFICULTY_LEN][2];
 #define _RDP_PACK_WHOLE(a, b) (_RDP_WHOLE(a) << 16) | _RDP_WHOLE(b)
 #define _RDP_PACK_FRAC(a, b) (_RDP_FRAC(a) << 16) | _RDP_FRAC(b)
 
+#ifdef _3DS
+/* 3DS port: an Mtx is 16 row-major s15.16 words (port/3ds/source/n64_shim/
+ * gu_impl.c, read the same way by the translator), not the N64's split
+ * integer/fraction halves. Row A is (Ax, Ay, Az, Aw), as in the N64 packing
+ * below. Decoding the N64 layout as port layout zeroed the last two rows of
+ * every constant matrix: the frame's base modelview (MasterIdentityMtx), so
+ * effects positioned relative to it vanished, and entity matrices like the
+ * Save Block's, which collapsed to nothing. */
+#define _RDP_FX(x) ((s32)((x) * 65536.0))
+#define RDP_MATRIX(  \
+    Ax, Bx, Cx, Dx, \
+    Ay, By, Cy, Dy, \
+    Az, Bz, Cz, Dz, \
+    Aw, Bw, Cw, Dw ) \
+{ \
+    .m = { \
+        { _RDP_FX(Ax), _RDP_FX(Ay), _RDP_FX(Az), _RDP_FX(Aw) }, \
+        { _RDP_FX(Bx), _RDP_FX(By), _RDP_FX(Bz), _RDP_FX(Bw) }, \
+        { _RDP_FX(Cx), _RDP_FX(Cy), _RDP_FX(Cz), _RDP_FX(Cw) }, \
+        { _RDP_FX(Dx), _RDP_FX(Dy), _RDP_FX(Dz), _RDP_FX(Dw) }, \
+    } \
+};
+#else
 #define RDP_MATRIX(  \
     Ax, Bx, Cx, Dx, \
     Ay, By, Cy, Dy, \
@@ -282,6 +350,7 @@ typedef s32 Difficulty2D[AC_DIFFICULTY_LEN][2];
         } \
     } \
 };
+#endif
 
 #define UNPACK_PAL_R(color) (((color) >> 11) & 0x1F)
 #define UNPACK_PAL_G(color) (((color) >> 6) & 0x1F)
@@ -528,7 +597,7 @@ typedef s32 Difficulty2D[AC_DIFFICULTY_LEN][2];
 #define PM_CC_CONST_0               0, 0, 0, 0, 0, 0, 0, 0
 #define PM_CC_CONST_1               0, 0, 0, 1, 0, 0, 0, 1
 
-#ifdef OLD_GCC
+#if defined(OLD_GCC) && OLD_GCC // 3DS port: ultra64.h defines OLD_GCC 0; #ifdef made every [VLA] zero-length
 #define VLA 0
 #else
 #define VLA
@@ -538,7 +607,16 @@ typedef s32 Difficulty2D[AC_DIFFICULTY_LEN][2];
 #define VLA 0
 #endif
 
-#if VERSION_PAL
+// PAL steps the game at 25 Hz and scales its timing for that: DT, and the
+// PAL_TIMING blocks below. The 3DS port steps at 30 Hz, so its PAL build keeps
+// PAL's content (languages, layout) with the NTSC timing.
+#if VERSION_PAL && !defined(__3DS__)
+#define PAL_TIMING 1
+#else
+#define PAL_TIMING 0
+#endif
+
+#if PAL_TIMING
 #define DT (50.0/60.0)
 #else
 #define DT (1.0)
@@ -546,11 +624,13 @@ typedef s32 Difficulty2D[AC_DIFFICULTY_LEN][2];
 
 #define DMA_COPY_SEGMENT(segment) dma_copy(segment##_ROM_START, segment##_ROM_END, segment##_VRAM)
 
-#if defined(OLD_GCC) || __STDC_VERSION__ < 202311L
+#ifndef __3DS__
+#if OLD_GCC || __STDC_VERSION__ < 202311L
 typedef enum {
     false,
     true
 } bool;
+#endif
 #endif
 
 #endif

@@ -190,7 +190,7 @@ API_CALLABLE(N(ShellShotActionCommand)) {
             state->angle = state->unk_18.x + rand_int(state->unk_18.y - state->unk_18.x - 2.0f);
             hudTargetRotation = 0;
             shellShotTimer = 90;
-#if VERSION_PAL
+#if PAL_TIMING // 3DS: NTSC timing (macros.h)
             state->vel = 4.0f;
 #else
             state->vel = 3.0f;

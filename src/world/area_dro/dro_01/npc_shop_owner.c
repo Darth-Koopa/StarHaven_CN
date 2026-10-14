@@ -37,7 +37,7 @@ EvtScript N(EVS_NpcIdle_ShopOwner) = {
             Wait(20 * DT)
             Call(UseSettingsFrom, CAM_DEFAULT, LVarA, LVarB, LVarC)
             Call(SetCamDistance, CAM_DEFAULT, -350)
-#if VERSION_PAL
+#if PAL_TIMING // 3DS: NTSC timing (macros.h)
             Call(SetCamSpeed, 0, Float(0.961))
 #else
             Call(SetCamSpeed, CAM_DEFAULT, Float(0.8))

@@ -245,6 +245,11 @@ void func_80027774(u16* frameBuffer0, u16* frameBuffer1, u16* zBuffer) {
 
 // transfers the framebuffer into the depth buffer and applies filters
 void gfx_transfer_frame_to_depth(u16* frameBuffer0, u16* frameBuffer1, u16* zBuffer) {
+#ifdef _3DS
+    // The GPU frame was already copied into zBuffer at BEGIN_PAUSED (see
+    // gfx_draw_background); frameBuffer0 holds nothing on 3DS.
+    return;
+#endif
     Color_RGBA8 filterBuf0[6];
     Color_RGBA8 filterBuf1;
     s32 y;
@@ -323,6 +328,14 @@ void gfx_draw_background(void) {
 
     switch (bgRenderState) {
         case BACKGROUND_RENDER_STATE_BEGIN_PAUSED:
+#ifdef _3DS
+            // the last full world frame is still on the GPU target only now
+            // (drawing is disabled while the pause menu sets up): grab it
+            {
+                extern void pm3ds_request_frame_capture(u16* dst);
+                pm3ds_request_frame_capture(nuGfxZBuffer);
+            }
+#endif
             // Save coverage to nunGfxCfb[1] using the VISCVG render mode
             gDPPipeSync(gMainGfxPos++);
             gDPSetColorImage(gMainGfxPos++, G_IM_FMT_RGBA, G_IM_SIZ_16b, SCREEN_WIDTH, nuGfxCfb[1]);

@@ -1359,7 +1359,7 @@ enum {
     STATE_EXHALE   =  1,
 };
 
-#if VERSION_PAL
+#if PAL_TIMING // 3DS: NTSC timing (macros.h)
 #define HURRICANE_PARTNER_MOVE_TIME 140
 #define HURRICANE_UNUSED_TIME 152
 #else

@@ -2062,6 +2062,15 @@ void load_texture_by_name(ModelNodeProperty* propertyName, s32 romOffset, s32 si
 
     while (romOffset < startOffset + size) {
         dma_copy((u8*)romOffset, (u8*)romOffset + sizeof(gCurrentTextureHeader), &gCurrentTextureHeader);
+#ifdef PM3DS_PORT_ROM_ADDRS
+        /* 3DS port: raw big-endian cart data. Without this mainW/mainH are
+         * byte-reversed, rasterSize below is garbage and this loop walks past
+         * the archive (measured: unmapped reads at 0x88332280 ending in a GPU
+         * "unknown address" abort). Also fixes the bitfield packing, which
+         * differs by compiler endianness — see m10_texheader_endian.c. */
+        { extern void pm3ds_texheader_endian_fix(void *hdr);
+          pm3ds_texheader_endian_fix(&gCurrentTextureHeader); }
+#endif
         header = &gCurrentTextureHeader;
 
         rasterSize = header->mainW * header->mainH;
@@ -2151,6 +2160,15 @@ void load_texture_by_name(ModelNodeProperty* propertyName, s32 romOffset, s32 si
         romOffset += auxRasterSize + auxPaletteSize;
     }
 
+#ifdef PM3DS_PORT_ROM_ADDRS
+    /* 3DS port: the walk above is bounded by `size`, but the guard below
+     * uses only the 0x40000 cap — an in-archive name miss (walk exhausted)
+     * passed it and "found" a phantom texture past the archive end. */
+    if (romOffset >= startOffset + size) {
+        (*gCurrentModelTreeNodeInfo)[TreeIterPos].textureID = 0;
+        return;
+    }
+#endif
     if (romOffset >= startOffset + 0x40000) {
         // did not find the texture with `textureName`
         (*gCurrentModelTreeNodeInfo)[TreeIterPos].textureID = 0;
@@ -2183,6 +2201,12 @@ void load_texture_variants(u32 romOffset, s32 textureID, s32 baseOffset, s32 siz
 
     for (offset = romOffset; offset < baseOffset + size;) {
         dma_copy((u8*)offset, (u8*)offset + sizeof(iterTextureHeader), &iterTextureHeader);
+#ifdef PM3DS_PORT_ROM_ADDRS
+        /* 3DS port: same raw big-endian header as in load_texture_by_name —
+         * without this, the first map with texture variants walks garbage. */
+        { extern void pm3ds_texheader_endian_fix(void *hdr);
+          pm3ds_texheader_endian_fix(&iterTextureHeader); }
+#endif
         header = &iterTextureHeader;
 
         if (!header->isVariant) {
@@ -4026,7 +4050,11 @@ void mdl_local_gfx_update_vtx_pointers(Gfx *nodeDlist, Vtx *baseVtx, Gfx *arg2, 
     u32 w0;
     Vtx* w1;
     do {
+#ifdef _3DS
+        w0 = nodeDlist->words.w0; // the u64 >> 32 form below reads w1 on little-endian
+#else
         w0 = (*((unsigned long long*)nodeDlist)) >> 0x20; // TODO required to match
+#endif
         w1 = (Vtx*)nodeDlist->words.w1;
         if (w0 >> 0x18 == G_VTX) {
             w1 = arg3 + (w1 - baseVtx);
@@ -4331,6 +4359,13 @@ s32 is_model_center_visible(u16 modelID, s32 depthQueryID, f32* screenX, f32* sc
             return true;
         }
     }
+#ifdef _3DS
+    // The depth query below copies a z-buffer pixel into DepthCopyBuffer with
+    // the RDP; the port renders depth on the GPU only, so the copy never
+    // happens (and its 1-pixel rectangle landed on the screen). Treat the
+    // center as unoccluded, the same answer as a far depth value gives.
+    return outZ > 0.0f;
+#endif
     if (outX >= 0.0f && outY >= 0.0f && outX < 320.0f && outY < 240.0f) {
         gDPPipeSync(gMainGfxPos++);
         // Load a 4x1 pixel tile of the depth buffer
@@ -4437,6 +4472,10 @@ bool is_point_visible(f32 x, f32 y, f32 z, s32 depthQueryID, f32* screenX, f32* 
     if (depthQueryID < 0) {
         return outZ > 0.0f;
     }
+#ifdef _3DS
+    // see is_model_center_visible: no RDP depth copy here, so no occlusion test
+    return outZ > 0.0f;
+#endif
     if (outX >= 0.0f && outY >= 0.0f && outX < 320.0f && outY < 240.0f) {
         gDPPipeSync(gMainGfxPos++);
         // Load a 4x1 pixel tile of the depth buffer

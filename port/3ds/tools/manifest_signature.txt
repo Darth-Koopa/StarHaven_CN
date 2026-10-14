@@ -1,0 +1,6 @@
+# Expected entries in port/3ds/romfs/manifest.txt after a successful
+# extract + pack with a US Paper Mario baserom. Format:
+#   relpath  min_bytes  max_bytes  [exact_sha1]
+# If sha1 is absent, only the size range is checked.
+baserom.z64                                     33554432  33554432  3837f44cda784b466c9a2d99df70d77c322b97a0
+assets/                                         0         0

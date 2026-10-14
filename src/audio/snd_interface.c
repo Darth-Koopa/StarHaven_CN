@@ -451,6 +451,10 @@ AuResult snd_song_load(s32 songID, s32 playerIndex) {
     au_get_bgm_player_and_file(playerIndex, &bgmFile, &player);
 
     if (bgmFile != nullptr) {
+#ifdef PM3DS_TITLE_DBG
+        { extern void pm3ds_log(int, const char*, ...); AuResult r = au_load_song_files(songID, bgmFile, player);
+          pm3ds_log(2, "audio: snd_song_load(song=%d player=%d) -> %d", (int)songID, (int)playerIndex, (int)r); return r; }
+#endif
         return au_load_song_files(songID, bgmFile, player);
     } else {
         return AU_ERROR_NULL_SONG_NAME;
@@ -489,6 +493,9 @@ AuResult snd_song_request_play(s32 songName, s32 variation) {
     s.unused_14 = 0;
     status = au_bgm_process_init_song(&s);
     PreventBGMPlayerUpdate = false;
+#ifdef PM3DS_TITLE_DBG
+    { extern void pm3ds_log(int, const char*, ...); pm3ds_log(2, "audio: snd_song_request_play(name=%08X var=%d) -> %d", (unsigned)songName, (int)variation, (int)status); }
+#endif
 
     return status;
 }

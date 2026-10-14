@@ -7,6 +7,15 @@
 
 s32** N(varStash) = nullptr;
 
+#ifdef _3DS
+// the randomizer's item for this chest (port/3ds/source/n64_shim/rando.c)
+ApiStatus pm3ds_RandoChest(Evt* script, bool isInitialCall);
+ApiStatus pm3ds_RandoAddGift(Evt* script, bool isInitialCall);
+#define PM3DS_RANDO_CHEST(flag) Call(pm3ds_RandoChest, flag)
+#else
+#define PM3DS_RANDO_CHEST(flag)
+#endif
+
 EvtScript N(EVS_Chest_ShowGotItem) = {
     SetGroup(EVT_GROUP_NEVER_PAUSE)
     Call(SetTimeFreezeMode, TIME_FREEZE_FULL)
@@ -24,6 +33,9 @@ EvtScript N(EVS_Chest_GetItem) = {
     IfNe(LVarA, ITEM_NONE)
         ExecWait(N(EVS_Chest_ShowGotItem))
     EndIf
+#ifdef _3DS
+    Call(pm3ds_RandoAddGift, LVarA, LVarB, LVar0)   // also coins and star pieces
+#else
     Switch(LVarB)
         CaseEq(ITEM_TYPE_CONSUMABLE)
             Call(AddItem, LVarA, LVar0)
@@ -32,6 +44,7 @@ EvtScript N(EVS_Chest_GetItem) = {
         CaseEq(ITEM_TYPE_BADGE)
             Call(AddBadge, LVarA, LVar0)
     EndSwitch
+#endif
     Wait(15)
     Call(DisablePlayerInput, false)
     Return
@@ -42,6 +55,7 @@ EvtScript N(EVS_Chest_GetItem) = {
     { \
         Set(LVarA, item) \
         Set(LVarB, ITEM_TYPE_CONSUMABLE) \
+        PM3DS_RANDO_CHEST(flag) \
         Set(flag, true) \
         ExecWait(N(EVS_Chest_GetItem)) \
         Return \
@@ -52,6 +66,7 @@ EvtScript N(EVS_Chest_GetItem) = {
     { \
         Set(LVarA, item) \
         Set(LVarB, ITEM_TYPE_KEY) \
+        PM3DS_RANDO_CHEST(flag) \
         Set(flag, true) \
         ExecWait(N(EVS_Chest_GetItem)) \
         Return \
@@ -62,6 +77,7 @@ EvtScript N(EVS_Chest_GetItem) = {
     { \
         Set(LVarA, item) \
         Set(LVarB, ITEM_TYPE_BADGE) \
+        PM3DS_RANDO_CHEST(flag) \
         Set(flag, true) \
         ExecWait(N(EVS_Chest_GetItem)) \
         Return \

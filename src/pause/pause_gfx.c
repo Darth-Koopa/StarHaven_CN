@@ -660,7 +660,15 @@ void pause_draw_menu_label(s32 index, s32 x, s32 y) {
 #endif
 }
 
+#ifdef _3DS
+// The partner portraits are decoded as one palette+image blob into the palette
+// buffer; on N64 the image buffer simply follows it. GCC does not keep these
+// arrays in order, so each slot holds the whole blob (image at +512).
+BSS s8 gPauseBufferPal1[512 + 15752];
+BSS s8 gPauseBufferPal2[512 + 15752];
+#else
 BSS s8 gPauseBufferPal1[512];
 BSS s8 gPauseBufferImg1[15752];
 BSS s8 gPauseBufferPal2[512];
 BSS s8 gPauseBufferImg2[15752];
+#endif

@@ -77,6 +77,45 @@ NUPiOverlaySegment PauseGfxOverlaySegment_es = {
 };
 #endif
 
+#ifdef _3DS
+// The N64 re-DMA'd the pause overlay on every open, which restored its .data
+// (panel states, cursor and tab positions, the first-open flag); natively it
+// persists between pause sessions. Restore the panels from a copy taken before
+// their first use and the scalars to their initializers.
+extern MenuPanel* gPausePanels[7];
+extern s32 gPauseCursorPosX, gPauseCursorPosY, gPauseCursorOpacity;
+extern s32 gPauseCursorTargetPosX, gPauseCursorTargetPosY, gPauseCursorTargetOpacity;
+extern u32 D_8024EFB4;
+extern s32 gPauseTabsCurrentTab, gPauseDoBasicWindowUpdate;
+extern s32 gPausePartnersCurrentPortraitIndex, gPausePartnersNextPortraitIndex;
+extern s32 gPauseTutorialState, gPauseTutorialInputState, gPauseTutorialScrollPos;
+
+static void pause_restore_overlay_data(void) {
+    static MenuPanel panelsInit[7];
+    static s32 saved = false;
+    s32 i;
+
+    for (i = 0; i < ARRAY_COUNT(panelsInit); i++) {
+        if (!saved) {
+            panelsInit[i] = *gPausePanels[i];
+        } else {
+            *gPausePanels[i] = panelsInit[i];
+        }
+    }
+    saved = true;
+    gPauseCursorPosX = gPauseCursorTargetPosX = 160;
+    gPauseCursorPosY = gPauseCursorTargetPosY = -120;
+    gPauseCursorOpacity = gPauseCursorTargetOpacity = 0;
+    D_8024EFB4 = 1;
+    gPauseTabsCurrentTab = 0;
+    gPauseDoBasicWindowUpdate = true;
+    gPausePartnersCurrentPortraitIndex = gPausePartnersNextPortraitIndex = -1;
+    gPauseTutorialState = -1;
+    gPauseTutorialInputState = 3;
+    gPauseTutorialScrollPos = 0;
+}
+#endif
+
 BSS s8 StepPauseDelay;
 BSS s8 StepPauseState;
 BSS s16 StepPauseAlpha; // effectively unused, always zero
@@ -144,7 +183,22 @@ void state_step_pause(void) {
                     sfx_set_reverb_mode(0);
                     bgm_quiet_max_volume();
                     nuPiReadRomOverlay(&PauseOverlaySegment);
-#if VERSION_PAL
+#ifdef _3DS
+                    pause_restore_overlay_data();
+#endif
+#if VERSION_PAL && defined(_3DS)
+                    {
+                        // The four pause_gfx_* overlays (banners, prompts) share one VRAM
+                        // block. Natively that block is pause_gfx_en's data, laid out like
+                        // the cart segments (0x2080 bytes), so copy the chosen language's
+                        // images over it -- English too, to undo an earlier switch.
+                        static const u32 PauseGfxRomOffsets[] = { 0x1672D0, 0x169350, 0x16B3D0, 0x16D450 };
+                        extern u8 pause_banner_hp_png[];
+                        u8* start = (u8*)(0x10000000 + PauseGfxRomOffsets[gCurrentLanguage & 3]);
+
+                        dma_copy(start, start + 0x2080, pause_banner_hp_png);
+                    }
+#elif VERSION_PAL
                     switch (gCurrentLanguage) {
                         case LANGUAGE_EN:
                             nuPiReadRomOverlay(&PauseGfxOverlaySegment_en);

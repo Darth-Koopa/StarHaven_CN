@@ -1496,7 +1496,11 @@ void N(load_story_image)(s32 loadBackImage, s32 imageIdx) {
 
         // overwrite palette to fill entire frame with subtle off-white coloring
         for (i = 0; i < 256; i++) {
+#ifdef _3DS
+            *pal++ = __builtin_bswap16(GPACK_RGBA5551(212, 212, 212, 1)); // palettes stay in N64 byte order
+#else
             *pal++ = GPACK_RGBA5551(212, 212, 212, 1);
+#endif
         }
         return;
     }
@@ -1689,7 +1693,7 @@ u16 N(BowserSilhouetteLeapY)[] = {
     3, 2, -6, -21, -40, -63, -90, -120, -160, -200, -240, -280, -320
 };
 
-#if VERSION_PAL
+#if PAL_TIMING // 3DS: NTSC timing (macros.h)
 #define BOWSER_APPEARS_TIME (233)
 #else
 #define BOWSER_APPEARS_TIME (268)

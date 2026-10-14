@@ -8,6 +8,13 @@ s8 gBackroundWaveEnabled = false;
 s16 gBackroundTextureYOffset = 0;
 f32 gBackroundWavePhase = 0.0f;
 
+// 3DS: palettes are consumed as big-endian RGBA16 (N64 memory order)
+#ifdef _3DS
+#define BG_PAL16(v) ((u16)__builtin_bswap16((u16)(v)))
+#else
+#define BG_PAL16(v) (v)
+#endif
+
 BSS PAL_BIN gBackgroundPalette[256];
 BSS f32 gBackroundLastScrollValue;
 BSS s32 D_801595A4[3];
@@ -31,6 +38,12 @@ void load_map_bg(char* optAssetName) {
         compressedData = load_asset_by_name(assetName, &assetSize);
         decode_yay0(compressedData, &gBackgroundImage);
         general_heap_free(compressedData);
+#ifdef _3DS
+        {
+            extern void pm3ds_fix_bg_header(BackgroundHeader* bg, u32 size, const char* name);
+            pm3ds_fix_bg_header(&gBackgroundImage, assetSize, assetName);
+        }
+#endif
     }
 }
 
@@ -150,17 +163,17 @@ void appendGfx_background_texture(void) {
             case ENV_TINT_SHROUD:
                 if (fogA == 255) {
                     for (i = 0; i < ARRAY_COUNT(gBackgroundPalette); i++) {
-                        gBackgroundPalette[i] = 1;
+                        gBackgroundPalette[i] = BG_PAL16(1);
                     }
                 } else {
                     // lerp from background palette color to fog color based on fog alpha
                     for (i = 0; i < ARRAY_COUNT(gBackgroundPalette); i++) {
                         // NOTE: values after UNPACK range from [0,31], so we need to shift fog color into that range
-                        u16 palColor = gGameStatusPtr->backgroundPalette[i];
+                        u16 palColor = BG_PAL16(gGameStatusPtr->backgroundPalette[i]);
                         blendedB = blend_background_channel(UNPACK_PAL_B(palColor), fogB >> 3, fogA);
                         blendedG = blend_background_channel(UNPACK_PAL_G(palColor), fogG >> 3, fogA);
                         blendedR = blend_background_channel(UNPACK_PAL_R(palColor), fogR >> 3, fogA);
-                        gBackgroundPalette[i] = blendedB << 1 | blendedG << 6 | blendedR << 11 | 1;
+                        gBackgroundPalette[i] = BG_PAL16(blendedB << 1 | blendedG << 6 | blendedR << 11 | 1);
                     }
                 }
                 break;
@@ -170,7 +183,7 @@ void appendGfx_background_texture(void) {
                 // the background color channels are remapped from [0,255] -> [min,max]
                 for (i = 0; i < ARRAY_COUNT(gBackgroundPalette); i++) {
                     // NOTE: values after UNPACK range from [0,31], so we need to shift other colors into that range
-                    u16 palColor = gGameStatusPtr->backgroundPalette[i];
+                    u16 palColor = BG_PAL16(gGameStatusPtr->backgroundPalette[i]);
                     blendedB = (b2 >> 3) + ((UNPACK_PAL_B(palColor) * b1 >> 3) >> 5);
                     blendedG = (g2 >> 3) + ((UNPACK_PAL_G(palColor) * g1 >> 3) >> 5);
                     blendedR = (r2 >> 3) + ((UNPACK_PAL_R(palColor) * r1 >> 3) >> 5);
@@ -184,7 +197,7 @@ void appendGfx_background_texture(void) {
                     if (blendedR > 0x1F) {
                         blendedR = 0x1F;
                     }
-                    gBackgroundPalette[i] = blendedB << 1 | blendedG << 6 | blendedR << 11 | 1;
+                    gBackgroundPalette[i] = BG_PAL16(blendedB << 1 | blendedG << 6 | blendedR << 11 | 1);
                 }
                 break;
         }
@@ -212,6 +225,12 @@ void appendGfx_background_texture(void) {
     bgMaxY = gGameStatusPtr->backgroundMaxY;
     bgMinX = gGameStatusPtr->backgroundMinX;
     bgMinY = gGameStatusPtr->backgroundMinY;
+#ifdef _3DS
+    if (!gBackroundWaveEnabled) {   // 3DS port: 60 fps draws the backdrop half way between steps
+        extern void pm3ds_bg_scroll_note(f32 scroll, s32 left, s32 width);
+        pm3ds_bg_scroll_note(scrollValue, bgMinX, bgMaxX);
+    }
+#endif
 
     gDPPipeSync(gMainGfxPos++);
     gDPSetCycleType(gMainGfxPos++, G_CYC_COPY);

@@ -16,8 +16,13 @@ class Effect:
 
     def get_macro_def(self) -> str:
         ret_type = "void" if self.returns_void else "EffectInstance*"
-
-        return f"#define EFFECT_DEF_{self.name.upper()}(func_name) {ret_type} func_name({self.args})"
+        # Bare-string yaml entries (this port's legacy format) carry no args.
+        # Without a prototype callers fail with "too many arguments to function
+        # ... expected 0". Emit a variadic decl so any call signature compiles;
+        # the actual implementations in src/effects/ are deferred to a later
+        # wave and will reconcile signatures then.
+        args = self.args if self.args else "int, ..."
+        return f"#define EFFECT_DEF_{self.name.upper()}(func_name) {ret_type} func_name({args})"
 
     def get_macro_call(self, func_name: str) -> str:
         return f"EFFECT_DEF_{self.name.upper()}({func_name})"
@@ -29,7 +34,24 @@ def effects_from_yaml(yaml_path: Path) -> List[Effect]:
 
     effects: List[Effect] = []
     for effect_yaml in effects_yaml:
+        # Tolerate bare-string entries (legacy ver/pal/effects.yaml format used
+        # in this port). A bare name is equivalent to {name: <name>}.
+        if isinstance(effect_yaml, str):
+            effect_yaml = {"name": effect_yaml}
         name = str(effect_yaml.get("name", f"{len(effects):02X}"))
+        # This port's effects.yaml lists names already prefixed with "fx_"
+        # (e.g. "fx_big_dust_puff"). Upstream effects.py prepends another
+        # "fx_" when building macro calls and uppercases for the enum (giving
+        # EFFECT_FX_BIG_DUST_PUFF / fx_fx_big_dust_puff). Strip the leading
+        # "fx_" so the generated enum/decl names match decomp call sites
+        # (EFFECT_BIG_DUST_PUFF / fx_big_dust_puff).
+        if name.startswith("fx_"):
+            name = name[3:]
+        # Hex-only placeholders (e.g. "3D" after fx_ strip) come from yaml
+        # entries that lost their real name. Decomp call sites use the form
+        # fx_effect_<HEX>, so rename "<HEX>" to "effect_<HEX>".
+        if len(name) <= 2 and all(c in "0123456789abcdefABCDEF" for c in name):
+            name = "effect_" + name.upper()
         effects.append(
             Effect(
                 name=name,

@@ -20,6 +20,9 @@ s32 general_heap_free(void* data) {
 }
 
 s32 battle_heap_create(void) {
+#ifdef _3DS
+    { extern void pm3ds_log(int, const char*, ...); static int n; if (n++ < 4) pm3ds_log(2, "battle_heap_create"); }
+#endif
     if ((s32)_heap_create(&heap_battleHead, BATTLE_HEAP_SIZE) == -1) {
         return -1;
     } else {
@@ -55,6 +58,15 @@ s32 collision_heap_create(void) {
 }
 
 void* collision_heap_malloc(s32 size) {
+#ifdef PM3DS_TITLE_DBG
+    if (size >= 0x1000) {   // 3DS port: who fills the collision heap
+        extern void pm3ds_log(int, const char*, ...);
+        static s32 n;
+        if (n++ < 60) {
+            pm3ds_log(2, "COLHEAP size=0x%X ra=%p", (unsigned)size, __builtin_return_address(0));
+        }
+    }
+#endif
     if (gGameStatusPtr->context == CONTEXT_WORLD) {
         return _heap_malloc(&heap_collisionHead, size);
     } else {

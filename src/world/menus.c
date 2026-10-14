@@ -231,6 +231,31 @@ void check_input_open_menus(void) {
         currentButtons &= ~(BUTTON_C_LEFT | BUTTON_C_RIGHT);
         pressedButtons &= ~(BUTTON_C_LEFT | BUTTON_C_RIGHT);
     }
+#ifdef _3DS
+    {   // 3DS port: bottom-screen shortcuts (platform/bottom_screen.c), allowed
+        // exactly when the matching popup menu could open
+        extern volatile s32 pm3ds_touch_req;
+        s32 req = pm3ds_touch_req;
+        if (req != 0) {
+            pm3ds_touch_req = 0;
+            if (WorldMenuState == WORLD_MENU_STATE_NONE && evt_get_variable(nullptr, GB_StoryProgress) < STORY_EPILOGUE) {
+                if (req == 1) {
+                    pressedButtons |= BUTTON_C_LEFT;    // the item menu, as its button opens it
+                } else if (req >= 0x100) {              // switch straight to partner req - 0x100
+                    s32 partner = req - 0x100;
+                    if (partner > 0 && partner < ARRAY_COUNT(playerData->partners) && partner != playerData->curPartner &&
+                        playerData->partners[partner].enabled && can_open_world_menu(currentButtons, BUTTON_C_RIGHT) &&
+                        !(playerStatus->flags & PS_FLAG_NO_CHANGE_PARTNER)) {
+                        switch_to_partner(partner);
+                    } else {
+                        sfx_play_sound(SOUND_MENU_ERROR);
+                    }
+                    return;
+                }
+            }
+        }
+    }
+#endif
 
     switch (WorldMenuState) {
         case WORLD_MENU_STATE_NONE:

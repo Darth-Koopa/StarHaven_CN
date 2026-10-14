@@ -28,7 +28,7 @@
 			(uls + scrolls)<<G_TEXTURE_IMAGE_FRAC,			\
 			(ult + scrollt)<<G_TEXTURE_IMAGE_FRAC,			\
 			(lrs + scrolls)<<G_TEXTURE_IMAGE_FRAC,			\
-			(lrt + scrollt)<<G_TEXTURE_IMAGE_FRAC)			\
+			(lrt + scrollt)<<G_TEXTURE_IMAGE_FRAC);			\
 	gDPSetTile(pkt, fmt, G_IM_SIZ_4b, 				\
 		   (((((lrs)-(uls)+1)>>1)+7)>>3), 0,			\
 		   G_TX_RENDERTILE + 0, 1, cmt, maskt, shiftt, cms, masks,		\
@@ -82,7 +82,7 @@
         (scrolls) << G_TEXTURE_IMAGE_FRAC,\
         (scrollt) << G_TEXTURE_IMAGE_FRAC,			\
 		((width)-1 + scrolls) << G_TEXTURE_IMAGE_FRAC,			\
-		((height)-1 + scrollt) << G_TEXTURE_IMAGE_FRAC)			\
+		((height)-1 + scrollt) << G_TEXTURE_IMAGE_FRAC);			\
 }
 
 #define	gDPScrollMultiTile_4b(pkt, timg, tmem, rtile, fmt, width, height,	\
@@ -157,7 +157,7 @@
 		shifts);						\
 	gDPSetTileSize(pkt, G_TX_RENDERTILE, 0, 0,			\
 		((width)-1) << G_TEXTURE_IMAGE_FRAC,			\
-		(((height) >> 1)-1) << G_TEXTURE_IMAGE_FRAC)			\
+		(((height) >> 1)-1) << G_TEXTURE_IMAGE_FRAC);			\
     gDPSetTile(pkt, fmt, siz,					\
 		(((width) * siz##_LINE_BYTES)+7)>>3, \
         (((width) * ((height) >> 1) * siz##_LINE_BYTES)+7)>>3,			\
@@ -186,7 +186,7 @@
 		shifts);						\
 	gDPSetTileSize(pkt, G_TX_RENDERTILE, 0, 0,			\
 		((width)-1) << G_TEXTURE_IMAGE_FRAC,			\
-		(((height) >> 1)-1) << G_TEXTURE_IMAGE_FRAC)			\
+		(((height) >> 1)-1) << G_TEXTURE_IMAGE_FRAC);			\
     gDPSetTile(pkt, fmt, G_IM_SIZ_4b,					\
 		(((width)>>1)+7)>>3, \
         (((width) * ((height) >> 1) / 2)+7)>>3,			\
@@ -196,7 +196,7 @@
         scrolls,\
         scrollt,			\
 		(((width)-1) << G_TEXTURE_IMAGE_FRAC) + scrolls,			\
-		((((height) >> 1)-1) << G_TEXTURE_IMAGE_FRAC)  + scrollt)		\
+		((((height) >> 1)-1) << G_TEXTURE_IMAGE_FRAC)  + scrollt);		\
 }
 
 #endif

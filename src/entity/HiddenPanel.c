@@ -2,6 +2,16 @@
 #include "ld_addrs.h"
 #include "entity.h"
 
+// The projection rebases the panel DL's vertex addresses onto the entity's
+// DMA'd copy (base + addr & 0xFFFF). Native entity graphics are linked in, so
+// the addresses are already real: no base. (On 3DS the panels therefore share
+// one vertex array; fine unless two hidden panels are on screen together.)
+#ifdef PM3DS_NATIVE_WORLD
+#define HIDDEN_PANEL_VTX_BASE(entity) nullptr
+#else
+#define HIDDEN_PANEL_VTX_BASE(entity) (entity)->gfxBaseAddr
+#endif
+
 s32 entity_HiddenPanel_is_item_on_top(Entity*);
 void entity_HiddenPanel_flip_over(Entity*);
 
@@ -31,7 +41,7 @@ void entity_HiddenPanel_setupGfx(s32 entityIndex) {
         gSPDisplayList(gMainGfxPos++, ENTITY_ADDR(entity, Gfx*, Gfx_HiddenPanel_RenderHole));
         gSPPopMatrix(gMainGfxPos++, G_MTX_MODELVIEW);
     }
-    mdl_project_tex_coords(data->modelID, data->renderDList, data->entityMatrix, entity->gfxBaseAddr);
+    mdl_project_tex_coords(data->modelID, data->renderDList, data->entityMatrix, HIDDEN_PANEL_VTX_BASE(entity));
     mdl_draw_hidden_panel_surface(&gMainGfxPos, data->modelID);
 }
 
@@ -327,7 +337,7 @@ void entity_HiddenPanel_init(Entity* entity) {
     }
     data->renderDList = ENTITY_ADDR(entity, Gfx*, dlist);
 
-    mdl_project_tex_coords(data->modelID, data->renderDList, data->entityMatrix, entity->gfxBaseAddr);
+    mdl_project_tex_coords(data->modelID, data->renderDList, data->entityMatrix, HIDDEN_PANEL_VTX_BASE(entity));
     gCurrentHiddenPanels.panelsCount++;
 }
 

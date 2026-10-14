@@ -11,12 +11,31 @@ AuGlobals* gSoundGlobals;
 AmbienceManager* gAuAmbienceManager;
 
 // data
+#ifdef PM3DS_PORT_ROM_ADDRS
+// 3DS port: big-endian audio files are swapped after each read (audio_endian.c)
+void pm3ds_au_swap16s(void* p, s32 n);
+void pm3ds_au_swap32s(void* p, s32 n);
+void pm3ds_au_swap_sbn_header(SBNHeader* h);
+void pm3ds_au_swap_init_header(INITHeader* h);
+void pm3ds_au_swap_per_header(PERHeader* h);
+void pm3ds_au_swap_drums(void* p, s32 size);
+void pm3ds_au_swap_instruments(void* p, s32 size);
+void pm3ds_au_swap_bk_header(BKHeader* h);
+void pm3ds_au_swap_bk_file(BKFileBuffer* file, s32 size);
+void pm3ds_au_swap_bgm(BGMHeader* bgm, s32 size);
+void pm3ds_au_swap_mseq(MSEQHeader* m, s32 size);
+void pm3ds_au_swap_sef_header(SEFHeader* h);
+#endif
 extern u16 PerceptualVolumeLevels[9];
 extern u8 EnvelopePressDefault[];
 extern u8 EnvelopeReleaseDefault[];
 extern f32 AlTuneScaling[];
 
-#ifdef SHIFT
+#if defined(PM3DS_PORT_ROM_ADDRS)
+// 3DS port: the real cart offset (pm3ds_rom_layout.h), tagged with the cart domain (pm3ds_addr.h)
+#include "pm3ds_rom_layout.h"
+#define SBN_ROM_OFFSET PM3DS_CART(PM3DS_ROM_AUDIO)
+#elif defined(SHIFT)
 #define SBN_ROM_OFFSET (s32) audio_ROM_START
 #elif VERSION_JP
 #define SBN_ROM_OFFSET 0xFC0000
@@ -130,6 +149,9 @@ void au_engine_init(s32 outputRate) {
     au_load_BK_headers(globals, alHeap);
     if (au_fetch_SBN_file(globals->extraFileList[0], AU_FMT_SEF, &fileEntry) == AU_RESULT_OK) {
         au_read_rom(fileEntry.offset, globals->dataSEF, fileEntry.data & 0xFFFFFF);
+#ifdef PM3DS_PORT_ROM_ADDRS
+        pm3ds_au_swap_sef_header(globals->dataSEF);
+#endif
     }
     au_sfx_load_groups_from_SEF(gSoundManager);
     if (au_fetch_SBN_file(globals->extraFileList[1], AU_FMT_PER, &fileEntry) == AU_RESULT_OK) {
@@ -588,6 +610,9 @@ AuResult au_load_song_files(u32 songID, BGMHeader* bgmFile, BGMPlayer* player) {
         }
 
         au_read_rom(fileEntry.offset, fileCopy, fileEntry.data & 0xFFFFFF);
+#ifdef PM3DS_PORT_ROM_ADDRS
+        pm3ds_au_swap_bgm((BGMHeader*)fileCopy, fileEntry.data & 0xFFFFFF);
+#endif
 
         for (i = 0; i < ARRAY_COUNT(songInfo->bkFileIndex); i++) {
             bkFileIndex = songInfo->bkFileIndex[i];
@@ -631,6 +656,9 @@ AuResult au_reload_song_files(s32 songID, BGMHeader* bgmFile) {
     if (status == AU_RESULT_OK) {
         // load BGM file
         au_read_rom(sbnEntry.offset, bgmFile, sbnEntry.data & 0xFFFFFF);
+#ifdef PM3DS_PORT_ROM_ADDRS
+        pm3ds_au_swap_bgm((BGMHeader*)bgmFile, sbnEntry.data & 0xFFFFFF);
+#endif
 
         // load any auxiliary banks required by this BGM
         for (i = 0; i < ARRAY_COUNT(songInfo->bkFileIndex); i++) {
@@ -675,6 +703,9 @@ AuResult au_ambient_load(u32 ambSoundID) {
         if (manager->players[0].mseqName == 0) {
             if (SBN_EXTRA_LOOKUP(ambSoundID, AU_FMT_MSEQ, fileEntry) == AU_RESULT_OK) {
                 au_read_rom(fileEntry.offset, globals->dataMSEQ[0], fileEntry.data & 0xFFFFFF);
+#ifdef PM3DS_PORT_ROM_ADDRS
+                pm3ds_au_swap_mseq((MSEQHeader*)globals->dataMSEQ[0], fileEntry.data & 0xFFFFFF);
+#endif
                 manager->mseqFiles[0] = globals->dataMSEQ[0];
                 for (i = 1; i < ARRAY_COUNT(manager->mseqFiles); i++) {
                     manager->mseqFiles[i] = nullptr;
@@ -695,21 +726,33 @@ AuResult au_ambient_load(u32 ambSoundID) {
         mseqFile = globals->dataMSEQ[1];
         if (SBN_EXTRA_LOOKUP(ambSoundID, AU_FMT_MSEQ, fileEntry) == AU_RESULT_OK) {
             au_read_rom(fileEntry.offset, mseqFile, fileEntry.data & 0xFFFFFF);
+#ifdef PM3DS_PORT_ROM_ADDRS
+            pm3ds_au_swap_mseq(mseqFile, fileEntry.data & 0xFFFFFF);
+#endif
             manager->mseqFiles[0] = mseqFile;
 
             mseqFile = AU_FILE_RELATIVE(mseqFile, (fileEntry.data + 0x40) & 0xFFFFFF);
             if (SBN_EXTRA_LOOKUP(ambSoundID + 1, AU_FMT_MSEQ, fileEntry) == AU_RESULT_OK) {
                 au_read_rom(fileEntry.offset, mseqFile, fileEntry.data & 0xFFFFFF);
+#ifdef PM3DS_PORT_ROM_ADDRS
+                pm3ds_au_swap_mseq(mseqFile, fileEntry.data & 0xFFFFFF);
+#endif
                 manager->mseqFiles[1] = mseqFile;
 
                 mseqFile = AU_FILE_RELATIVE(mseqFile, (fileEntry.data + 0x40) & 0xFFFFFF);
                 if (SBN_EXTRA_LOOKUP(ambSoundID + 2, AU_FMT_MSEQ, fileEntry) == AU_RESULT_OK) {
                     au_read_rom(fileEntry.offset, mseqFile, fileEntry.data & 0xFFFFFF);
+#ifdef PM3DS_PORT_ROM_ADDRS
+                    pm3ds_au_swap_mseq(mseqFile, fileEntry.data & 0xFFFFFF);
+#endif
                     manager->mseqFiles[2] = mseqFile;
 
                     mseqFile = AU_FILE_RELATIVE(mseqFile, (fileEntry.data + 0x40) & 0xFFFFFF);
                     if (SBN_EXTRA_LOOKUP(ambSoundID + 3, AU_FMT_MSEQ, fileEntry) == AU_RESULT_OK) {
                         au_read_rom(fileEntry.offset, mseqFile, fileEntry.data & 0xFFFFFF);
+#ifdef PM3DS_PORT_ROM_ADDRS
+                        pm3ds_au_swap_mseq(mseqFile, fileEntry.data & 0xFFFFFF);
+#endif
                         manager->mseqFiles[3] = mseqFile;
 
                         manager->numActivePlayers = 4;
@@ -753,12 +796,18 @@ void au_load_INIT(AuGlobals* globals, s32 romAddr, ALHeap* heap) {
     s32* romPtr = &globals->baseRomOffset;
 
     au_read_rom(romAddr, &sbnHeader, sizeof(sbnHeader));
+#ifdef PM3DS_PORT_ROM_ADDRS
+    pm3ds_au_swap_sbn_header(&sbnHeader);
+#endif
     numEntries = sbnHeader.numEntries;
     fileListSize = numEntries * sizeof(SBNFileEntry);
     globals->baseRomOffset = romAddr;
     globals->fileListLength = sbnHeader.numEntries;
     globals->sbnFileList = alHeapAlloc(heap, 1, fileListSize);
     au_read_rom(globals->baseRomOffset + sbnHeader.fileListOffset, globals->sbnFileList, fileListSize);
+#ifdef PM3DS_PORT_ROM_ADDRS
+    pm3ds_au_swap32s(globals->sbnFileList, fileListSize / 4);
+#endif
 
     entry = globals->sbnFileList;
     while (sbnHeader.numEntries--) {
@@ -775,22 +824,39 @@ void au_load_INIT(AuGlobals* globals, s32 romAddr, ALHeap* heap) {
     if (sbnHeader.INIToffset != 0) {
         initBase = *romPtr + sbnHeader.INIToffset;
         au_read_rom(initBase, &initHeader, sizeof(initHeader));
+#ifdef PM3DS_PORT_ROM_ADDRS
+        pm3ds_au_swap_init_header(&initHeader);
+#endif
 
         songListOffset = initBase + initHeader.songListOffset;
         size = ALIGN16_(initHeader.songListSize);
         globals->songList = alHeapAlloc(heap, 1, size);
         au_read_rom(songListOffset, globals->songList, size);
+#ifdef PM3DS_PORT_ROM_ADDRS
+        pm3ds_au_swap16s(globals->songList, size / 2);
+#endif
 
         mseqListOffset = initBase + initHeader.mseqListOffset;
         size = ALIGN16_(initHeader.mseqListSize);
         globals->extraFileList = alHeapAlloc(heap, 1, size);
         au_read_rom(mseqListOffset, globals->extraFileList, size);
+#ifdef PM3DS_PORT_ROM_ADDRS
+        pm3ds_au_swap16s(globals->extraFileList, size / 2);
+#endif
 
         globals->bkFileListOffset = initBase + initHeader.bankListOffset;
         globals->bkListLength = ALIGN16_(initHeader.bankListSize);
 
         globals->songListLength = initHeader.songListSize / sizeof(InitSongEntry) - 1;
     }
+#ifdef PM3DS_TITLE_DBG
+    { extern void pm3ds_log(int, const char*, ...);
+      pm3ds_log(2, "audio: SBN sig=%08X entries=%d INIT@%X songs=%d song0=(%u,%u) extra0=%u",
+                (unsigned)sbnHeader.mdata.signature, (int)globals->fileListLength, (unsigned)sbnHeader.INIToffset,
+                (int)globals->songListLength, globals->songList ? globals->songList[0].bgmFileIndex : 0,
+                globals->songList ? globals->songList[0].bkFileIndex[0] : 0,
+                globals->extraFileList ? globals->extraFileList[0] : 0); }
+#endif
 }
 
 AuResult au_fetch_SBN_file(u32 fileIdx, AuFileFormat format, SBNFileEntry* outEntry) {
@@ -823,8 +889,14 @@ void au_load_PER(AuGlobals* globals, s32 romAddr) {
     void* end;
 
     au_read_rom(romAddr, &header, sizeof(header));
+#ifdef PM3DS_PORT_ROM_ADDRS
+    pm3ds_au_swap_per_header(&header);
+#endif
     size = header.mdata.size - sizeof(header);
     au_read_rom(romAddr + sizeof(header), globals->dataPER, size);
+#ifdef PM3DS_PORT_ROM_ADDRS
+    pm3ds_au_swap_drums(globals->dataPER, size);
+#endif
     numItems = size / sizeof(PEREntry);
     numItemsLeft = 6 - numItems;
     if (numItemsLeft > 0) {
@@ -843,12 +915,18 @@ void au_load_PRG(AuGlobals* globals, s32 romAddr) {
     void* end;
 
     au_read_rom(romAddr, &header, sizeof(header));
+#ifdef PM3DS_PORT_ROM_ADDRS
+    pm3ds_au_swap_per_header(&header);
+#endif
     dataRomAddr = romAddr + sizeof(header);
     size = header.mdata.size - sizeof(header);
     if (size > PRG_MAX_COUNT * sizeof(BGMInstrumentInfo)) {
         size = PRG_MAX_COUNT * sizeof(BGMInstrumentInfo);
     }
     au_read_rom(dataRomAddr, globals->dataPRG, size);
+#ifdef PM3DS_PORT_ROM_ADDRS
+    pm3ds_au_swap_instruments(globals->dataPRG, size);
+#endif
     numItems = size / sizeof(BGMInstrumentInfo);
     numItemsLeft = PRG_MAX_COUNT - numItems;
     if (numItemsLeft > 0) {
@@ -957,6 +1035,9 @@ BKFileBuffer* au_load_BK_to_bank(s32 bkFileOffset, BKFileBuffer* bkFile, s32 ban
     u32 i;
 
     au_read_rom(bkFileOffset, header, sizeof(*header));
+#ifdef PM3DS_PORT_ROM_ADDRS
+    pm3ds_au_swap_bk_header(header);
+#endif
     readState = BK_READ_FETCH_HEADER;
     keepReading = true;
 
@@ -996,6 +1077,9 @@ BKFileBuffer* au_load_BK_to_bank(s32 bkFileOffset, BKFileBuffer* bkFile, s32 ban
                     bkFile = alHeapAlloc(heap, 1, size);
                 }
                 au_read_rom(bkFileOffset, bkFile, size);
+#ifdef PM3DS_PORT_ROM_ADDRS
+                pm3ds_au_swap_bk_file(bkFile, size);
+#endif
 
                 group = au_get_BK_instruments(bankSet, bankIndex);
                 inst = (*group);
@@ -1100,6 +1184,9 @@ BKFileBuffer* au_load_static_BK_to_bank(s32* inAddr, void* outAddr, s32 bankInde
                 break;
             case BK_READ_FETCH_HEADER:
                 au_read_rom(*inAddr, &localHeader, sizeof(localHeader));
+#ifdef PM3DS_PORT_ROM_ADDRS
+                pm3ds_au_swap_bk_header(&localHeader);
+#endif
                 if (header->signature != AL_HEADER_SIG_BK) {
                     keepReading = false;
                 } else if (header->size == 0) {
@@ -1115,6 +1202,9 @@ BKFileBuffer* au_load_static_BK_to_bank(s32* inAddr, void* outAddr, s32 bankInde
                     bkFile = alHeapAlloc(heap, 1, header->size);
                 }
                 au_read_rom(*inAddr, bkFile, header->size);
+#ifdef PM3DS_PORT_ROM_ADDRS
+                pm3ds_au_swap_bk_file(bkFile, header->size);
+#endif
 
                 instrumentCount = 0;
                 group = au_get_BK_instruments(bankSet, bankIndex);

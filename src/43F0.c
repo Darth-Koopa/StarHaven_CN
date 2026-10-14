@@ -87,6 +87,18 @@ void* _heap_malloc(HeapNode* head, u32 size) {
 
     // must allocate 16 bytes or more at minimum or fail
     size = ALIGN16(size);
+#ifdef _3DS
+    if (head == &heap_battleHead) {
+        extern void pm3ds_log(int, const char*, ...);
+        static int nb;
+        if (nb++ < 100) pm3ds_log(2, "HEAP btl size=0x%X ra=%p", (unsigned)size, __builtin_return_address(0));
+    }
+    if (size >= 0x8000) {   // 3DS port: who takes the big blocks
+        extern void pm3ds_log(int, const char*, ...);
+        static int nbig;
+        if (nbig++ < 40) pm3ds_log(2, "HEAP big head=%p size=0x%X ra=%p", (void*)head, (unsigned)size, __builtin_return_address(0));
+    }
+#endif
     if (!size) {
         return nullptr;
     }
@@ -144,6 +156,25 @@ void* _heap_malloc(HeapNode* head, u32 size) {
         }
         return (u8*)pPrevHeapNode + sizeof(HeapNode);
     }
+#ifdef _3DS
+    {   // 3DS port: name the heap that ran dry instead of failing silently
+        extern void pm3ds_log(int, const char*, ...);
+        static int logged = 0;
+        if (logged < 8) {
+            u32 freeTotal = 0, largest = 0, nodes = 0;
+            for (curHeapNode = head; curHeapNode != nullptr && nodes < 100000; curHeapNode = curHeapNode->next, nodes++) {
+                if (!curHeapNode->allocated) {
+                    freeTotal += curHeapNode->length;
+                    if (curHeapNode->length > largest) largest = curHeapNode->length;
+                }
+            }
+            logged++;
+            pm3ds_log(3, "HEAP FULL head=%p want=0x%X free=0x%X largest=0x%X nodes=%u ra=%p",
+                      (void*)head, (unsigned)size, (unsigned)freeTotal, (unsigned)largest, (unsigned)nodes,
+                      __builtin_return_address(0));
+        }
+    }
+#endif
     return nullptr;
 }
 
@@ -435,6 +466,7 @@ void copy_matrix(Matrix4f src, Matrix4f dest) {
     bcopy(src, dest, sizeof(Matrix4f));
 }
 
+#ifndef _3DS // 3DS port: dma_copy lives in port/3ds/source/n64_shim/dma_copy.c
 // maybe u32
 u32 dma_copy(Addr romStart, Addr romEnd, void* vramDest) {
     u32 length = romEnd - romStart;
@@ -452,6 +484,8 @@ u32 dma_copy(Addr romStart, Addr romEnd, void* vramDest) {
 
     return length;
 }
+
+#endif
 
 s32 dma_write(Addr romStart, Addr romEnd, void* vramDest) {
     u32 length = romEnd - romStart;
@@ -573,6 +607,18 @@ s32 round(f32 x) {
 }
 
 f32 clamp_angle(f32 theta) {
+#ifdef _3DS
+    // NaN never reaches here on N64 (the loop below would spin forever);
+    // name the caller once and keep the game alive.
+    if (theta != theta) {
+        static s32 reported;
+        if (reported++ < 8) {
+            extern void pm3ds_log(int, const char*, ...);
+            pm3ds_log(3, "clamp_angle(NaN) from %p", __builtin_return_address(0));
+        }
+        return 0.0f;
+    }
+#endif
     if (fabsf(theta) > 3600.0f) {
         s32 thetaInt = theta;
 
@@ -677,9 +723,24 @@ f32 dist3D(f32 ax, f32 ay, f32 az, f32 bx, f32 by, f32 bz) {
     return sqrtf(SQ(xDiff) + SQ(yDiff) + SQ(zDiff));
 }
 
+#ifdef PM3DS_UBSAN_FLOAT
+// debug: report who passes absurd angles (garbage or unswapped big-endian floats)
+static void pm3ds_check_angle(f32 theta, void* caller) {
+    void pm3ds_log(int, const char*, ...);
+    static s32 count;
+    if (!(theta > -1.0e7f && theta < 1.0e7f) && count < 16) {
+        count++;
+        pm3ds_log(3, "TRIGBIG %f from %p", (double)theta, caller);
+    }
+}
+#endif
+
 void add_vec2D_polar(f32* x, f32* y, f32 r, f32 theta) {
     f32 sinTheta;
     f32 cosTheta;
+#ifdef PM3DS_UBSAN_FLOAT
+    pm3ds_check_angle(theta, __builtin_return_address(0));
+#endif
 
     sin_cos_rad(DEG_TO_RAD(theta), &sinTheta, &cosTheta);
     *x += r * sinTheta;
@@ -699,6 +760,9 @@ u16 _wrap_trig_lookup_value(f32 theta) {
 }
 
 void sin_cos_rad(f32 theta, f32* outSinTheta, f32* outCosTheta) {
+#ifdef PM3DS_UBSAN_FLOAT
+    pm3ds_check_angle(theta, __builtin_return_address(0));
+#endif
     u16 binang = _wrap_trig_lookup_value(RAD_TO_BINANG(theta));
 
     *outSinTheta = sins(binang) * SHT_MINV;
@@ -706,13 +770,22 @@ void sin_cos_rad(f32 theta, f32* outSinTheta, f32* outCosTheta) {
 }
 
 f32 sin_rad(f32 theta) {
+#ifdef PM3DS_UBSAN_FLOAT
+    pm3ds_check_angle(theta, __builtin_return_address(0));
+#endif
     return sins(_wrap_trig_lookup_value(RAD_TO_BINANG(theta))) * SHT_MINV;
 }
 
 f32 cos_rad(f32 theta) {
+#ifdef PM3DS_UBSAN_FLOAT
+    pm3ds_check_angle(theta, __builtin_return_address(0));
+#endif
     return coss(_wrap_trig_lookup_value(RAD_TO_BINANG(theta))) * SHT_MINV;
 }
 void sin_cos_deg(f32 theta, f32* outSinTheta, f32* outCosTheta) {
+#ifdef PM3DS_UBSAN_FLOAT
+    pm3ds_check_angle(theta, __builtin_return_address(0));
+#endif
     u16 binang = _wrap_trig_lookup_value(DEG_TO_BINANG(theta));
 
     *outSinTheta = sins(binang) * SHT_MINV;
@@ -720,10 +793,16 @@ void sin_cos_deg(f32 theta, f32* outSinTheta, f32* outCosTheta) {
 }
 
 f32 sin_deg(f32 theta) {
+#ifdef PM3DS_UBSAN_FLOAT
+    pm3ds_check_angle(theta, __builtin_return_address(0));
+#endif
     return sins(_wrap_trig_lookup_value(DEG_TO_BINANG(theta))) * SHT_MINV;
 }
 
 f32 cos_deg(f32 theta) {
+#ifdef PM3DS_UBSAN_FLOAT
+    pm3ds_check_angle(theta, __builtin_return_address(0));
+#endif
     return coss(_wrap_trig_lookup_value(DEG_TO_BINANG(theta))) * SHT_MINV;
 }
 

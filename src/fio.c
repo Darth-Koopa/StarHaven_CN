@@ -379,6 +379,12 @@ void fio_deserialize_state(void) {
     gGameStatusPtr->musicEnabled = true;
 
     gSaveSlotMetadata[gGameStatusPtr->saveSlot] = saveData->metadata;
+#ifdef _3DS
+    {   // 3DS port: the randomizer seed lives in the save's unused tail
+        extern void pm3ds_rando_deserialize(const void* src);
+        pm3ds_rando_deserialize(saveData->unk_1304);
+    }
+#endif
 }
 
 void func_8002B608(void) {
@@ -415,6 +421,12 @@ void fio_serialize_state(void) {
     gSaveSlotMetadata[gGameStatusPtr->saveSlot].timePlayed = gPlayerData.frameCounter;
 
     saveData->metadata = gSaveSlotMetadata[gGameStatusPtr->saveSlot];
+#ifdef _3DS
+    {
+        extern void pm3ds_rando_serialize(void* dst);
+        pm3ds_rando_serialize(saveData->unk_1304);
+    }
+#endif
 }
 
 void fio_init_flash(void) {

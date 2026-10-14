@@ -1028,6 +1028,20 @@ void filemenu_init(s32 mode) {
     MenuPanel* menu;
     s32 i;
 
+#ifdef _3DS
+    // The N64 re-DMA'd the filemenu overlay right before every filemenu_init,
+    // which restored its .data; the natively linked copy keeps the previous
+    // file-select session's state (e.g. menus stay "initialized").
+    for (i = 0; i < ARRAY_COUNT(filemenu_menus); i++) {
+        filemenu_menus[i]->initialized = false;
+    }
+    D_80249BB0 = true;
+    D_80249BB8 = 0;
+    filemenu_cursor_posX = filemenu_cursor_targetX = SCREEN_WIDTH / 2;
+    filemenu_cursor_posY = filemenu_cursor_targetY = -SCREEN_HEIGHT / 2;
+    filemenu_cursor_alpha = filemenu_cursorGoalAlpha = filemenu_cursorGoalAlpha2 = 0;
+#endif
+
     DMA_COPY_SEGMENT(ui_images_filemenu_pause);
 
     for (i = 0; i < ARRAY_COUNT(filemenu_cursorHIDs); i++) {

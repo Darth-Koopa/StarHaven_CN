@@ -4,7 +4,24 @@
 #include "ld_addrs.h"
 #include "sprite/player.h"
 
-#ifdef SHIFT
+#if defined(PM3DS_PORT_ROM_ADDRS)
+/* 3DS port: this build defines SHIFT, which makes SPRITE_ROM_START the ADDRESS
+ * of the weak `sprites_ROM_START` linker stub instead of a cart offset. The
+ * stub lands in the 3DSX image, so nuPiReadRom() reads nowhere near the sprite
+ * table, SpriteDataHeader stays garbage, and spr_load_sprite then walks wild
+ * memory (measured: 859,731 unmapped accesses from 101b90_len_8f0.c:114).
+ *
+ * This is the SAME defect M8.8 already hit and fixed for the asset table
+ * (ASSET_TABLE_ROM_START = (s32)mapfs_ROM_START had exactly this problem);
+ * the fix is the same — use the real cart offset, the decomp's own value for
+ * the version being built (port/3ds/include/pm3ds_rom_layout.h).
+ * Port-only, so N64/matching builds keep the SHIFT behaviour.
+ * M13: tagged with the 0x10000000 cart domain (port/3ds/include/pm3ds_addr.h)
+ * so it can never be mistaken for a host pointer as the image grows (__end__
+ * is ~0x1650000 already); offsets added to it keep the tag. */
+#include "pm3ds_rom_layout.h"
+#define SPRITE_ROM_START PM3DS_CART(PM3DS_ROM_SPRITES + 0x10)
+#elif defined(SHIFT)
 #define SPRITE_ROM_START (u32) sprites_ROM_START + 0x10
 #elif VERSION_US || VERSION_IQUE
 #define SPRITE_ROM_START 0x1943000 + 0x10
@@ -36,6 +53,22 @@ BSS PlayerSpriteCacheEntry PlayerRasterCache[18];
 
 #define ALIGN4(v) (((u32)(v) >> 2) << 2)
 #define SPR_SWIZZLE(base,offset) ((void*)((s32)(offset) + (s32)(base)))
+
+#ifdef PM3DS_PORT_ROM_ADDRS
+/* 3DS port: every table nuPiReadRom pulls from cart is BIG-ENDIAN 32-bit
+ * words. Swap each buffer in place immediately after the read and the
+ * downstream arithmetic works unchanged. Same defect class as the mapfs asset
+ * table, the Yay0 headers and the sprite blob offsets. Raster PIXEL reads
+ * (spr_get_player_raster) are byte data and must NOT be swapped. */
+static void pm3ds_swap_rom_words(s32* words, s32 count) {
+    s32 i;
+    for (i = 0; i < count; i++) {
+        u32 v = (u32)words[i];
+        words[i] = (s32)(((v & 0x000000FFu) << 24) | ((v & 0x0000FF00u) << 8) |
+                         ((v & 0x00FF0000u) >> 8)  | ((v & 0xFF000000u) >> 24));
+    }
+}
+#endif
 
 void spr_swizzle_anim_offsets(s32 arg0, s32 base, void* spriteData) {
     u8* buffer;
@@ -89,6 +122,17 @@ SpriteAnimData* spr_load_sprite(s32 idx, s32 isPlayerSprite, s32 useTailAlloc) {
     // read current and next sprite offsets, so we can find the difference
     nuPiReadRom(base + idx * 4, &spr_asset_entry, sizeof(spr_asset_entry));
 
+#ifdef PM3DS_PORT_ROM_ADDRS
+    /* 3DS port: this is raw BIG-ENDIAN cart data. Read natively on ARM the two
+     * offsets come out byte-reversed, so their difference is garbage — measured
+     * `nuPiReadRom(rom=0xA9EC37B8, buf=0x0, size=3356098560)`: the bogus size
+     * made general_heap_malloc() return NULL, which is how decode_yay0 ended up
+     * with a null destination and walked memory from address 0.
+     * Same defect class as the mapfs asset table (swapped in-buffer in M8.9),
+     * the Yay0 headers, and SpriteDataHeader. */
+    pm3ds_swap_rom_words(spr_asset_entry, ARRAY_COUNT(spr_asset_entry));
+#endif
+
     compressedSize = ALIGN8(spr_asset_entry[1] - spr_asset_entry[0]);
     data = general_heap_malloc(compressedSize);
     nuPiReadRom(base + spr_asset_entry[0], data, compressedSize);
@@ -97,12 +141,43 @@ SpriteAnimData* spr_load_sprite(s32 idx, s32 isPlayerSprite, s32 useTailAlloc) {
     // skip 4 bytes: 'YAY0' signature
     ptr1++;
 
+#ifdef PM3DS_PORT_ROM_ADDRS
+    /* 3DS port: *ptr1 is the Yay0 DECOMPRESSED SIZE, stored big-endian in the
+     * cart blob. Read natively it is a ~3 GB nonsense value, so the heap alloc
+     * below returned NULL and everything downstream (decode_yay0's destination,
+     * the swizzle loop) operated on a null pointer. Use a swapped copy for the
+     * size only — `data` itself must stay untouched, since decode_yay0 reads
+     * that header big-endian on purpose. */
+    {
+        u32 v = (u32)*ptr1;
+        u32 decompressedSize = ((v & 0x000000FF) << 24) | ((v & 0x0000FF00) << 8) |
+                               ((v & 0x00FF0000) >> 8)  | ((v & 0xFF000000) >> 24);
+        if (useTailAlloc) {
+            animData = _heap_malloc_tail(&heap_spriteHead, decompressedSize);
+        } else {
+            animData = _heap_malloc(&heap_spriteHead, decompressedSize);
+        }
+    }
+#else
     if (useTailAlloc) {
         animData = _heap_malloc_tail(&heap_spriteHead, *ptr1);
     } else {
         animData = _heap_malloc(&heap_spriteHead, *ptr1);
     }
+#endif
     decode_yay0(data, animData);
+#ifdef PM3DS_PORT_ROM_ADDRS
+    /* 3DS port: the decoded blob's offsets are BIG-ENDIAN. Swap them before the
+     * swizzle loop below reads them, otherwise every entry is byte-reversed and
+     * points at a wild address (measured: 859,633 unmapped accesses in the
+     * `while (true)` loop). No rebasing needed here — SPR_SWIZZLE already does
+     * that; this is purely endianness. */
+    { extern void pm3ds_sprite_endian_fix(void *blob, u32 size);
+      u32 v2 = (u32)*ptr1;
+      u32 dsz = ((v2 & 0x000000FF) << 24) | ((v2 & 0x0000FF00) << 8) |
+                ((v2 & 0x00FF0000) >> 8)  | ((v2 & 0xFF000000) >> 24);
+      pm3ds_sprite_endian_fix(animData, dsz); }
+#endif
     general_heap_free(data);
 
     // swizzle raster array
@@ -133,6 +208,11 @@ SpriteAnimData* spr_load_sprite(s32 idx, s32 isPlayerSprite, s32 useTailAlloc) {
         // load a range of raster loading desciptors to a buffer and copy contents into PlayerRasterLoadDesc
         nuPiReadRom(SpriteDataHeader[0] + PlayerRasterHeader.loadDescriptors + sizeof(u32) * PlayerSpriteRasterSets[idx],
             PlayerRasterLoadDescBuffer, sizeof(PlayerRasterLoadDescBuffer));
+#ifdef PM3DS_PORT_ROM_ADDRS
+        /* 3DS port: big-endian packed size/offset words; spr_get_player_raster
+         * unpacks them with shifts and masks. */
+        pm3ds_swap_rom_words(PlayerRasterLoadDescBuffer, ARRAY_COUNT(PlayerRasterLoadDescBuffer));
+#endif
         for (i = 0; i < count; i++) {
             PlayerRasterLoadDesc[PlayerRasterLoadDescNumLoaded++] = PlayerRasterLoadDescBuffer[i];
         }
@@ -160,6 +240,12 @@ void spr_init_player_raster_cache(s32 cacheSize, s32 maxRasterSize) {
     s32 i;
 
     nuPiReadRom(SPRITE_ROM_START, &SpriteDataHeader, sizeof(SpriteDataHeader));
+#ifdef PM3DS_PORT_ROM_ADDRS
+    /* 3DS port: three big-endian cart offsets. Left raw, the += below produced
+     * the observed 0x11DF00xx wild reads (0x10 stored BE reads as 0x10000000,
+     * + SPRITE_ROM_START = 0x11DF0010 — exactly what the run logs showed). */
+    pm3ds_swap_rom_words(SpriteDataHeader, ARRAY_COUNT(SpriteDataHeader));
+#endif
     PlayerRasterCacheSize = cacheSize;
     PlayerRasterMaxSize = maxRasterSize;
     SpriteDataHeader[0] += SPRITE_ROM_START;
@@ -180,7 +266,15 @@ void spr_init_player_raster_cache(s32 cacheSize, s32 maxRasterSize) {
     }
     PlayerRasterLoadDescNumLoaded = 0;
     nuPiReadRom(SpriteDataHeader[0], &PlayerRasterHeader, sizeof(PlayerRasterHeader));
+#ifdef PM3DS_PORT_ROM_ADDRS
+    /* 3DS port: PlayerRastersHeader is three big-endian s32 offsets, and the
+     * read below consumes .indexRanges — so swap before, not after, it. */
+    pm3ds_swap_rom_words((s32*)&PlayerRasterHeader, sizeof(PlayerRasterHeader) / sizeof(s32));
+#endif
     nuPiReadRom(SpriteDataHeader[0] + PlayerRasterHeader.indexRanges, PlayerSpriteRasterSets, sizeof(PlayerSpriteRasterSets));
+#ifdef PM3DS_PORT_ROM_ADDRS
+    pm3ds_swap_rom_words(PlayerSpriteRasterSets, ARRAY_COUNT(PlayerSpriteRasterSets));
+#endif
 }
 
 IMG_PTR spr_get_player_raster(s32 rasterIndex, s32 playerSpriteID) {

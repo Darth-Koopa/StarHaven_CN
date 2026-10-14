@@ -778,7 +778,7 @@ void N(credits_load_message)(CreditsEntry* entry) {
 
     line = &N(CreditsDataPtr)->lines[i];
     if (entry->msgID != MSG_NONE) {
-        if (entry->msgID >= 0) {
+        if (MSG_IS_ID(entry->msgID)) {
             dma_load_msg(entry->msgID, N(CreditsMessageBuffers)[N(CreditsBufferIndex)]);
             line->message = N(CreditsMessageBuffers)[N(CreditsBufferIndex)];
             N(CreditsBufferIndex)++;

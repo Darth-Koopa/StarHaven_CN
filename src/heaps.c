@@ -11,7 +11,14 @@ BSS u8 gEffectGlobals[0x1000] ALIGNED(0x1000);
 BSS u8 BattleEntityHeapBottom[0x3000] ALIGNED(0x1000);
 #endif
 BSS u8 AuHeapBase[AUDIO_HEAP_SIZE] ALIGNED(0x1000);
+#ifdef _3DS
+// On N64 this is the start of the map overlay region, which the file select
+// (0x20000) and pause menu (0x38000) borrow wholesale as a HUD element cache.
+// Here it is a standalone array, so give it the largest borrowed size.
+BSS u8 D_80200000[0x38000] ALIGNED(0x1000);
+#else
 BSS u8 D_80200000[0x4000] ALIGNED(0x1000);
+#endif
 BSS u8 D_80204000[0x3000] ALIGNED(0x1000);
 BSS u8 D_80207000[0x3000] ALIGNED(0x1000);
 BSS u8 D_8020A000[0x6000] ALIGNED(0x1000);

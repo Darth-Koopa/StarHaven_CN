@@ -1759,7 +1759,7 @@ Actor* create_actor(Formation formation) {
     DecorationTable* decorations;
     s32 i, j, k;
 
-    if (formation->home.index >= EVT_LIMIT) {
+    if (!EVT_IS_PTR(formation->home.index)) {
         x = StandardActorHomePositions[formation->home.index].x;
         y = StandardActorHomePositions[formation->home.index].y;
         z = StandardActorHomePositions[formation->home.index].z;

@@ -1,6 +1,12 @@
 #include "common.h"
 
 void clear_saved_variables(void) {
+#ifdef _3DS
+    {   // 3DS port: a fresh state is not randomized (new file / demo; see rando.c)
+        extern void pm3ds_rando_off(void);
+        pm3ds_rando_off();
+    }
+#endif
     SaveData* saveFile = &gCurrentSaveFile;
     s32 i;
 

@@ -33,7 +33,15 @@ Vec3f gEntityColliderNormals[] = {
 //TODO data split here!
 s32 pad_map_table[] = { 0, 0 };
 
-#ifdef SHIFT
+#if defined(PM3DS_PORT_ROM_ADDRS)
+/* 3DS port: the cart offset tagged with the cart domain (port/3ds/include/
+ * pm3ds_addr.h). Untagged, it is taken for a host pointer once the program
+ * image reaches it: the two-version package (port/3ds/tools/universal.py)
+ * ends past 0x2700000, beyond PAL's 0x2600000. */
+#include "pm3ds_addr.h"
+#include "pm3ds_rom_layout.h"
+#define ASSET_TABLE_ROM_START (s32) PM3DS_ROM(PM3DS_ROM_MAPFS)
+#elif defined(SHIFT)
 #define ASSET_TABLE_ROM_START (s32) mapfs_ROM_START
 #elif VERSION_JP
 #define ASSET_TABLE_ROM_START 0x1E00000
@@ -296,9 +304,37 @@ s32 get_asset_offset(char* assetName, s32* compressedSize) {
     assetTableBuffer = heap_malloc(firstHeader.offset);
     curAsset = &assetTableBuffer[0];
     dma_copy((u8*) ASSET_TABLE_FIRST_ENTRY, (u8*) ASSET_TABLE_FIRST_ENTRY + firstHeader.offset, assetTableBuffer);
+#ifdef PM3DS_PORT_ROM_ADDRS
+    /* 3DS port: the original loop is UNBOUNDED —
+     *     while (strcmp(curAsset->name, assetName) != 0) curAsset++;
+     * If the asset is absent it walks off the end of the table and returns
+     * ASSET_TABLE_FIRST_ENTRY + garbage. Measured: a miss on "<map>_tex"
+     * produced romOffset 0x88332280, and load_texture_by_name then read
+     * unmapped memory until Azahar aborted with "unknown GPU address".
+     * (Same unbounded-walk shape as the load_asset_by_name strcmp flood in M8.8.)
+     *
+     * Bound it by the table's own size and return 0 on a miss — callers already
+     * treat 0 as "no asset" (mdl_load_all_textures checks `romOffset != 0`), so
+     * a missing texture archive degrades to "no textures" instead of corrupting
+     * the address space. */
+    {
+        s32 maxEntries = (s32)(firstHeader.offset / sizeof(AssetHeader));
+        s32 i = 0;
+        while (i < maxEntries && strcmp(curAsset->name, assetName) != 0) {
+            curAsset++;
+            i++;
+        }
+        if (i >= maxEntries) {
+            heap_free(assetTableBuffer);
+            *compressedSize = 0;
+            return 0;
+        }
+    }
+#else
     while (strcmp(curAsset->name, assetName) != 0) {
         curAsset++;
     }
+#endif
     *compressedSize = curAsset->compressedLength;
     ret = ASSET_TABLE_FIRST_ENTRY + curAsset->offset;
     heap_free(assetTableBuffer);
@@ -307,6 +343,16 @@ s32 get_asset_offset(char* assetName, s32* compressedSize) {
 
 #define AREA(area, jp_name) { ARRAY_COUNT(area##_maps), area##_maps, "area_" #area, jp_name }
 
+#ifdef PM3DS_NATIVE_WORLD
+// 3DS port: map code is compiled into the binary, so there is no overlay to DMA.
+#define MAP(map) \
+    .id = #map, \
+    .settings = &map##_settings, \
+    .dmaStart = nullptr, \
+    .dmaEnd = nullptr, \
+    .dmaDest = nullptr \
+
+#else
 #define MAP(map) \
     .id = #map, \
     .settings = &map##_settings, \
@@ -314,6 +360,7 @@ s32 get_asset_offset(char* assetName, s32* compressedSize) {
     .dmaEnd = map##_ROM_END, \
     .dmaDest = map##_VRAM \
 
+#endif
 #define MAP_WITH_INIT(map) \
     MAP(map), \
     .init = &map##_map_init \

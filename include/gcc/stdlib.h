@@ -1,8 +1,8 @@
 #ifndef _STDLIB_H
 #define _STDLIB_H
-/*
-		stdlib.h
-*/
+#ifndef __3DS__
+
+/* stdlib.h */
 
 #ifndef _SIZE_T_DEF
 #define _SIZE_T_DEF
@@ -64,7 +64,7 @@ char *ltoa(long,char *,int);
 char *ultoa(unsigned long,char *,int);
 
 double atof(const char *);
-double strtod(const char *,char **);
+double strtod(const char *,const char **);
 
 void qsort(void *,size_t,size_t,int (*)(const void *,const void *));
 void *bsearch(const void *,const void *,size_t,size_t,int (*)(const void *,const void *));
@@ -77,5 +77,7 @@ void free(void *);
 void exit(int);
 
 void abort(void);
+
+#endif // __3DS__
 
 #endif

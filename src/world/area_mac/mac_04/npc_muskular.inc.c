@@ -47,7 +47,7 @@ EvtScript N(EVS_Scene_RescuedMuskular) = {
     Call(SetPanTarget, CAM_DEFAULT, LVar0, LVar1, LVar2)
     Call(SetCamDistance, CAM_DEFAULT, -300)
     Call(SetCamPitch, CAM_DEFAULT, Float(17.5), -9)
-#if VERSION_PAL
+#if PAL_TIMING // 3DS: NTSC timing (macros.h)
     Call(SetCamSpeed, CAM_DEFAULT, Float(3.6))
 #else
     Call(SetCamSpeed, CAM_DEFAULT, 3)
@@ -180,7 +180,7 @@ EvtScript N(EVS_Scene_RescuedMuskular) = {
     Call(SetCamDistance, CAM_DEFAULT, -350)
     Call(SetCamSpeed, CAM_DEFAULT, Float(3.0 / DT))
     Call(WaitForCam, CAM_DEFAULT, Float(1.0))
-#if VERSION_PAL
+#if PAL_TIMING // 3DS: NTSC timing (macros.h)
     Call(SetNpcSpeed, NPC_Twink, Float(4.8))
 #else
 Call(SetNpcSpeed, NPC_Twink, 4)

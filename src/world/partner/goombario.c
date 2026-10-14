@@ -5,6 +5,28 @@
 #include "message_ids.h"
 #include "entity.h"
 
+// A tattle is a message ID or (map settings .tattle.get) a getter function.
+// N64 tells them apart by sign; on 3DS code addresses overlap message IDs
+// (kpa_13_get_tattle sat at 0x002C000C), so match the getters by name.
+#ifdef _3DS
+#if VERSION_PAL
+#define TATTLE_GETTERS_PAL(X) X(mgm_02)   // PAL-only getter (mgm_02/settings.c)
+#else
+#define TATTLE_GETTERS_PAL(X)
+#endif
+#define TATTLE_GETTERS(X) X(flo_10) X(jan_04) X(jan_05) X(kpa_12) X(kpa_13) X(kpa_14) \
+                          X(kzn_18) TATTLE_GETTERS_PAL(X) X(sam_11) X(sbk_02) X(sbk_30)
+#define TATTLE_DECL(m) extern s32 m##_get_tattle(void);
+#define TATTLE_CMP(m) || v == (s32)&m##_get_tattle
+TATTLE_GETTERS(TATTLE_DECL)
+static s32 tattle_is_func(s32 v) {
+    return false TATTLE_GETTERS(TATTLE_CMP);
+}
+#define TATTLE_IS_FUNC(v) tattle_is_func(v)
+#else
+#define TATTLE_IS_FUNC(v) ((v) < EVT_LIMIT)
+#endif
+
 #define NAMESPACE world_goombario
 
 extern SpeechBubbleData* SpeechBubblePtr;
@@ -376,7 +398,7 @@ API_CALLABLE(N(SelectTattleMsg)) {
                 enemyTattleMsg = get_enemy(N(InteractNpc)->npcID)->tattleMsg;
                 if (enemyTattleMsg != 0) {
                     msgID = enemyTattleMsg;
-                    if (msgID < EVT_LIMIT) {
+                    if (TATTLE_IS_FUNC(msgID)) {
                         script->VAR_MSG = ((s32(*)(void))msgID)();
                     } else {
                         script->VAR_MSG = msgID;
@@ -403,7 +425,7 @@ API_CALLABLE(N(SelectTattleMsg)) {
             if (temp == MSG_NONE) {
                 msgID = get_current_map_settings()->tattle.msgID;
                 if (msgID != 0) {
-                    if (msgID < EVT_LIMIT) {
+                    if (TATTLE_IS_FUNC(msgID)) {
                         // map uses a get_tattle function
                         script->VAR_MSG = ((s32(*)(void))msgID)();
                     } else {
@@ -422,7 +444,7 @@ API_CALLABLE(N(SelectTattleMsg)) {
         case USE_TATTLE_FORCE_MAP:
             msgID = get_current_map_settings()->tattle.msgID;
             if (msgID != 0) {
-                if (msgID < EVT_LIMIT) {
+                if (TATTLE_IS_FUNC(msgID)) {
                     script->VAR_MSG = ((s32(*)(void))msgID)();
                 } else {
                     script->VAR_MSG = msgID;

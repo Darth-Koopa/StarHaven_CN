@@ -61,7 +61,13 @@ enum {
         ems_End \
     }
 
+#ifdef PM3DS_NATIVE_WORLD
+// 3DS port: entity model data is linked in, so `data` already is the address
+// (the N64 form rebases a segment offset onto the DMA'd heap copy).
+#define ENTITY_ADDR(entity, type, data) ((void)(entity), (type)(data))
+#else
 #define ENTITY_ADDR(entity, type, data) (type)((s32)(entity->gfxBaseAddr) + ((s32)(data) & 0xFFFF))
+#endif
 #define ENTITY_ROM(name) { entity_model_##name##_ROM_START, entity_model_##name##_ROM_END }
 
 #define BLOCK_GRID_SIZE 25

@@ -7,6 +7,13 @@
 #include "evt.h"
 #include "enums.h"
 
+#ifdef __3DS__
+// On 3DS, pm_types.h (included via ultra64.h game_fwd chain) already
+// declares VecXf, Color, and GameStatus. Don't redefine them.
+#include "pm_types.h"
+#define PM_COMMONSTRUCTS_SKIP_BASICS
+#endif
+
 struct Evt;
 
 typedef ApiStatus(*ApiFunc)(struct Evt*, s32);
@@ -32,6 +39,7 @@ typedef u32 AnimID;
 typedef s32 HudElemID;
 typedef s32 MsgID;
 
+#ifndef PM_COMMONSTRUCTS_SKIP_BASICS
 typedef struct {
     u8 r, g, b, a;
 } Color_RGBA8;
@@ -39,6 +47,7 @@ typedef struct {
 typedef struct {
     u8 r, g, b;
 } Color_RGB8;
+#endif
 
 typedef struct Vec2b {
     /* 0x00 */ s8 x;

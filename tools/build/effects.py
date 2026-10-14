@@ -28,6 +28,13 @@ if __name__ == "__main__":
             enum_name = "EFFECT_" + enum_name
 
         effect_enum_text += f"    {enum_name} = 0x{i:02X},\n"
+        # Also emit a numeric-index alias (EFFECT_00 = 0x00 etc.) so call
+        # sites that reference effects by hex index (e.g. EFFECT_00) compile
+        # even when the effect at that index has a named entry. Skip when the
+        # named form already collides with the index alias.
+        idx_alias = f"EFFECT_{i:02X}"
+        if idx_alias != enum_name:
+            effect_enum_text += f"    {idx_alias} = 0x{i:02X},\n"
         if not effect.empty:
             effect_table_text += f"    FX_ENTRY({effect.name}, effect_gfx_{effect.gfx}),\n"
             fx_decls_text += effect.get_macro_call("fx_" + effect.name) + ";\n"

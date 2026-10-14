@@ -100,7 +100,7 @@ EvtScript N(EVS_RotatingWall_FirstTime) = {
     Thread
         Call(SetPanTarget, CAM_DEFAULT, 50, 10, -35)
         Call(SetCamDistance, CAM_DEFAULT, 400)
-#if VERSION_PAL
+#if PAL_TIMING // 3DS: NTSC timing (macros.h)
         Call(SetCamSpeed, CAM_DEFAULT, Float(0.961))
 #else
         Call(SetCamSpeed, CAM_DEFAULT, Float(0.8 / DT))

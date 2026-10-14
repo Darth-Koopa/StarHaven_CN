@@ -1,0 +1,10 @@
+# Compiled host-test binaries — match Makefile's TESTS list.
+test_pm_endian
+test_pm3ds_heap
+test_os_mesgqueue
+test_os_timer
+test_gfx_state
+test_gfx_dl
+test_gfx_geom
+test_gfx_texture
+test_gfx_combiner

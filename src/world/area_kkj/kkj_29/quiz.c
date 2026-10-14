@@ -979,7 +979,7 @@ EvtScript N(EVS_ManageQuizGame) = {
     KillThread(LVarA)
     Call(UseSettingsFrom, CAM_DEFAULT, -230, 0, -140)
     Call(SetPanTarget, CAM_DEFAULT, -230, 0, -140)
-#if VERSION_PAL
+#if PAL_TIMING // 3DS: NTSC timing (macros.h)
     Call(SetCamSpeed, CAM_DEFAULT, Float(0.961))
 #else
     Call(SetCamSpeed, CAM_DEFAULT, Float(0.8))

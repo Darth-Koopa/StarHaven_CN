@@ -1,4 +1,7 @@
 #include "common.h"
+#ifdef PM3DS_PORT_ROM_ADDRS
+#include "pm3ds_addr.h"
+#endif
 #include "audio.h"
 #include "audio/public.h"
 #include "nu/nusys.h"
@@ -29,9 +32,12 @@
 
 #if VERSION_PAL
 #define TITLE_LOGO_YOFFSET -110
-#define TITLE_START_TIME 400
 #else
 #define TITLE_LOGO_YOFFSET -100
+#endif
+#if PAL_TIMING // 3DS: NTSC timing (macros.h)
+#define TITLE_START_TIME 400
+#else
 #define TITLE_START_TIME 480
 #endif
 
@@ -186,8 +192,23 @@ void state_init_title_screen(void) {
     TitleScreen_ImgList_CopyrightPalette = (s32*)(TitleScreen_ImgList->copyrightPalette + (s32) TitleScreen_ImgList);
 #endif
 #if VERSION_PAL
+#ifdef PM3DS_PORT_ROM_ADDRS
+    // 3DS port: titlemenu_DATA_SIZE/_ROM_START were weak stubs (the size
+    // was a symbol ADDRESS, ~1.7 MB). Real PAL segment: 0x2596C0..0x25C5A0,
+    // headed by a big-endian offset table (4 languages x {startGame, languages}).
+    TitleMenu_ImgList = heap_malloc(0x25C5A0 - 0x2596C0);
+    dma_copy((u8*)PM3DS_ROM(0x2596C0), (u8*)PM3DS_ROM(0x25C5A0), TitleMenu_ImgList);
+    {
+        u32* hdr = (u32*)TitleMenu_ImgList;
+        s32 k;
+        for (k = 0; k < 10; k++) {
+            hdr[k] = __builtin_bswap32(hdr[k]);
+        }
+    }
+#else
     TitleMenu_ImgList = heap_malloc((s32)titlemenu_DATA_SIZE);
     dma_copy(titlemenu_ROM_START, titlemenu_ROM_END, TitleMenu_ImgList);
+#endif
     TitleMenu_ImgList_StartGame = (u8*)(TitleMenu_ImgList[gCurrentLanguage].startGame + (s32) TitleMenu_ImgList);
     TitleMenu_ImgList_Languages = (u8*)(TitleMenu_ImgList[gCurrentLanguage].languages + (s32) TitleMenu_ImgList);
 #endif

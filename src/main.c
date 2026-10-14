@@ -97,6 +97,13 @@ void boot_main(void* data) {
     gRandSeed += osGetCount();
     nuGfxDisplayOn();
 
+#ifdef _3DS
+    // The port's frame loop drives the game from here on. Park this thread
+    // asleep instead of spinning: the empty loop kept core 0 busy at 100%
+    // in every idle moment (battery, heat).
+    void pm3ds_park_thread(void);
+    pm3ds_park_thread();
+#endif
     while (true) {}
 }
 

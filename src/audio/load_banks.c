@@ -7,6 +7,9 @@ void au_load_BK_headers(AuGlobals* globals, ALHeap* heap) {
     s32 i;
 
     au_read_rom(globals->bkFileListOffset, &buffer, globals->bkListLength);
+#ifdef PM3DS_PORT_ROM_ADDRS
+    { void pm3ds_au_swap_bank_list(InitBankEntry* e, s32 size); pm3ds_au_swap_bank_list(buffer, globals->bkListLength); }
+#endif
 
     for (i = 0; i < ARRAY_COUNT(buffer); i++) {
         if (buffer[i].fileIndex == 0xFFFF) {

@@ -730,7 +730,7 @@ void filemenu_draw_message(u8* message, s32 x, s32 y, s32 alpha, s32 color, u32 
         }
     }
 
-    if ((s32) message < 0) {
+    if (!MSG_IS_ID(message)) {
         u8* tmp;
         filemenu_draw_char(0xF3, x, y, flag1, color, flag2);
         tmp = message;

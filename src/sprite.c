@@ -955,6 +955,22 @@ s32 spr_draw_player_sprite(s32 spriteInstanceID, s32 yaw, s32 alphaIn, PAL_PTR* 
     }
 
     components = CurPlayerAnimInfo[instanceIdx].componentList;
+#ifdef PM3DS_TITLE_DBG
+    {
+        u32 c = (u32)components;
+        u32 sh = (u32)&heap_spriteHead, gh = (u32)&heap_generalHead;
+        if ((c < sh || c >= sh + SPRITE_HEAP_SIZE) && (c < gh || c >= gh + GENERAL_HEAP_SIZE)) {
+            static s32 n;
+            if (n++ < 6) {
+                extern void pm3ds_log(int, const char*, ...);
+                pm3ds_log(3, "SPRDBG bad components=%p inst=%d anim=%08X spr=%d data=%p ctx=%d",
+                          (void*)components, instanceIdx, (unsigned)animID, spriteIdx,
+                          (void*)PlayerSprites[spriteIdx], gGameStatusPtr->context);
+            }
+            return false;
+        }
+    }
+#endif
     if (spriteInstanceID & DRAW_SPRITE_OVERRIDE_PALETTES) {
         palettes = paletteList;
     }

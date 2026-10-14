@@ -44,6 +44,15 @@ void appendGfx_draw_prev_frame_buffer(s32 x1, s32 y1, s32 x2, s32 y2, f32 alpha)
             prevGfxCfb = nuGfxCfb[(i + nuGfxCfbNum - 1) % nuGfxCfbNum];
         }
     }
+#if defined(_3DS) && !defined(PM3DS_NO_PREVCAP)
+    // The port renders on the GPU, so the N64 colour buffers stay empty: copy
+    // the frame now on screen (the previous one) into this buffer before the
+    // list that samples it is drawn (battle-start blur, Dizzy Dial, fireworks).
+    if (prevGfxCfb != nullptr) {
+        extern void pm3ds_request_frame_capture(u16* dst);
+        pm3ds_request_frame_capture(prevGfxCfb);
+    }
+#endif
 
     gDPSetCycleType(gMainGfxPos++, G_CYC_1CYCLE);
     gDPSetCombineMode(gMainGfxPos++, PM_CC_10, PM_CC_10);
@@ -126,6 +135,64 @@ void draw_prev_frame_buffer_at_screen_pos(s32 x1, s32 y1, s32 x2, s32 y2, f32 al
     }
 }
 
+#ifdef _3DS
+extern u8 ui_stencil_blurry_circle_png[];
+
+// The stencil passes below render into nuGfxZBuffer as a 64x64 colour image,
+// which the port's GPU translator does not do (it only draws to the screen),
+// so the darkness overlay sampled an empty buffer and dark rooms stayed lit.
+// Build the same 64x64 I8 image on the CPU: the canvas is the top-left
+// quadrant of the stencil (circle centre at its bottom-right corner); a white
+// fill, then each pass multiplies by the mirrored blurry-circle texture under
+// a rotation and a slightly wobbling scale (G_RM_CLD_SURF with alpha 1 - T);
+// the I8 copy keeps the red channel.
+static void pm3ds_build_darkness_stencil(void) {
+    u8* out = (u8*)nuGfxZBuffer;
+    const u8* tex = ui_stencil_blurry_circle_png;
+    f32 scale[2], sinA[2], cosA[2];
+    s32 i, px, py;
+
+    scale[0] = 0.9 - sin_deg(gGameStatusPtr->frameCounter) * 0.05;
+    scale[1] = 0.9 - sin_deg(gGameStatusPtr->frameCounter * 2 + 40) * 0.07;
+    for (i = 0; i < 2; i++) {
+        sinA[i] = sin_deg(i * 70);
+        cosA[i] = cos_deg(i * 70);
+    }
+
+    for (py = 0; py < 64; py++) {
+        for (px = 0; px < 64; px++) {
+            // pixel centre -> view space of guOrtho(-16, 0, 0, 16)
+            f32 vx = -16.0f + (px + 0.5f) * 0.25f;
+            f32 vy = 16.0f - (py + 0.5f) * 0.25f;
+            f32 value = 1.0f;
+
+            for (i = 0; i < 2; i++) {
+                // undo the rotation, then the scale
+                f32 mx = (vx * cosA[i] + vy * sinA[i]) / scale[i];
+                f32 my = (-vx * sinA[i] + vy * cosA[i]) / scale[i];
+                s32 s, t;
+
+                if (mx < -16.0f || mx > 16.0f || my < -16.0f || my > 16.0f) {
+                    continue;   // outside the quad: this pass leaves the pixel alone
+                }
+                s = (s32)((mx + 16.0f) * 4.0f);
+                t = (s32)((my + 16.0f) * 4.0f);
+                s = s < 0 ? 0 : (s > 127 ? 127 : s);
+                t = t < 0 ? 0 : (t > 127 ? 127 : t);
+                if (s >= 64) {
+                    s = 127 - s;
+                }
+                if (t >= 64) {
+                    t = 127 - t;
+                }
+                value *= tex[t * 64 + s] / 255.0f;
+            }
+            out[py * 64 + px] = (u8)(value * 255.0f + 0.5f);
+        }
+    }
+}
+#endif
+
 void appendGfx_darkness_stencil(bool isWorld, s32 posX, s32 posY, f32 alpha, f32 progress) {
     Camera* camera = &gCameras[gCurrentCameraID];
     f32 texScale, f24;
@@ -184,6 +251,9 @@ void appendGfx_darkness_stencil(bool isWorld, s32 posX, s32 posY, f32 alpha, f32
         gSPPopMatrix(gMainGfxPos++, G_MTX_MODELVIEW);
     }
 
+#ifdef _3DS
+    pm3ds_build_darkness_stencil();
+#endif
     gDPPipeSync(gMainGfxPos++);
     gDPSetTexturePersp(gMainGfxPos++, G_TP_NONE);
     gDPSetColorImage(gMainGfxPos++, G_IM_FMT_I, G_IM_SIZ_8b, 64, osVirtualToPhysical(nuGfxZBuffer));

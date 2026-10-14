@@ -73,6 +73,21 @@ void update_cameras(void) {
             }
 
             guMtxCatF(cam->mtxViewPlayer, cam->mtxPerspective, cam->mtxPerspective);
+#ifdef PM3DS_TITLE_DBG
+            {   // 3DS port: camera sanity probe
+                extern void pm3ds_log(int, const char*, ...);
+                static int calls, shots;
+                if (i == CAM_DEFAULT && (calls++ % 240) == 120 && shots < 8) {
+                    shots++;
+                    pm3ds_log(2, "CAMDBG flags=%X vfov=%.2f vp=%dx%d clip=%d..%d eye=(%.1f,%.1f,%.1f) obj=(%.1f,%.1f,%.1f) P00=%.4f P11=%.4f P22=%.4f P32=%.2f V00=%.3f",
+                              (unsigned)cam->flags, cam->vfov, cam->viewportW, cam->viewportH, cam->nearClip, cam->farClip,
+                              cam->lookAt_eye.x, cam->lookAt_eye.y, cam->lookAt_eye.z,
+                              cam->lookAt_obj.x, cam->lookAt_obj.y, cam->lookAt_obj.z,
+                              cam->mtxPerspective[0][0], cam->mtxPerspective[1][1], cam->mtxPerspective[2][2],
+                              cam->mtxPerspective[3][2], cam->mtxViewPlayer[0][0]);
+                }
+            }
+#endif
         } else {
             f32 w = cam->viewportW;
             f32 h = cam->viewportH;

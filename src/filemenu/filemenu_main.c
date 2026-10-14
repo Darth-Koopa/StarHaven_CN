@@ -801,6 +801,29 @@ void filemenu_main_init(MenuPanel* menu) {
 void filemenu_main_handle_input(MenuPanel* menu) {
     s32 originalSelected = menu->selected;
     s32 i;
+#ifdef _3DS
+    // 3DS port: an empty file opens the new-game picker (Classic or
+    // Randomizer, platform/bottom_screen.c) first; once a mode is chosen
+    // this presses A on the file again, on to name entry
+    s32 newGameChosen = false;
+    {
+        extern int pm3ds_new_game_picker(int* sound);
+        static const s32 sounds[] = { 0, SOUND_FILE_MENU_MOVE_CURSOR, SOUND_MENU_NEXT, SOUND_MENU_BACK,
+                                      SOUND_MENU_CHANGE_TAB };
+        int sound;
+        int state = pm3ds_new_game_picker(&sound);
+        if (sound > 0 && sound < ARRAY_COUNT(sounds)) {
+            sfx_play_sound(sounds[sound]);
+        }
+        if (state < 0) {
+            return;
+        }
+        if (state == 1 && menu->state == FM_MAIN_SELECT_FILE) {
+            newGameChosen = true;
+            filemenu_pressedButtons = BUTTON_A;
+        }
+    }
+#endif
 
     if (filemenu_heldButtons & BUTTON_STICK_LEFT) {
         while (true) {
@@ -937,6 +960,14 @@ void filemenu_main_handle_input(MenuPanel* menu) {
                 if (cond) {
                     // selected a file with no data
                     MenuPanel* inputMenu;
+#ifdef _3DS
+                    if (!newGameChosen) {
+                        extern void pm3ds_new_game_picker_open(void);
+                        sfx_play_sound(SOUND_MENU_NEXT);
+                        pm3ds_new_game_picker_open();
+                        break;
+                    }
+#endif
                     for (i = 0; i < ARRAY_COUNT(filemenu_filename); i++) {
                         filemenu_filename[i] = MSG_CHAR_READ_SPACE;
                     }

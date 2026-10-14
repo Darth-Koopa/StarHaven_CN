@@ -372,10 +372,55 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
                     case FM_CONFIRM_CREATE:
                         clear_player_data();
                         clear_saved_variables();
+#ifdef _3DS
+                        {   // 3DS port: roll a randomizer seed if the option is on
+                            extern void pm3ds_rando_new_game(void);
+                            pm3ds_rando_new_game();
+                        }
+#endif
                         gGameStatusPtr->areaID = AREA_KMR;
                         gGameStatusPtr->mapID = 11; //TODO hardcoded area/map IDs
                         gGameStatusPtr->entryID = 0;
                         evt_set_variable(nullptr, GB_StoryProgress, STORY_INTRO);
+#ifdef PM3DS_START_MAP
+                        // debug builds only: New Game drops into a chosen map
+                        // (EXTRA_CFLAGS="-DPM3DS_START_AREA=.. -DPM3DS_START_MAP=..
+                        //  -DPM3DS_START_ENTRY=.. -DPM3DS_START_STORY=..")
+                        gGameStatusPtr->areaID = PM3DS_START_AREA;
+                        gGameStatusPtr->mapID = PM3DS_START_MAP;
+                        gGameStatusPtr->entryID = PM3DS_START_ENTRY;
+                        evt_set_variable(nullptr, GB_StoryProgress, PM3DS_START_STORY);
+#ifndef PM3DS_START_BARE   /* bare: keep the New Game state (no hammer/partner), e.g. for the prologue */
+                        gPlayerData.hammerLevel = 0;
+                        gPlayerData.partners[PARTNER_GOOMBARIO].enabled = true;
+                        gPlayerData.curPartner = PARTNER_GOOMBARIO;
+#endif
+#ifdef PM3DS_START_INVENTORY
+                        {   // debug builds only: something in every menu (items, badges, partners, coins)
+                            static const s16 items[] = { ITEM_MUSHROOM, ITEM_SUPER_SHROOM, ITEM_FIRE_FLOWER,
+                                ITEM_HONEY_SYRUP, ITEM_POW_BLOCK, ITEM_DIZZY_DIAL };
+                            static const s16 badges[] = { ITEM_POWER_JUMP, ITEM_POWER_SMASH, ITEM_QUAKE_HAMMER,
+                                ITEM_SPEEDY_SPIN };
+                            static const s8 partners[] = { PARTNER_GOOMBARIO, PARTNER_KOOPER, PARTNER_BOMBETTE,
+                                PARTNER_PARAKARRY, PARTNER_BOW, PARTNER_WATT, PARTNER_SUSHIE, PARTNER_LAKILESTER };
+                            s32 k;
+                            for (k = 0; k < ARRAY_COUNT(items); k++) {
+                                gPlayerData.invItems[k] = items[k];
+                            }
+                            for (k = 0; k < ARRAY_COUNT(badges); k++) {
+                                gPlayerData.badges[k] = badges[k];
+                            }
+                            for (k = 0; k < ARRAY_COUNT(partners); k++) {
+                                gPlayerData.partners[partners[k]].enabled = true;
+                            }
+                            gPlayerData.coins = 500;
+                            evt_set_variable(nullptr, GF_Tutorial_SwapTurnOrder, true);
+                            gPlayerData.maxBP = 10;
+                            gPlayerData.hammerLevel = 0;
+                            gPlayerData.bootsLevel = 0;
+                        }
+#endif
+#endif
 
                         slot2 = filemenu_menus[FILE_MENU_MAIN]->selected;
                         for (i = 0; i < ARRAY_COUNT(gSaveSlotMetadata->filename); i++) {

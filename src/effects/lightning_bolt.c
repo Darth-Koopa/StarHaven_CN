@@ -281,6 +281,18 @@ void lightning_bolt_appendGfx(void* effect) {
             }
         }
 
+#ifdef PM3DS_UBSAN_FLOAT
+        if (!(edgeAngle > -1.0e6f && edgeAngle < 1.0e6f)) {
+            void pm3ds_log(int, const char*, ...);
+            static s32 n;
+            if (n++ < 6) {
+                pm3ds_log(3, "BOLT i=%d angle=%f life=%d type=%d preset=%p (tab %p) pos[%d]=%f,%f pos0=%f,%f",
+                          i, (double)edgeAngle, (int)lifetime, (int)type, (void*)preset, (void*)D_E00BCE40[0],
+                          i, (double)data->boltVertexPosX[i], (double)data->boltVertexPosY[i],
+                          (double)data->boltVertexPosX[0], (double)data->boltVertexPosY[0]);
+            }
+        }
+#endif
         edgeLength *= (widthScale * data->edgeLength[i]);
         texOffsetX = (128 - i * 12) * 32;
         edgeDeltaX = edgeLength  * sin_deg(edgeAngle);

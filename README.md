@@ -1,39 +1,35 @@
-# Paper Mario
+# Star Haven
 
-[![Build Status][jenkins-badge]][jenkins]
-[![Discord Channel][discord-badge]][discord]
+A native Nintendo 3DS port of **Paper Mario** (Nintendo 64), built from the
+[Paper Mario decompilation](https://github.com/pmret/papermario). The game's own C code runs
+on the 3DS; nothing is emulated.
 
-This is a work-in-progress decompilation of Paper Mario.
+- EU and US versions in one package
+- 60 fps (in-between frames), or the original 30
+- Fast-forward and faster text
+- Touch bottom screen: stats, map, party, items, battle menus
+- Original, Fill or Wide screen, 3D slider, remappable buttons
+- A randomizer, chosen per save file
 
-It builds the following ROMs:
+**Star Haven contains no game data.** You need your own ROM of the game; see
+[the player readme](port/3ds/RELEASE_README.md) for what you need and how to install.
+Downloads are on the [Releases](../../releases) page.
 
-| Region | SHA1 hash                                  | Progress                                                 |
-|:------:|--------------------------------------------|:--------------------------------------------------------:|
-| US     | `3837f44cda784b466c9a2d99df70d77c322b97a0` | [![Progress (US)][progress-us-badge]][progress-us]       |
-| JP     | `b9cca3ff260b9ff427d981626b82f96de73586d3` | [![Progress (JP)][progress-jp-badge]][progress-jp]       |
-| PAL    | `2111d39265a317414d359e35a7d971c4dfa5f9e1` | [![Progress (PAL)][progress-pal-badge]][progress-pal]    |
-| iQue   | `5c724685085eba796537573dd6f84aaddedc8582` | [![Progress (iQue)][progress-ique-badge]][progress-ique] |
+## Building
 
-To set up the repository, see [SETUP.md](SETUP.md).
+See [port/3ds/README.md](port/3ds/README.md). Everything builds in a Docker image with
+devkitARM, libctru and citro3d, and needs your own ROMs in `ver/pal/` and `ver/us/`.
 
-Please see [CONTRIBUTING.md](CONTRIBUTING.md) for information on how to contribute to the project. Any and all help is welcome!
+## Layout
 
-Also see our website at [papermar.io](https://papermar.io/).
+| | |
+|---|---|
+| `port/3ds/` | the 3DS port: platform layer, renderer, audio, tools, packaging |
+| `src/`, `include/`, `ver/` | the decompilation, with port changes under `#ifdef _3DS` |
+| `DECOMP_README.md` | the decompilation's own readme |
 
-[jenkins]: https://jenkins.deco.mp/job/papermario/job/main
-[jenkins-badge]: https://img.shields.io/jenkins/build?jobUrl=https%3A%2F%2Fjenkins.deco.mp%2Fjob%2Fpapermario%2Fjob%2Fmain
+## Legal
 
-[progress-us]: https://papermar.io/progress-us
-[progress-us-badge]: https://img.shields.io/endpoint?url=https://papermar.io/reports/progress_us_shield.json
-
-[progress-jp]: https://papermar.io/progress-jp
-[progress-jp-badge]: https://img.shields.io/endpoint?url=https://papermar.io/reports/progress_jp_shield.json
-
-[progress-pal]: https://papermar.io/progress-pal
-[progress-pal-badge]: https://img.shields.io/endpoint?url=https://papermar.io/reports/progress_pal_shield.json
-
-[progress-ique]: https://papermar.io/progress-ique
-[progress-ique-badge]: https://img.shields.io/endpoint?url=https://papermar.io/reports/progress_ique_shield.json
-
-[discord]: https://discord.gg/PgcMpQTzh5
-[discord-badge]: https://img.shields.io/discord/1141775228440158338?color=%237289DA&logo=discord&logoColor=ffffff
+Star Haven is a fan project. It is not affiliated with or endorsed by Nintendo. *Paper Mario*
+is a trademark of Nintendo. Release packages contain no Nintendo game data: images, models,
+sounds and text are read from the player's own ROM at startup.

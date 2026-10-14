@@ -1,5 +1,10 @@
 #include "mac_01.h"
 
+#ifdef _3DS
+// the randomizer's badge in this slot (port/3ds/source/n64_shim/rando.c)
+void pm3ds_rando_rowf(ShopItemData* entry);
+#endif
+
 API_CALLABLE(N(HideRowfBadge)) {
     s32 itemIndex = evt_get_variable(script, *script->ptrReadPos);
 
@@ -56,6 +61,9 @@ API_CALLABLE(N(CreateShopInventory)) {
             inventory[count].itemID = itemID;
             inventory[count].price = gItemTable[itemID].sellValue;
             inventory[count].descMsg = mac_01_RowfBadgeInventory[shopIdx].descMsg;
+#ifdef _3DS
+            pm3ds_rando_rowf(&inventory[count]);
+#endif
             buyFlags[count] = varBaseHasBought + shopIdx;
 
             evt_set_variable(script, GB_MAC01_Rowf_Badge0 + count, shopIdx);
@@ -80,6 +88,9 @@ API_CALLABLE(N(CreateShopInventory)) {
             inventory[i].itemID = itemID;
             inventory[i].price = gItemTable[itemID].sellValue;
             inventory[i].descMsg = mac_01_RowfBadgeInventory[shopIdx].descMsg;
+#ifdef _3DS
+            pm3ds_rando_rowf(&inventory[i]);
+#endif
             buyFlags[i] = varBaseHasBought + shopIdx;
         }
         script->varTable[3] = true;

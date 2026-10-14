@@ -99,6 +99,97 @@ void initialize_collision(void) {
     collision_heap_create();
 }
 
+#ifdef _3DS
+/* 3DS port (M12): hit files are raw big-endian. Swap one decoded file in
+ * place, field by field, so load_hit_data below runs unmodified:
+ *   HitFile           u32 collisionOffset, u32 zoneOffset
+ *   HitFileHeader     s16,pad,s32, s16,pad,s32, s16,pad,s32
+ *   bounding boxes    u32 words (Vec3f min/max + u32 flags)
+ *   vertices          Vec3s
+ *   HitAssetCollider  s16 x4, s32 trianglesOffset
+ *   triangles         packed s32 per triangle                          */
+static void hit_swap16(u8* p) { u8 t = p[0]; p[0] = p[1]; p[1] = t; }
+static void hit_swap32(u8* p) { u8 t = p[0]; p[0] = p[3]; p[3] = t; t = p[1]; p[1] = p[2]; p[2] = t; }
+
+static void hit_swap_section(u8* base, u32 size, u32 off) {
+    HitFileHeader* h;
+    HitAssetCollider* c;
+    s32 i, j;
+
+    if (off == 0 || off + sizeof(HitFileHeader) > size) {
+        return;
+    }
+    h = (HitFileHeader*)(base + off);
+    hit_swap16((u8*)&h->numColliders);
+    hit_swap32((u8*)&h->collidersOffset);
+    hit_swap16((u8*)&h->numVertices);
+    hit_swap32((u8*)&h->verticesOffset);
+    hit_swap16((u8*)&h->boundingBoxesDataSize);
+    hit_swap32((u8*)&h->boundingBoxesOffset);
+
+    if ((u32)h->boundingBoxesOffset + (u32)h->boundingBoxesDataSize * 4 <= size) {
+        for (i = 0; i < h->boundingBoxesDataSize; i++) {
+            hit_swap32(base + h->boundingBoxesOffset + i * 4);
+        }
+    }
+    if ((u32)h->verticesOffset + (u32)h->numVertices * 6 <= size) {
+        for (i = 0; i < h->numVertices * 3; i++) {
+            hit_swap16(base + h->verticesOffset + i * 2);
+        }
+    }
+    if ((u32)h->collidersOffset + (u32)h->numColliders * sizeof(HitAssetCollider) > size) {
+        return;
+    }
+    for (i = 0, c = (HitAssetCollider*)(base + h->collidersOffset); i < h->numColliders; i++, c++) {
+        hit_swap16((u8*)&c->boundingBoxOffset);
+        hit_swap16((u8*)&c->nextSibling);
+        hit_swap16((u8*)&c->firstChild);
+        hit_swap16((u8*)&c->numTriangles);
+        hit_swap32((u8*)&c->trianglesOffset);
+        if ((u32)c->trianglesOffset + (u32)c->numTriangles * 4 <= size) {
+            for (j = 0; j < c->numTriangles; j++) {
+                hit_swap32(base + c->trianglesOffset + j * 4);
+            }
+        }
+    }
+}
+
+static void hit_fix_endian(HitFile* hit, u32 size) {
+    hit_swap32((u8*)&hit->collisionOffset);
+    hit_swap32((u8*)&hit->zoneOffset);
+    hit_swap_section((u8*)hit, size, hit->collisionOffset);
+    if (hit->zoneOffset != hit->collisionOffset) {
+        hit_swap_section((u8*)hit, size, hit->zoneOffset);
+    }
+}
+#endif
+
+#ifdef PM3DS_COLLIDER_CHECK
+/* debug: first moment any world collider triangle points outside the heap */
+void pm3ds_validate_collision(const char* where) {
+    extern HeapNode heap_collisionHead;
+    extern void pm3ds_log(int, const char*, ...);
+    static s32 reported;
+    u32 ch = (u32)&heap_collisionHead;
+    if (reported || gCollisionData.colliderList == nullptr) {
+        return;
+    }
+    for (s32 i = 0; i < gCollisionData.numColliders; i++) {
+        Collider* c = &gCollisionData.colliderList[i];
+        ColliderTriangle* t = c->triangleTable;
+        for (s32 k = 0; k < c->numTriangles; k++, t++) {
+            u32 a = (u32)t->v1, b = (u32)t->v2, d = (u32)t->v3;
+            if (a - ch >= COLLISION_HEAP_SIZE || b - ch >= COLLISION_HEAP_SIZE || d - ch >= COLLISION_HEAP_SIZE) {
+                reported = 1;
+                pm3ds_log(3, "COLVALID bad at '%s': collider %d tri %d &tri=%p v=%08X %08X %08X",
+                          where, i, k, (void*)t, a, b, d);
+                return;
+            }
+        }
+    }
+}
+#endif
+
 void load_map_hit_asset(void) {
     u32 assetSize;
     MapSettings* map = get_current_map_settings();
@@ -107,12 +198,21 @@ void load_map_hit_asset(void) {
 
     decode_yay0(compressedData, uncompressedData);
     general_heap_free(compressedData);
+#ifdef _3DS
+    hit_fix_endian(uncompressedData, assetSize);
+#endif
 
     map->hitAssetCollisionOffset = uncompressedData->collisionOffset;
     map->hitAssetZoneOffset = uncompressedData->zoneOffset;
 
     load_hit_data(0, uncompressedData); // Colliders
+#ifdef PM3DS_COLLIDER_CHECK
+    pm3ds_validate_collision("after load colliders");
+#endif
     load_hit_data(1, uncompressedData); // Zones
+#ifdef PM3DS_COLLIDER_CHECK
+    pm3ds_validate_collision("after load zones");
+#endif
 
     heap_free(uncompressedData);
 }
@@ -159,6 +259,9 @@ void load_battle_hit_asset(const char* hitName) {
 
         decode_yay0(compressedData, uncompressedData);
         general_heap_free(compressedData);
+#ifdef _3DS
+        hit_fix_endian(uncompressedData, assetSize);
+#endif
 
         map->hitAssetCollisionOffset = uncompressedData->collisionOffset;
 
@@ -184,6 +287,7 @@ void load_hit_data(s32 idx, HitFile* hit) {
     s16 numTriangles;
     s32 i,j;
     f32 e13_y, e21_z, e13_z, e21_y, e21_x, e13_x, normalX, normalY, normalZ, coeff;
+
 
     assetCollisionData = nullptr;
     collisionData = nullptr;
@@ -303,6 +407,12 @@ void load_hit_data(s32 idx, HitFile* hit) {
 }
 
 void parent_collider_to_model(s16 colliderID, s16 modelIndex) {
+#ifdef PM3DS_PORT_ROM_ADDRS
+    /* 3DS port: collision load deferred (M10.3) — see load_hit_data. */
+    if (gCollisionData.colliderList == NULL) {
+        return;
+    }
+#endif
     Collider* collider;
     ColliderTriangle* triangle;
     s32 i;
@@ -312,6 +422,16 @@ void parent_collider_to_model(s16 colliderID, s16 modelIndex) {
     Vec3f* vertexTable;
     Vec3f* vertex;
 
+#ifdef PM3DS_COLLIDER_CHECK
+    {
+        extern void pm3ds_log(int, const char*, ...);
+        Collider* c = &gCollisionData.colliderList[colliderID];
+        pm3ds_log(2, "PARENTCOL collider %d of %d -> model %d tris=%d tt=%p",
+                  colliderID, gCollisionData.numColliders, modelIndex,
+                  colliderID < gCollisionData.numColliders ? c->numTriangles : -1,
+                  colliderID < gCollisionData.numColliders ? (void*)c->triangleTable : nullptr);
+    }
+#endif
     collider = &gCollisionData.colliderList[colliderID];
     collider->parentModelIndex = modelIndex;
     collider->flags |= COLLIDER_FLAG_HAS_MODEL_PARENT;
@@ -343,6 +463,9 @@ void parent_collider_to_model(s16 colliderID, s16 modelIndex) {
     }
 
     collision_heap_free(vertexBuffer);
+#ifdef PM3DS_COLLIDER_CHECK
+    pm3ds_validate_collision("after parent_collider_to_model");
+#endif
 }
 
 void _add_hit_vert_to_buffer(Vec3f** buf, Vec3f* vert, s32* bufSize) {
@@ -374,6 +497,11 @@ s32 _get_hit_vert_index_from_buffer(Vec3f** buffer, Vec3f* vert, s32* bufferSize
 }
 
 void update_collider_transform(s16 colliderID) {
+#ifdef PM3DS_PORT_ROM_ADDRS
+    if (gCollisionData.colliderList == NULL) {
+        return;
+    }
+#endif
     Collider* collider;
     struct Model* model;
     Matrix4f matrix;
@@ -480,6 +608,12 @@ void get_flat_collider_normal(s32 colliderID, f32* x, f32* y, f32* z) {
 }
 
 void get_collider_center(s32 colliderID, f32* x, f32* y, f32* z) {
+#ifdef PM3DS_PORT_ROM_ADDRS
+    if (gCollisionData.colliderList == NULL) {
+        *x = *y = *z = 0.0f;
+        return;
+    }
+#endif
     ColliderBoundingBox* aabb = gCollisionData.colliderList[colliderID].aabb;
 
     *x = (aabb->min.x + aabb->max.x) * 0.5f;
@@ -800,6 +934,40 @@ s32 test_ray_colliders(s32 ignoreFlags, f32 startX, f32 startY, f32 startZ, f32 
     for (i = 0; i < collisionData->numColliders; i++) {
         collider = &collisionData->colliderList[i];
 
+#ifdef PM3DS_COLLIDER_CHECK
+        if (collider->numTriangles != 0) {
+            u32 a = (u32)collider->aabb;
+            extern HeapNode heap_collisionHead;
+            u32 ch = (u32)&heap_collisionHead, bh = (u32)&heap_battleHead;
+            if (!((a >= ch && a < ch + COLLISION_HEAP_SIZE) || (a >= bh && a < bh + BATTLE_HEAP_SIZE))) {
+                extern void pm3ds_log(int, const char*, ...);
+                static s32 n;
+                if (n++ < 6) {
+                    pm3ds_log(3, "COLCHECK ray: %s collider %d/%d aabb=%08X tri=%d list=%p ra=%p",
+                              collisionData == &gCollisionData ? "world" : collisionData == &gZoneCollisionData ? "zone" : "other",
+                              i, collisionData->numColliders, a, collider->numTriangles,
+                              (void*)collisionData->colliderList, __builtin_return_address(0));
+                }
+                continue;
+            }
+            {
+                ColliderTriangle* t = collider->triangleTable;
+                for (s32 k = 0; k < collider->numTriangles; k++, t++) {
+                    u32 p1 = (u32)t->v1, p3 = (u32)t->v3;
+                    if (p1 < ch || p1 >= ch + COLLISION_HEAP_SIZE || p3 < ch || p3 >= ch + COLLISION_HEAP_SIZE) {
+                        extern void pm3ds_log(int, const char*, ...);
+                        static s32 nt;
+                        if (nt++ < 4) {
+                            pm3ds_log(3, "COLCHECK tri: collider %d tri %d/%d v1=%08X v3=%08X tt=%p flags=%08X vtab=%p",
+                                      i, k, collider->numTriangles, p1, p3, (void*)collider->triangleTable,
+                                      collider->flags, (void*)collider->vertexTable);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+#endif
         if ((collider->flags & ignoreFlags) ||
             collider->numTriangles == 0     ||
             max_x < collider->aabb->min.x   ||

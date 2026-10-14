@@ -1755,7 +1755,14 @@ enum SoundTriggers {
     SOUND_TRIGGER_CHANGE_VOLUME = 2,
 };
 
+#ifdef _3DS
+// devkitARM enums are "small" (1 byte here), but au_load_song_files returns
+// the 4-char BGM name through this type: keep it 32-bit like on MIPS.
+typedef s32 AuResult;
+enum AuResultValues {
+#else
 typedef enum AuResult {
+#endif
     AU_RESULT_OK                        = 0,
     AU_ERROR_1                          = 1,
     AU_AMBIENCE_STOP_ERROR_1            = 1,
@@ -1773,7 +1780,11 @@ typedef enum AuResult {
     AU_ERROR_SBN_FORMAT_MISMATCH        = 102,
     AU_ERROR_151                        = 151,
     AU_ERROR_201                        = 201
+#ifdef _3DS
+};
+#else
 } AuResult;
+#endif
 
 typedef enum AuFileFormat {
     AU_FMT_BGM              = 0x10,

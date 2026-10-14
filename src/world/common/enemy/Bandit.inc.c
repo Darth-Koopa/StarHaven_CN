@@ -17,7 +17,7 @@ API_CALLABLE(N(Bandit_TetherStolenCoin)) {
 
         if (npcID == -1) {
             npc = get_npc_unsafe(script->owner2.npcID);
-        } else if (npcID >= EVT_LIMIT) {
+        } else if (!EVT_IS_PTR(npcID)) {
             npc = get_npc_unsafe(npcID);
         } else {
             npc = (Npc*)npcID;

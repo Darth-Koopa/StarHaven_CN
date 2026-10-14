@@ -1,0 +1,36 @@
+# ============================================================================
+# Paper Mario 3DS - Docker Compose Build
+# ============================================================================
+# Usage:
+#   docker-compose up --build
+# Or just:
+#   docker-compose run --rm builder
+# ============================================================================
+
+version: "3.8"
+
+services:
+  builder:
+    build:
+      context: ../..
+      dockerfile: port/3ds/Dockerfile
+    volumes:
+      - ../..:/project
+    environment:
+      - DEVKITPRO=/opt/devkitpro
+      - DEVKITARM=/opt/devkitpro/devkitARM
+    command: make -C /project/port/3ds
+
+  # Interactive shell for debugging build issues
+  shell:
+    build:
+      context: ../..
+      dockerfile: port/3ds/Dockerfile
+    volumes:
+      - ../..:/project
+    environment:
+      - DEVKITPRO=/opt/devkitpro
+      - DEVKITARM=/opt/devkitpro/devkitARM
+    entrypoint: /bin/bash
+    stdin_open: true
+    tty: true

@@ -1,4 +1,7 @@
 #include "common.h"
+#ifdef PM3DS_NATIVE_WORLD
+#include "animation_script.h"
+#endif
 #include "ld_addrs.h"
 #include "entity.h"
 #include "model.h"
@@ -900,6 +903,23 @@ void reload_world_entity_data(void) {
 }
 
 void entity_swizzle_anim_pointers(EntityBlueprint* entityData, void* baseAnim, void* baseGfx) {
+#ifdef PM3DS_NATIVE_WORLD
+    // 3DS port: entity models (src/entity/model/*_anim.c) are linked in, so
+    // their nodes already hold real pointers instead of segment offsets.
+    // Only the ENTITY_ANIM_NULL sentinels need turning into nullptr, which is
+    // idempotent, so running this on the shared static data more than once
+    // is harmless.
+    StaticAnimatorNode** list = entityData->modelAnimationNodes;
+    for (; *list != ENTITY_ANIM_NULL && *list != nullptr; list++) {
+        StaticAnimatorNode* n = *list;
+        if (n->displayList == ENTITY_ANIM_NULL) n->displayList = nullptr;
+        if (n->sibling == ENTITY_ANIM_NULL) n->sibling = nullptr;
+        if (n->child == ENTITY_ANIM_NULL) n->child = nullptr;
+        if (n->vtxList == ENTITY_ANIM_NULL) n->vtxList = nullptr;
+    }
+    if (*list == ENTITY_ANIM_NULL) *list = nullptr;
+    return;
+#endif
     StaticAnimatorNode* node;
     s32* ptr = (s32*)((s32)baseAnim + (s32)entityData->modelAnimationNodes);
 
@@ -1127,6 +1147,12 @@ void load_split_entity_data(Entity* entity, EntityBlueprint* entityData, s32 lis
         return;
     }
     animationScript = entityData->renderCommandList;
+#ifdef PM3DS_NATIVE_WORLD
+    // linked-in model data: absolute pointers, no heap copy to rebase against
+    animBaseAddr = nullptr;
+    entity->gfxBaseAddr = nullptr;
+    swizzlePointers = true;
+#endif
     animationNodes = (StaticAnimatorNode**)((s32)animBaseAddr + (s32)entityData->modelAnimationNodes);
     if (swizzlePointers) {
         entity_swizzle_anim_pointers(entityData, animBaseAddr, entity->gfxBaseAddr);

@@ -7,7 +7,12 @@ u32 effect_prng_seed = 0x1E6D3457;
 void* effectFuncs[] = {
     guRotateF, guTranslateF, guTranslate, guScaleF, guMtxCatF, guMtxF2L, guMtxL2F, queue_render_task,
     create_effect_instance, remove_effect, general_heap_malloc, mem_clear, nullptr, rand_int, clamp_angle, sin_deg,
-    cos_deg, atan2, npc_raycast_down_sides, load_effect, sqrtf, mdl_draw_hidden_panel_surface, is_point_visible,
+#ifdef _3DS
+    // atan2 is a function-like macro for pm_atan2; the bare name is libm's atan2
+    cos_deg, pm_atan2, npc_raycast_down_sides,
+#else
+    cos_deg, atan2, npc_raycast_down_sides,
+#endif load_effect, sqrtf, mdl_draw_hidden_panel_surface, is_point_visible,
     guPerspectiveF, guMtxIdentF, transform_point, guLookAtHiliteF, set_screen_overlay_params_back,
     set_screen_overlay_center, set_screen_overlay_center_worldpos, mdl_get_next_texture_address, guPositionF, guOrthoF,
     guFrustumF, draw_prev_frame_buffer_at_screen_pos, draw_box, draw_msg, get_msg_width, mdl_get_shroud_tint_params, sfx_play_sound_at_position

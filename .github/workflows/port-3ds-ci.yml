@@ -1,0 +1,92 @@
+name: port-3ds CI
+
+# Triggers only on changes to the port/3ds tree, decomp include/ and src/
+# (since the cross-build pulls them in), or this workflow file. No
+# pull_request_target — we deliberately do not give untrusted forks
+# access to repository secrets. No user-controlled inputs are used in
+# any `run:` step.
+on:
+  push:
+    paths:
+      - 'port/3ds/**'
+      - 'include/**'
+      - 'src/**'
+      - '.github/workflows/port-3ds-ci.yml'
+  pull_request:
+    paths:
+      - 'port/3ds/**'
+      - 'include/**'
+      - 'src/**'
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    name: Host-side shim unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build and run tests
+        run: make -C port/3ds/tests run
+
+  lint:
+    name: Endian-access lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+      - run: python3 port/3ds/tools/check_endian_access.py
+
+  docker-build:
+    name: 3DS Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build Docker image
+        run: docker build -t papermario-3ds-builder -f port/3ds/Dockerfile .
+      - name: Build .3dsx
+        run: |
+          docker run --rm -v "$PWD":/project \
+            -e DEVKITPRO=/opt/devkitpro \
+            -e DEVKITARM=/opt/devkitpro/devkitARM \
+            -e PATH=/opt/devkitpro/devkitARM/bin:/opt/devkitpro/tools/bin:/usr/bin:/bin \
+            papermario-3ds-builder \
+            make -C /project/port/3ds
+      - name: Verify no unresolved libultra symbols
+        run: |
+          docker run --rm -v "$PWD":/project papermario-3ds-builder \
+            bash -c 'cd /project && python3 port/3ds/tools/check_undef_syms.py port/3ds/PaperMario3DS.elf'
+      - name: Upload .3dsx artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PaperMario3DS-3dsx
+          path: port/3ds/PaperMario3DS.3dsx
+
+  debug-dl-build:
+    name: 3DS build with PM3DS_DEBUG_DL=1
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build Docker image
+        run: docker build -t papermario-3ds-builder -f port/3ds/Dockerfile .
+      - name: Build .3dsx with debug DL
+        run: |
+          docker run --rm -v "$PWD":/project \
+            -e DEVKITPRO=/opt/devkitpro \
+            -e DEVKITARM=/opt/devkitpro/devkitARM \
+            -e PATH=/opt/devkitpro/devkitARM/bin:/opt/devkitpro/tools/bin:/usr/bin:/bin \
+            papermario-3ds-builder \
+            bash -c 'cd /project && make -C port/3ds clean && make -C port/3ds EXTRA_CFLAGS="-DPM3DS_DEBUG_DL=1"'
+
+  romfs-manifest-test:
+    name: Romfs manifest regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+      - run: python3 port/3ds/tests/test_romfs_manifest.py

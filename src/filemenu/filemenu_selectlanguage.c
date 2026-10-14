@@ -202,6 +202,19 @@ void filemenu_draw_pal_8024DAA0(MenuPanel* menu, s32 baseX, s32 baseY, s32 width
     func_filemenu_8024D710(3, menu, baseX, baseY, width, height, opacity, darkening);
 }
 
+
+#ifdef _3DS
+// The N64 copies from the frame to the end of the whole flag segment into a
+// one-frame buffer; copy exactly one 0x800-byte frame (frame 40 is the end
+// marker and copies nothing, as with the N64's zero-length read).
+static void filemenu_selectlanguage_load_flag_frame(s32 frame, void* dest) {
+    u8* start = (u8*)titlemenu_flags_ROM_START + frame * 0x800;
+    if (frame >= 0 && start + 0x800 <= (u8*)titlemenu_flags_ROM_END) {
+        dma_copy(start, start + 0x800, dest);
+    }
+}
+#endif
+
 void filemenu_selectlanguage_init(MenuPanel* menu) {
     s16 x;
     s16* posXPtr;
@@ -235,8 +248,13 @@ void filemenu_selectlanguage_init(MenuPanel* menu) {
 
     menu->initialized = 1;
     D_filemenu_8024F124 = 0;
+#ifdef _3DS
+    filemenu_selectlanguage_load_flag_frame(0, D_802517E0[0]);
+    filemenu_selectlanguage_load_flag_frame(1, D_802517E0[1]);
+#else
     dma_copy(titlemenu_flags_ROM_START, titlemenu_flags_ROM_END, D_802517E0[0]);
     dma_copy(titlemenu_flags_ROM_START + 0x800, titlemenu_flags_ROM_END, D_802517E0[1]);
+#endif
     D_filemenu_8024F128 = 2;
 }
 
@@ -361,7 +379,11 @@ void filemenu_selectlanguage_update(MenuPanel* menu) {
         D_filemenu_8024F128 = 0;
     }
 
+#ifdef _3DS
+    filemenu_selectlanguage_load_flag_frame(D_filemenu_8024F128, D_802517E0[D_filemenu_8024F124]);
+#else
     dma_copy(titlemenu_flags_ROM_START + (D_filemenu_8024F128 * 0x800), titlemenu_flags_ROM_END, D_802517E0[D_filemenu_8024F124]);
+#endif
 }
 
 void filemenu_selectlanguage_cleanup(MenuPanel* arg0) {
