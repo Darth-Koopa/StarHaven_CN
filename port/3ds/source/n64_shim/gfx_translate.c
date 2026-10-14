@@ -224,6 +224,37 @@ int pm3ds_gfx_dbg_vtx;
 float pm3ds_stereo_shift;              /* signed pixels at infinity, 0 = mono */
 #define PM3DS_STEREO_CONV 420.0f       /* ~ the field camera's distance to Mario */
 
+/* gSPModifyVertex: change one field of a loaded vertex (the underwater
+ * ripple moves its grid's corners in screen space this way). */
+static void handle_modifyvtx(gfx_state_t *st, const gfx_cmd_t *g) {
+    int where = (int)bf(g->w0, 16, 8);
+    int idx = (int)bf(g->w0, 0, 16) / 2;
+    if (idx >= GFX_VTX_POOL_SIZE) return;
+    gfx_vtx_t *d = &st->vtx[idx];
+    switch (where) {
+        case 0x10:   /* G_MWO_POINT_RGBA */
+            d->r = (uint8_t)(g->w1 >> 24); d->g = (uint8_t)(g->w1 >> 16);
+            d->b = (uint8_t)(g->w1 >> 8);  d->a = (uint8_t)g->w1;
+            break;
+        case 0x14:   /* G_MWO_POINT_ST, s10.5 */
+            d->s = (float)(int16_t)(g->w1 >> 16);
+            d->t = (float)(int16_t)g->w1;
+            break;
+        case 0x18: { /* G_MWO_POINT_XYSCREEN, s13.2 screen pixels */
+            float x = (int16_t)(g->w1 >> 16) * 0.25f, y = (int16_t)g->w1 * 0.25f;
+            const float vsx = st->vp_scale[0] * 0.25f, vtx_ = st->vp_trans[0] * 0.25f;
+            const float vsy = st->vp_scale[1] * 0.25f, vty = st->vp_trans[1] * 0.25f;
+            d->px = x * d->cw;
+            d->py = y * d->cw;
+            if (vsx != 0.0f) d->cx = (d->px - d->cw * vtx_) / vsx;
+            if (vsy != 0.0f) d->cy = -(d->py - d->cw * vty) / vsy;
+            break;
+        }
+        default:     /* G_MWO_POINT_ZSCREEN: unused by the game */
+            break;
+    }
+}
+
 static void handle_vtx(gfx_state_t *st, const gfx_cmd_t *g) {
     int n   = (int)bf(g->w0, 12, 8);
     int end = (int)bf(g->w0, 1, 7);
@@ -615,9 +646,12 @@ static void handle_setcimg(gfx_state_t *st, const gfx_cmd_t *g) {
     /* Only the 320-wide main framebuffer is drawn; the z-buffer clear and
      * render-to-texture targets (32x64 flame buffers, captures) are skipped,
      * except draw_box's tagged window targets, which get a GPU texture. */
-    bool screen = st->cimg_width == 320 && g->w1 != st->zimg_addr && !st->cimg_shading_pal;
+    bool copy = st->screen_copy_tag;   /* an image that gets a copy of the screen */
+    st->screen_copy_tag = false;
+    bool screen = !copy && st->cimg_width == 320 && g->w1 != st->zimg_addr && !st->cimg_shading_pal;
     bool rtt = !screen && st->box_rtt_tag;
     st->box_rtt_tag = false;
+    if (copy) gfx_backend_screen_copy(st, gfx_seg_resolve(st, g->w1), st->cimg_width);
     if (st->cimg_rtt) {
         gfx_backend_rtt_end(st);
         st->cimg_rtt = false;
@@ -829,8 +863,12 @@ int gfx_walk_dl(gfx_state_t *st, const void *dl) {
                 continue;
             case OP_NOOP:
                 if (g->w1 == PM3DS_GFX_TAG_BOX_RTT) st->box_rtt_tag = true;
+                if (g->w1 == PM3DS_GFX_TAG_SCREEN_COPY) st->screen_copy_tag = true;
                 break;
-            case OP_CULLDL: case OP_MODIFYVTX: case OP_SPNOOP:
+            case OP_MODIFYVTX:
+                handle_modifyvtx(st, g);
+                break;
+            case OP_CULLDL: case OP_SPNOOP:
             case OP_LOAD_UCODE: case OP_DMA_IO: case OP_SPECIAL_1: case OP_SPECIAL_2: case OP_SPECIAL_3:
             case OP_RDPLOADSYNC: case OP_RDPPIPESYNC: case OP_RDPTILESYNC: case OP_RDPFULLSYNC:
             case OP_RDPHALF_2:

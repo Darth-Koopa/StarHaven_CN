@@ -375,6 +375,16 @@ static int build(const gfx_state_t *st, bool two_cycle, stage_t *stages, int *la
     for (int cyc = 0; cyc < cycles; cyc++) {
         in_t r[4], a[4];
         decode_cycle(st, cyc, r, a);
+        if (!two_cycle) {
+            /* one texture fetch per pixel in 1-cycle mode: TEXEL1 is the
+             * same tile's texel (the next pixel's on the RDP), not tile + 1.
+             * The opening's PAPER MARIO logo (kmr_21) takes its alpha from
+             * TEXEL1 and showed as a white box. */
+            for (int i = 0; i < 4; i++) {
+                if (r[i].s == S_T1) r[i].s = S_T0;
+                if (a[i].s == S_T1) a[i].s = S_T0;
+            }
+        }
         uop_t ur[MAX_UOPS], ua[MAX_UOPS];
         int na = split_consts(ua, compile(st, 1, a[0], a[1], a[2], a[3], ua));
         if (cyc == 1 && n >= 1) {

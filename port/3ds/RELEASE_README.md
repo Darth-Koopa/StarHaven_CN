@@ -31,6 +31,11 @@ your ROM from the SD card when it starts.
 If the ROM is missing, unreadable or a version Star Haven doesn't know, both screens say
 what's wrong and how to fix it.
 
+**Updating from 1.0.0 or 1.0.1:** 1.0.2 has a new title ID (the old one was also used by
+other homebrew, and installing either one removed the other), so it installs next to the old
+version. Delete the old Star Haven in FBI (Titles) or System Settings → Data Management.
+Your saves are on the SD card and are kept.
+
 ## Controls
 
 | 3DS | Game |
@@ -96,7 +101,6 @@ where everything went. The seed is shown on the Stats tab.
 ## Known issues
 
 - A few N64 graphics effects are approximations.
-- While a menu window flips over, its contents are blank for a moment.
 
 ## Legal
 

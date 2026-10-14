@@ -81,6 +81,14 @@ API_CALLABLE(N(LoadTitleImage)) {
 
     decode_yay0(compressed, TitleData);
     general_heap_free(compressed);
+#ifdef _3DS
+    // The header's offsets are big-endian in the asset. The title screen's
+    // copy gets swapped by the port (m6_load_engine_data_wrap.c recognises
+    // its buffer); this one would point the logo 270 MB off.
+    TitleData->img_offset_title = __builtin_bswap32(TitleData->img_offset_title);
+    TitleData->img_offset_copyright = __builtin_bswap32(TitleData->img_offset_copyright);
+    TitleData->img_offset_press_start = __builtin_bswap32(TitleData->img_offset_press_start);
+#endif
     TitleImage = (IMG_PTR)(TitleData->img_offset_title + (s32)TitleData);
     create_worker_frontUI(nullptr, worker_render_title_image);
     return ApiStatus_DONE2;

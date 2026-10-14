@@ -129,6 +129,7 @@ typedef struct gfx_state {
     float    bg_wide_l, bg_wide_r;  /* ...these x (N64 pixels), with its wrapped texels */
     bool     cimg_rtt;              /* drawing a window's contents into the GPU texture */
     bool     box_rtt_tag;           /* PM3DS_GFX_TAG_BOX_RTT seen: the next SETCIMG is one */
+    bool     screen_copy_tag;       /* PM3DS_GFX_TAG_SCREEN_COPY seen: the next SETCIMG is one */
 
     /* --- bookkeeping ---------------------------------------------------- */
     uint32_t dirty;                 /* GFX_DIRTY_* for the backend */
@@ -160,6 +161,7 @@ void gfx_backend_flush(gfx_state_t *st);
  * false (draws stay dropped) when there is no such texture. */
 bool gfx_backend_rtt_begin(gfx_state_t *st, uint32_t addr, uint16_t width);
 void gfx_backend_rtt_end(gfx_state_t *st);
+void gfx_backend_screen_copy(gfx_state_t *st, uint32_t addr, uint16_t width);
 
 /* --- textures (gfx_texture.c) --------------------------------------------- */
 typedef struct gfx_tex_entry gfx_tex_entry_t;

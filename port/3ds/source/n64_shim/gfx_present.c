@@ -127,6 +127,7 @@ static struct {
     const gfx_tile_t *tile;
     float w, h;          /* POT-padded GPU texture size */
     float off_s, off_t;  /* texel origin of the tile in that texture (window texture) */
+    bool screen;         /* sampling the screen copy: N64 pixel -> render-target texel */
 } g_tex[2];
 static int  g_applied_tile = -1;
 static bool g_applied_rect;
@@ -149,6 +150,16 @@ static C3D_Mtx           g_rtt_mtx;
 static bool              g_in_rtt;
 static uint32_t          g_rtt_addr, g_rtt_stride, g_rtt_bytes;   /* the image it stands for */
 static C3D_RenderTarget *g_cur_target;                            /* the eye being drawn */
+
+/* Screen copy (PM3DS_GFX_TAG_SCREEN_COPY): the eye's render target as it is
+ * at that point of the frame, copied into a texture. The render target is
+ * 240x400 (rotated) in 8x8 tiles; the copy keeps each row of tiles and pads
+ * it to the texture's 256-texel width. */
+#define SCR_W 256
+#define SCR_H 512
+static C3D_Tex  g_scr_tex;
+static bool     g_scr_ok;
+static uint32_t g_scr_addr, g_scr_stride, g_scr_bytes;   /* the N64 image it stands for */
 
 /* per-frame stats */
 static unsigned g_stat_draws, g_stat_verts;
@@ -209,6 +220,8 @@ void pm3ds_gfx_present_init(void) {
         if (!g_rtt_target) C3D_TexDelete(&g_rtt_tex);
     }
     if (!g_rtt_target) pm3ds_log(PM3DS_LOG_WARN, "gfx: no window texture; rotating windows draw without contents");
+    g_scr_ok = C3D_TexInitVRAM(&g_scr_tex, SCR_W, SCR_H, GPU_RGBA8);
+    if (!g_scr_ok) pm3ds_log(PM3DS_LOG_WARN, "gfx: no screen-copy texture; the underwater ripple is left out");
     /* pixel space -> texture target: x' = 2x/W - 1, y' = 2y/H - 1 (texture
      * row 0, which v = 0 samples, is at the bottom of a render target) */
     Mtx_Zeros(&g_rtt_mtx);
@@ -345,9 +358,25 @@ static void apply_state(gfx_state_t *st, bool rect) {
         if (!want) continue;
         int tile = (st->tex_tile + u) & 7;
         g_tex[u].off_s = g_tex[u].off_t = 0.0f;
+        g_tex[u].screen = false;
         {   /* a load from the window texture's image: sample the GPU texture */
             uint32_t src;
             int col, row;
+            if (g_scr_bytes && gfx_tex_load_source(st, tile, &src, &col, &row) && src - g_scr_addr < g_scr_bytes) {
+                uint32_t off = src - g_scr_addr;
+                GPU_TEXTURE_FILTER_PARAM f = linear ? GPU_LINEAR : GPU_NEAREST;
+                C3D_TexSetFilter(&g_scr_tex, f, f);
+                C3D_TexSetWrap(&g_scr_tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+                C3D_TexBind(u, &g_scr_tex);
+                g_tex[u].on = true;
+                g_tex[u].screen = true;
+                g_tex[u].tile = &st->tiles[tile];
+                g_tex[u].w = SCR_W;
+                g_tex[u].h = SCR_H;
+                g_tex[u].off_s = (float)(col + (int)(off % g_scr_stride) / 2);
+                g_tex[u].off_t = (float)(row + (int)(off / g_scr_stride));
+                continue;
+            }
             if (g_rtt_bytes && gfx_tex_load_source(st, tile, &src, &col, &row) && src - g_rtt_addr < g_rtt_bytes) {
                 uint32_t off = src - g_rtt_addr;
                 GPU_TEXTURE_FILTER_PARAM f = linear ? GPU_LINEAR : GPU_NEAREST;
@@ -574,8 +603,16 @@ static inline void tex_uv(int unit, float s, float t, float *u, float *v) {
     const gfx_tile_t *tl = g_tex[unit].tile;
     if (tl->shifts) s = tl->shifts <= 10 ? s / (float)(1 << tl->shifts) : s * (float)(1 << (16 - tl->shifts));
     if (tl->shiftt) t = tl->shiftt <= 10 ? t / (float)(1 << tl->shiftt) : t * (float)(1 << (16 - tl->shiftt));
-    *u = (s / 32.0f - tl->uls / 4.0f + g_tex[unit].off_s) / g_tex[unit].w;
-    *v = (t / 32.0f - tl->ult / 4.0f + g_tex[unit].off_t) / g_tex[unit].h;
+    float x = s / 32.0f - tl->uls / 4.0f + g_tex[unit].off_s;
+    float y = t / 32.0f - tl->ult / 4.0f + g_tex[unit].off_t;
+    if (g_tex[unit].screen) {   /* N64 pixel -> render target texel (see set_scissor) */
+        /* the target's 400 rows land in the last 400 of the texture's 512 */
+        *u = (240.0f - (g_view_s * y + g_view_oy)) / SCR_W;
+        *v = (SCR_H - (g_view_s * x + g_view_ox)) / SCR_H;
+        return;
+    }
+    *u = x / g_tex[unit].w;
+    *v = y / g_tex[unit].h;
 }
 
 static inline void put_vtx(const gfx_vtx_t *v) {
@@ -714,6 +751,29 @@ void gfx_backend_rtt_end(gfx_state_t *st) {
 }
 
 bool pm3ds_gfx_rtt_available(void) { return g_rtt_target != NULL; }
+bool pm3ds_gfx_screen_copy_available(void) { return g_scr_ok; }
+
+/* The game copies the framebuffer drawn so far into the image at addr: copy
+ * the eye's render target into g_scr_tex instead. The draws so far go to the
+ * GPU first (C3D_FrameSplit), then the copy runs in the same GX queue, so the
+ * draws after it see the finished copy. */
+void gfx_backend_screen_copy(gfx_state_t *st, uint32_t addr, uint16_t width) {
+    if (!g_scr_ok || !g_draw_enabled || g_in_rtt || width == 0) return;
+    gfx_backend_flush(st);
+    GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_FLUSH, 1);
+    C3D_FrameSplit(GX_CMDLIST_FLUSH);
+    /* 50 rows of 30 tiles (8x8 RGBA8 = 256 bytes each); the texture's rows
+     * are 32 tiles, so 2 tiles of gap after each row */
+    GX_TextureCopy((u32 *)g_cur_target->frameBuf.colorBuf, GX_BUFFER_DIM(30 * 256 / 16, 0),
+                   (u32 *)g_scr_tex.data, GX_BUFFER_DIM(30 * 256 / 16, 2 * 256 / 16),
+                   30 * 256 * 50, GX_TRANSFER_RAW_COPY(1));
+    GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_INVALIDATE, 1);
+    g_scr_addr = addr;
+    g_scr_stride = (uint32_t)width * 2u;
+    g_scr_bytes = g_scr_stride * 240u;
+    g_state_valid = false;
+    st->dirty = GFX_DIRTY_ALL;
+}
 
 /* ---- frame ------------------------------------------------------------------ */
 
@@ -790,6 +850,7 @@ static void render_lists(const void *const *lists, int nlists) {
     g_cur_target = g_target;
     g_in_rtt = false;
     g_rtt_bytes = 0;
+    g_scr_bytes = 0;
     C3D_BindProgram(&g_prog);
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, g_uloc_screen, &g_screen_mtx);
     {   /* a new noise pattern every frame */
@@ -832,6 +893,7 @@ static void render_lists(const void *const *lists, int nlists) {
             C3D_FrameDrawOn(g_target_right);
             g_cur_target = g_target_right;
             g_rtt_bytes = 0;
+            g_scr_bytes = 0;
             g_state_valid = false;
         }
         pm3ds_stereo_shift = stereo ? (eye == 0 ? -1.0f : 1.0f) * slider * PM3DS_STEREO_MAX_SHIFT : 0.0f;

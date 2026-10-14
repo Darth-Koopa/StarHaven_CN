@@ -15,7 +15,7 @@
  * title version comes from these numbers too (tools/package.sh) */
 #define PM3DS_VERSION_MAJOR  1
 #define PM3DS_VERSION_MINOR  0
-#define PM3DS_VERSION_MICRO  1
+#define PM3DS_VERSION_MICRO  2
 #define PM3DS_VERSION_STR    "1.0.1"
 
 /* save, settings, log and the player's ROM */

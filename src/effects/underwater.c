@@ -1,6 +1,9 @@
 #include "common.h"
 #include "effects_internal.h"
 #include "nu/nusys.h"
+#ifdef _3DS
+#include "pm3ds_gfx_tags.h"
+#endif
 
 extern Vtx D_09000428_3B9E98[];
 extern Gfx D_09000528_3B9F98[];
@@ -164,11 +167,12 @@ void underwater_appendGfx(void* effect) {
 
     gDPPipeSync(gMainGfxPos++);
 #ifdef _3DS
+    bool pm3ds_gfx_screen_copy_available(void);
+    if (!pm3ds_gfx_screen_copy_available()) {
     // The N64 copies the framebuffer into the z-buffer and redraws it through
-    // a wavy mesh; the port renders on the GPU and has no such copy, so the
-    // mesh would show whatever sits in that buffer. Keep the water tint, as a
-    // translucent overlay, without the ripple (PM_CC_48 adds the water colour
-    // times its alpha to the scene; blend IN*A + MEM does the same).
+    // a wavy mesh. Without the port's screen-copy texture, keep only the water
+    // tint, as a translucent overlay (PM_CC_48 adds the water colour times its
+    // alpha to the scene; blend IN*A + MEM does the same).
     gDPSetCycleType(gMainGfxPos++, G_CYC_1CYCLE);
     gDPSetRenderMode(gMainGfxPos++, CVG_DST_SAVE | ZMODE_OPA | FORCE_BL | GBL_c1(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_1),
                      CVG_DST_SAVE | ZMODE_OPA | FORCE_BL | GBL_c2(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_1));
@@ -177,8 +181,16 @@ void underwater_appendGfx(void* effect) {
     gDPFillRectangle(gMainGfxPos++, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     gDPPipeSync(gMainGfxPos++);
     return;
+    }
 #endif
     gSPSegment(gMainGfxPos++, 0x09, VIRTUAL_TO_PHYSICAL(((EffectInstance*)effect)->shared->graphics));
+#ifdef _3DS
+    // The GPU copies its render target into a texture that stands for the
+    // z-buffer image, in place of the copy loop below; the mesh then reads
+    // the z-buffer image as on the N64.
+    gDPNoOpTag(gMainGfxPos++, PM3DS_GFX_TAG_SCREEN_COPY);
+    gDPSetColorImage(gMainGfxPos++, G_IM_FMT_RGBA, G_IM_SIZ_16b, SCREEN_WIDTH, nuGfxZBuffer);
+#else
     gDPSetColorImage(gMainGfxPos++, G_IM_FMT_RGBA, G_IM_SIZ_16b, SCREEN_WIDTH, nuGfxZBuffer);
     gSPDisplayList(gMainGfxPos++, D_09000528_3B9F98);
 
@@ -198,6 +210,7 @@ void underwater_appendGfx(void* effect) {
             G_TX_RENDERTILE, 0, 0, 0x1000, 0x0400);
         gDPPipeSync(gMainGfxPos++);
     }
+#endif
 
     gDPSetColorImage(gMainGfxPos++, G_IM_FMT_RGBA, G_IM_SIZ_16b, SCREEN_WIDTH, nuGfxCfb_ptr);
     gDPSetPrimColor(gMainGfxPos++, 0, 0, data->waterColor.r, data->waterColor.g, data->waterColor.b, alpha >> 1);

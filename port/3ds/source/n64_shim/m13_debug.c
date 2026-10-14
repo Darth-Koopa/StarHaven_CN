@@ -132,11 +132,15 @@ static void pm3ds_fx_sweep_tick(u32 frame) {
             remove_effect(gEffectInstances[i]);
         }
     }
+#ifdef PM3DS_FX_SWEEP_ONLY   /* repeat the PM3DS_FX_SWEEP_FIRST effect (hardware checks) */
+    next = PM3DS_FX_SWEEP_FIRST;
+#else
     if (++next >= ARRAY_COUNT(fx_sweep_table)) {
         pm3ds_log(2, "FXSWEEP DONE");
         done = 1;
         return;
     }
+#endif
     for (i = 0; i < ARRAY_COUNT(gEffectInstances); i++) {
         before[i] = gEffectInstances[i] != nullptr;
     }
