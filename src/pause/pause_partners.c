@@ -12,8 +12,8 @@
 #include "sprite/npc/WorldLakilester.h"
 
 #ifdef _3DS
-extern s8 gPauseBufferPal1[512 + 15752];
-extern s8 gPauseBufferPal2[512 + 15752];
+extern s8 gPauseBufferPal1[16272];
+extern s8 gPauseBufferPal2[16272];
 #define gPauseBufferImg1 (gPauseBufferPal1 + 512)
 #define gPauseBufferImg2 (gPauseBufferPal2 + 512)
 #else

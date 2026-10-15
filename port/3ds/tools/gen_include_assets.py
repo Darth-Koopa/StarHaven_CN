@@ -94,9 +94,13 @@ def index_splat():
                 size = w * h * BPP[typ] // 8
             elif typ == "palette":
                 size = 512 if prev_img_type == "ci8" else 32
-                nxt = next((e[0] for e in entries[i + 1:] if e[0] is not None), None)
+                # several palettes back to back up to an explicit start; only
+                # when that start is the very next entry (one further on is
+                # preceded by auto entries, and swallowing them shifted e.g.
+                # every battle move orb after ui/move_basic.pal by 0x6E0)
+                nxt = entries[i + 1][0] if i + 1 < len(entries) else None
                 if cur is not None and nxt is not None and nxt - cur > size and nxt - cur <= 512 * 4:
-                    size = nxt - cur        # several palettes back to back
+                    size = nxt - cur
             if typ in BPP:
                 prev_img_type = typ
             if cur is not None and name and (typ in BPP or typ == "palette"):

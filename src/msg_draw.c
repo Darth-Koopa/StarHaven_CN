@@ -2127,9 +2127,19 @@ void msg_draw_frame(s32 posX, s32 posY, s32 sizeX, s32 sizeY, s32 style, s32 pal
         do {} while (0);
         switch (style) {
             case MSG_STYLE_CHOICE:
+#ifdef _3DS
+                {   // the palette bytes are in N64 (big-endian) order; a plain
+                    // u16 read swaps them and the white box turns cream
+                    u16 fill = (ui_msg_palettes[0][8] << 8) | ui_msg_palettes[0][9];
+                    r = UNPACK_PAL_R(fill) * 8;
+                    g = UNPACK_PAL_G(fill) * 8;
+                    b = UNPACK_PAL_B(fill) * 8;
+                }
+#else
                 r = UNPACK_PAL_R(((u16*)ui_msg_palettes)[4]) * 8;
                 g = UNPACK_PAL_G(((u16*)ui_msg_palettes)[4]) * 8;
                 b = UNPACK_PAL_B(((u16*)ui_msg_palettes)[4]) * 8;
+#endif
                 gDPPipeSync(gMainGfxPos++);
                 if (fading != 0 && bgAlpha < 255) {
                     gDPSetRenderMode(gMainGfxPos++, IM_RD | CVG_DST_SAVE | ZMODE_XLU | FORCE_BL | GBL_c1(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_1MA), IM_RD | CVG_DST_SAVE | ZMODE_XLU | FORCE_BL | GBL_c2(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_1MA));

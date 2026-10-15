@@ -11,7 +11,7 @@
 #include "effects.h"
 #include <malloc.h>
 #include "pm3ds_brand.h"
-#ifdef PM3DS_SHOP_TEST
+#if defined(PM3DS_SHOP_TEST) || defined(PM3DS_HUD_TEST)
 #include "hud_element.h"
 #endif
 #if defined(PM3DS_BATTLE_SWEEP) || defined(PM3DS_STORY_SWEEP)
@@ -430,6 +430,27 @@ void pm3ds_game_debug_tick(u32 frame) {
 #endif
 #ifdef PM3DS_RO_CHECK
     pm3ds_ro_check(frame);
+#endif
+#ifdef PM3DS_HUD_TEST
+    {   /* debug: the battle move icons side by side in the world (issue #5: Tattle's) */
+        extern HudScript HES_MoveDiamond, HES_MoveBlueOrb, HES_MoveGreenOrb, HES_MoveRedOrb;
+        extern HudScript HES_MoveDiamond_disabled, HES_MoveBlueOrbDisabled, HES_MoveGreenOrbDisabled, HES_MoveRedOrbDisabled;
+        static HudScript* const scripts[8] = { &HES_MoveDiamond, &HES_MoveBlueOrb, &HES_MoveGreenOrb, &HES_MoveRedOrb,
+            &HES_MoveDiamond_disabled, &HES_MoveBlueOrbDisabled, &HES_MoveGreenOrbDisabled, &HES_MoveRedOrbDisabled };
+        static s32 made;
+        if (!made && get_game_mode() == GAME_MODE_WORLD && frame > 60) {
+            made = 1;
+            for (s32 i = 0; i < 8; i++) {   /* as they are, then as the battle menu draws them */
+                s32 id = hud_element_create(scripts[i]);
+                hud_element_set_render_pos(id, 60 + (i % 4) * 50, 70 + (i / 4) * 40);
+                id = hud_element_create(scripts[i]);
+                hud_element_set_render_pos(id, 60 + (i % 4) * 50, 160 + (i / 4) * 25);
+                hud_element_set_scale(id, 0.45f);
+                hud_element_set_flags(id, HUD_ELEMENT_FLAG_FILTER_TEX);
+            }
+            pm3ds_log(2, "HUDTEST: move icons created");
+        }
+    }
 #endif
     {   /* canary: something overwriting the global GameStatus pointer */
         extern GameStatus gGameStatus;

@@ -390,6 +390,9 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
                         gGameStatusPtr->mapID = PM3DS_START_MAP;
                         gGameStatusPtr->entryID = PM3DS_START_ENTRY;
                         evt_set_variable(nullptr, GB_StoryProgress, PM3DS_START_STORY);
+#ifdef PM3DS_START_FLAG   /* e.g. -DPM3DS_START_FLAG=GF_KMR10_KnockedSpringOutOfTree */
+                        evt_set_variable(nullptr, PM3DS_START_FLAG, true);
+#endif
 #ifndef PM3DS_START_BARE   /* bare: keep the New Game state (no hammer/partner), e.g. for the prologue */
                         gPlayerData.hammerLevel = 0;
                         gPlayerData.partners[PARTNER_GOOMBARIO].enabled = true;
@@ -410,6 +413,9 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
                             for (k = 0; k < ARRAY_COUNT(badges); k++) {
                                 gPlayerData.badges[k] = badges[k];
                             }
+                            gPlayerData.keyItems[0] = ITEM_DOLLY;
+                            gPlayerData.keyItems[1] = ITEM_ODD_KEY;
+                            gPlayerData.keyItems[2] = ITEM_LUCKY_STAR;
                             for (k = 0; k < ARRAY_COUNT(partners); k++) {
                                 gPlayerData.partners[partners[k]].enabled = true;
                             }

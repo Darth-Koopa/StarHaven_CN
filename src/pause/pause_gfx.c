@@ -664,8 +664,11 @@ void pause_draw_menu_label(s32 index, s32 x, s32 y) {
 // The partner portraits are decoded as one palette+image blob into the palette
 // buffer; on N64 the image buffer simply follows it. GCC does not keep these
 // arrays in order, so each slot holds the whole blob (image at +512).
-BSS s8 gPauseBufferPal1[512 + 15752];
-BSS s8 gPauseBufferPal2[512 + 15752];
+// A decoded portrait is 16272 bytes, 8 more than the N64's 512 + 15752: a
+// smaller slot let the second portrait zero the first key items in
+// pause_items.c, which follows it in memory.
+BSS s8 gPauseBufferPal1[16272];
+BSS s8 gPauseBufferPal2[16272];
 #else
 BSS s8 gPauseBufferPal1[512];
 BSS s8 gPauseBufferImg1[15752];
