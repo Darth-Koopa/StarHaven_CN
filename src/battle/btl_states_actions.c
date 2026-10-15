@@ -8,6 +8,13 @@
 #include "battle/battle.h"
 #include "model.h"
 #include "game_modes.h"
+#ifdef PM3DS_STEP_PROF   /* 3DS port debug: where a slow step goes (port/3ds/source/n64_shim/step_prof.c) */
+extern void pm3ds_prof_mark(const char* label, int arg);
+#define PROF_MARK(label, arg) pm3ds_prof_mark(label, arg)
+#else
+#define PROF_MARK(label, arg)
+#endif
+
 
 extern StageListRow* gCurrentStagePtr;
 
@@ -226,6 +233,7 @@ void btl_state_update_normal_start(void) {
             compressedAsset = load_asset_by_name(stage->shape, &size);
             decode_yay0(compressedAsset, &gMapShapeData);
             general_heap_free(compressedAsset);
+            PROF_MARK("shape", 0);
 
             ASSERT(size <= 0x8000);
 
@@ -234,12 +242,15 @@ void btl_state_update_normal_start(void) {
             if (rootModel != nullptr) {
                 load_data_for_models(rootModel, texturesOffset, size);
             }
+            PROF_MARK("tex", 0);
             load_battle_hit_asset(stage->hit);
+            PROF_MARK("hit", 0);
 
             if (stage->bg != nullptr) {
                 load_map_bg(stage->bg);
                 set_background(&gBackgroundImage);
             }
+            PROF_MARK("bg", 0);
 
             if (gGameStatusPtr->demoBattleFlags & DEMO_BTL_FLAG_ENABLED) {
                 set_curtain_scale_goal(1.0f);

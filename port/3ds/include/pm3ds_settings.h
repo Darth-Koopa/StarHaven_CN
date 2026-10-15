@@ -23,9 +23,16 @@ enum {
 
 enum { TEXT_NORMAL, TEXT_FAST, TEXT_INSTANT, TEXT_SPEEDS };
 
+/* 3D depth: how far the 3D slider at its top pushes the background back */
+#define DEPTH3D_LEVELS 5
+#define DEPTH3D_DEFAULT 1   /* the depth of 1.0.0 to 1.0.4 */
+extern const float pm3ds_depth3d_shift[DEPTH3D_LEVELS];   /* pixels per eye at infinity */
+extern const char *const pm3ds_depth3d_names[DEPTH3D_LEVELS];
+
 typedef struct {
     int view_mode;              /* 0 Original, 1 Fill, 2 Wide */
     bool fps60;                 /* in-between frames (n64_shim/gfx_interp.c) */
+    int depth3d;                /* 0..DEPTH3D_LEVELS-1 */
     int text_speed;             /* TEXT_* */
     int ff_speed;               /* game steps per frame while fast-forwarding: 2..4 */
     bool ff_toggle;             /* the fast-forward button toggles instead of being held */

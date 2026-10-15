@@ -787,7 +787,7 @@ static bool tmenu_tap(int px, int py, float y_top) {
 }
 
 /* ---- Options and Controls pages ------------------------------------------ */
-#define OPT_ROWS 7
+#define OPT_ROWS 8
 #define OPT_Y0 8
 #define OPT_ROW_H 24
 static const char *const s_fps_names[2] = { "30 fps", "60 fps" };
@@ -812,12 +812,13 @@ static void draw_options(void) {
     panel(4, 4, 316, 204, COL_PANEL);
     opt_row(0, "Screen", s_view_names[pm3ds_cfg.view_mode % 3]);
     opt_row(1, "Frame rate", s_fps_names[pm3ds_cfg.fps60]);
-    opt_row(2, "Text speed", s_text_names[pm3ds_cfg.text_speed % TEXT_SPEEDS]);
+    opt_row(2, "3D depth", pm3ds_depth3d_names[pm3ds_cfg.depth3d % DEPTH3D_LEVELS]);
+    opt_row(3, "Text speed", s_text_names[pm3ds_cfg.text_speed % TEXT_SPEEDS]);
     snprintf(buf, sizeof buf, "%dx", pm3ds_cfg.ff_speed);
-    opt_row(3, "Fast-forward speed", buf);
-    opt_row(4, "Fast-forward button", pm3ds_cfg.ff_toggle ? "Toggle" : "Hold");
-    opt_row(5, "Controls", NULL);
-    opt_row(6, "Debug info", NULL);
+    opt_row(4, "Fast-forward speed", buf);
+    opt_row(5, "Fast-forward button", pm3ds_cfg.ff_toggle ? "Toggle" : "Hold");
+    opt_row(6, "Controls", NULL);
+    opt_row(7, "Debug info", NULL);
     small_text(12, 221, PM3DS_APP_NAME " v" PM3DS_VERSION_STR, 40, COL_PANEL_EDGE);
     round_rect(250, 214, 316, 236, 8, COL_BTN);
     text_center(283, 217, "Back", 1.0f, 1, COL_WHITE);
@@ -1244,11 +1245,12 @@ static void handle_touch(void) {
         switch (row) {
             case 0: pm3ds_cfg.view_mode = (pm3ds_cfg.view_mode + 1) % 3; break;   /* Original -> Fill -> Wide */
             case 1: pm3ds_cfg.fps60 = !pm3ds_cfg.fps60; break;
-            case 2: pm3ds_cfg.text_speed = (pm3ds_cfg.text_speed + 1) % TEXT_SPEEDS; break;
-            case 3: pm3ds_cfg.ff_speed = pm3ds_cfg.ff_speed >= 4 ? 2 : pm3ds_cfg.ff_speed + 1; break;
-            case 4: pm3ds_cfg.ff_toggle = !pm3ds_cfg.ff_toggle; break;
-            case 5: s_tab = TAB_CONTROLS; return;
-            case 6: s_tab = TAB_DEBUG; return;
+            case 2: pm3ds_cfg.depth3d = (pm3ds_cfg.depth3d + 1) % DEPTH3D_LEVELS; break;
+            case 3: pm3ds_cfg.text_speed = (pm3ds_cfg.text_speed + 1) % TEXT_SPEEDS; break;
+            case 4: pm3ds_cfg.ff_speed = pm3ds_cfg.ff_speed >= 4 ? 2 : pm3ds_cfg.ff_speed + 1; break;
+            case 5: pm3ds_cfg.ff_toggle = !pm3ds_cfg.ff_toggle; break;
+            case 6: s_tab = TAB_CONTROLS; return;
+            case 7: s_tab = TAB_DEBUG; return;
         }
         pm3ds_settings_save();
         return;

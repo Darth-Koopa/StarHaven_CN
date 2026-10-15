@@ -63,7 +63,10 @@ Every button can be changed under **Options → Controls**. The 3D slider works.
 - **Fast >>** turns fast-forward on and off.
 - **Options**:
   - **Screen**: *Original* (4:3), *Fill* or *Wide*.
-  - **Frame rate**: 60 fps (in-between frames are added) or the original 30 fps.
+  - **3D depth**: how deep the 3D slider goes, from *Low* to *Deepest*.
+  - **Frame rate**: 60 fps (in-between frames are added) or the original 30 fps. With the 3D
+    slider up, 60 fps holds where there is time to draw both eyes twice and drops to 30
+    elsewhere.
   - **Text speed**: Normal, Fast or Instant.
   - **Fast-forward**: speed (2x to 4x), and whether the button is held or toggles.
   - **Controls**: remap any button.

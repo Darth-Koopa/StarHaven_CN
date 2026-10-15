@@ -6,6 +6,13 @@
 #include "battle/battle.h"
 #include "model.h"
 #include "game_modes.h"
+#ifdef PM3DS_STEP_PROF   /* 3DS port debug: where a slow step goes (port/3ds/source/n64_shim/step_prof.c) */
+extern void pm3ds_prof_mark(const char* label, int arg);
+#define PROF_MARK(label, arg) pm3ds_prof_mark(label, arg)
+#else
+#define PROF_MARK(label, arg)
+#endif
+
 
 extern u16 gFrameBuf0[];
 extern u16 gFrameBuf1[];
@@ -79,6 +86,7 @@ void state_step_battle(void) {
         } else {
             spr_init_sprites(PLAYER_SPRITES_MARIO_BATTLE);
         }
+        PROF_MARK("sprinit", 0);
 
         clear_model_data();
         clear_sprite_shading_data();
@@ -94,10 +102,13 @@ void state_step_battle(void) {
         clear_npcs();
         clear_entity_data(true);
         clear_trigger_data();
+        PROF_MARK("clear", 0);
         DMA_COPY_SEGMENT(battle_code);
         initialize_battle();
+        PROF_MARK("initbtl", 0);
         btl_save_world_cameras();
         load_battle_section();
+        PROF_MARK("section", 0);
         SavedWorldAnimFlags = gPlayerStatusPtr->animFlags;
         gPlayerStatusPtr->animFlags &= ~PA_FLAG_PULSE_STONE_VISIBLE;
         SavedWorldFreezeMode = get_time_freeze_mode();
@@ -110,7 +121,9 @@ void state_step_battle(void) {
     }
 
     update_encounters();
+    PROF_MARK("enc", 0);
     btl_update();
+    PROF_MARK("btlupd", 0);
     update_npcs();
     update_item_entities();
     update_effects();

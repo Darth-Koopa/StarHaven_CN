@@ -25,7 +25,10 @@
 
 #define BLOCK_SHIFT 15
 #define BLOCK_SIZE  (1u << BLOCK_SHIFT)   /* 32 KB */
-#define NBLOCKS     64                    /* 2 MB of cache */
+/* 2 MB of cache; 12 MB on the New 3DS, where a map left for a battle is
+ * still cached when the battle ends (each 32 KB miss is ~6 ms on the SD card) */
+#define NBLOCKS_OLD 64
+#define NBLOCKS_NEW 384
 #define MAX_PINS    4
 #define NO_TAG      0xFFFFFFFFu
 
@@ -37,7 +40,9 @@ static FILE *s_file;
 static int s_order;
 static uint32_t s_size;
 static uint8_t *s_blocks;
-static uint32_t s_tag[NBLOCKS], s_age[NBLOCKS], s_clock;
+static int s_nblocks;
+static uint32_t *s_tag, *s_age, s_clock;
+static uint16_t *s_slot;   /* per ROM block: its cache slot + 1, or 0 */
 static int s_last = -1;
 static LightLock s_lock;
 static uint32_t s_hits, s_misses;
@@ -67,10 +72,23 @@ static bool file_read(uint32_t off, uint8_t *dst, uint32_t len) {
 bool pm3ds_rom_stream_open(const char *path, int order, uint32_t size) {
     if (s_file) return true;
     LightLock_Init(&s_lock);
-    s_blocks = (uint8_t *)malloc(NBLOCKS * BLOCK_SIZE);
-    s_file = s_blocks ? fopen(path, "rb") : NULL;
+    bool n3ds = false;
+    APT_CheckNew3DS(&n3ds);
+    s_nblocks = n3ds ? NBLOCKS_NEW : NBLOCKS_OLD;
+    s_blocks = (uint8_t *)malloc((size_t)s_nblocks * BLOCK_SIZE);
+    if (!s_blocks && s_nblocks > NBLOCKS_OLD) {
+        s_nblocks = NBLOCKS_OLD;
+        s_blocks = (uint8_t *)malloc((size_t)s_nblocks * BLOCK_SIZE);
+    }
+    s_tag = (uint32_t *)malloc(s_nblocks * sizeof *s_tag);
+    s_age = (uint32_t *)calloc(s_nblocks, sizeof *s_age);
+    s_slot = (uint16_t *)calloc((size >> BLOCK_SHIFT) + 1, sizeof *s_slot);
+    s_file = s_blocks && s_tag && s_age && s_slot ? fopen(path, "rb") : NULL;
     if (!s_file) {
         free(s_blocks);
+        free(s_tag);
+        free(s_age);
+        free(s_slot);
         s_blocks = NULL;
         pm3ds_log(PM3DS_LOG_ERROR, "romstream: cannot open %s", path);
         return false;
@@ -78,8 +96,8 @@ bool pm3ds_rom_stream_open(const char *path, int order, uint32_t size) {
     setvbuf(s_file, NULL, _IONBF, 0);   /* whole blocks: no stdio copy */
     s_order = order;
     s_size = size & ~3u;
-    for (int i = 0; i < NBLOCKS; i++) s_tag[i] = NO_TAG;
-    pm3ds_log(PM3DS_LOG_INFO, "romstream: %s, %lu KB cache", path, (unsigned long)(NBLOCKS * BLOCK_SIZE >> 10));
+    for (int i = 0; i < s_nblocks; i++) s_tag[i] = NO_TAG;
+    pm3ds_log(PM3DS_LOG_INFO, "romstream: %s, %lu KB cache", path, (unsigned long)((size_t)s_nblocks * BLOCK_SIZE >> 10));
     return true;
 }
 
@@ -117,22 +135,24 @@ static const uint8_t *block(uint32_t blk) {
         s_hits++;
         return s_blocks + (size_t)s_last * BLOCK_SIZE;
     }
-    int victim = 0;
-    for (int i = 0; i < NBLOCKS; i++) {
-        if (s_tag[i] == blk) {
-            s_age[i] = ++s_clock;
-            s_last = i;
-            s_hits++;
-            return s_blocks + (size_t)i * BLOCK_SIZE;
-        }
-        if (s_age[i] < s_age[victim]) victim = i;
+    int i = (int)s_slot[blk] - 1;
+    if (i >= 0) {
+        s_age[i] = ++s_clock;
+        s_last = i;
+        s_hits++;
+        return s_blocks + (size_t)i * BLOCK_SIZE;
     }
+    int victim = 0;
+    for (i = 1; i < s_nblocks; i++)
+        if (s_age[i] < s_age[victim]) victim = i;
+    if (s_tag[victim] != NO_TAG) s_slot[s_tag[victim]] = 0;
     uint64_t t0 = svcGetSystemTick();
     uint32_t start = blk << BLOCK_SHIFT;
     uint32_t n = s_size - start < BLOCK_SIZE ? s_size - start : BLOCK_SIZE;
     uint8_t *dst = s_blocks + (size_t)victim * BLOCK_SIZE;
     file_read(start, dst, n);
     s_tag[victim] = blk;
+    s_slot[blk] = (uint16_t)(victim + 1);
     s_age[victim] = ++s_clock;
     s_last = victim;
     s_misses++;

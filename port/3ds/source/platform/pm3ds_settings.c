@@ -17,6 +17,8 @@ extern bool pm3ds_fps60;                       /* n64_shim/gfx_interp.c */
 extern void pm3ds_set_view_mode(int mode);     /* n64_shim/gfx_present.c */
 
 pm3ds_settings_t pm3ds_cfg;
+const float pm3ds_depth3d_shift[DEPTH3D_LEVELS] = { 3.0f, 5.0f, 7.0f, 9.0f, 11.0f };
+const char *const pm3ds_depth3d_names[DEPTH3D_LEVELS] = { "Low", "Normal", "Deep", "Deeper", "Deepest" };
 bool pm3ds_ff_button_on;
 
 static const uint32_t s_key_bits[KEY_IDX_COUNT] = {
@@ -64,6 +66,7 @@ void pm3ds_settings_load(void) {
     bool n3ds = false;
     APT_CheckNew3DS(&n3ds);
     pm3ds_cfg.fps60 = n3ds;    /* an Old 3DS can't keep up with the in-between frames */
+    pm3ds_cfg.depth3d = DEPTH3D_DEFAULT;
     pm3ds_cfg.text_speed = TEXT_NORMAL;
     pm3ds_cfg.ff_speed = 3;
     pm3ds_cfg.ff_toggle = false;
@@ -77,6 +80,7 @@ void pm3ds_settings_load(void) {
             if (sscanf(line, "view_mode=%d", &v) == 1) pm3ds_cfg.view_mode = v % 3;
             else if (sscanf(line, "view_fill=%d", &v) == 1) pm3ds_cfg.view_mode = v ? 1 : 0;   /* older builds */
             else if (sscanf(line, "fps60=%d", &v) == 1) pm3ds_cfg.fps60 = v != 0;
+            else if (sscanf(line, "depth3d=%d", &v) == 1 && v >= 0 && v < DEPTH3D_LEVELS) pm3ds_cfg.depth3d = v;
             else if (sscanf(line, "text_speed=%d", &v) == 1 && v >= 0 && v < TEXT_SPEEDS) pm3ds_cfg.text_speed = v;
             else if (sscanf(line, "ff_speed=%d", &v) == 1 && v >= 2 && v <= 4) pm3ds_cfg.ff_speed = v;
             else if (sscanf(line, "ff_toggle=%d", &v) == 1) pm3ds_cfg.ff_toggle = v != 0;
@@ -100,8 +104,8 @@ void pm3ds_settings_save(void) {
     apply();
     FILE *f = fopen(CFG_PATH, "w");
     if (!f) return;
-    fprintf(f, "view_mode=%d\nfps60=%d\ntext_speed=%d\nff_speed=%d\nff_toggle=%d\nrando_flags=%u\n", pm3ds_cfg.view_mode,
-            pm3ds_cfg.fps60, pm3ds_cfg.text_speed, pm3ds_cfg.ff_speed, pm3ds_cfg.ff_toggle, pm3ds_cfg.rando_flags);
+    fprintf(f, "view_mode=%d\nfps60=%d\ndepth3d=%d\ntext_speed=%d\nff_speed=%d\nff_toggle=%d\nrando_flags=%u\n", pm3ds_cfg.view_mode,
+            pm3ds_cfg.fps60, pm3ds_cfg.depth3d, pm3ds_cfg.text_speed, pm3ds_cfg.ff_speed, pm3ds_cfg.ff_toggle, pm3ds_cfg.rando_flags);
     for (int k = 0; k < KEY_IDX_COUNT; k++) fprintf(f, "key_%s=%d\n", s_key_cfg[k], pm3ds_cfg.keymap[k]);
     fclose(f);
 }

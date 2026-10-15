@@ -646,7 +646,6 @@ void gfx_backend_tri(gfx_state_t *st, const gfx_vtx_t *a, const gfx_vtx_t *b, co
 
 extern float pm3ds_stereo_shift;
 static bool g_stereo_far;   /* walking the background list: put it at infinity */
-#define PM3DS_STEREO_MAX_SHIFT 5.0f   /* pixels per eye at infinity, slider at max */
 
 void gfx_backend_rect(gfx_state_t *st, float x0, float y0, float x1, float y1,
                       float s0, float t0, float s1, float t1, bool flip, bool textured) {
@@ -828,6 +827,22 @@ static void capture_frame(uint16_t *dst) {
     linearFree(tmp);
 }
 
+/* 3D slider position, 0 = down (mono) */
+static float slider_now(void) {
+#ifdef PM3DS_FORCE_STEREO   /* debug builds: the emulator's slider stays at 0 */
+    return 1.0f;
+#else
+    return osGet3DSliderState();
+#endif
+}
+
+/* CPU time of this game step's render_lists calls (waits left out), and the
+ * GPU's time on the frames before them (citro3d measures each frame from
+ * C3D_FrameEnd until the GPU is done; the next C3D_FrameBegin waits for it) */
+static uint64_t g_step_render_ticks;
+static float g_step_gpu_ms;
+static int g_step_renders;
+
 /* Translate and draw the frame's display lists (once per eye in stereo). */
 static void render_lists(const void *const *lists, int nlists) {
 #if defined(PM3DS_DRAWLOG_ALLTRI) && defined(PM3DS_DRAWLOG_FRAME)
@@ -841,6 +856,8 @@ static void render_lists(const void *const *lists, int nlists) {
     pm3ds_bc_main = "gpu wait";
     C3D_FrameBegin(0);
     pm3ds_t_wait += svcGetSystemTick() - t0;
+    g_step_gpu_ms += C3D_GetDrawingTime();
+    uint64_t t_busy = svcGetSystemTick();
     if (g_frame_no <= 5)
         pm3ds_log(PM3DS_LOG_INFO, "gfx: frame %u begins after %llu ms", (unsigned)g_frame_no,
                   (unsigned long long)((svcGetSystemTick() - t0) / (SYSCLOCK_ARM11 / 1000)));
@@ -875,16 +892,15 @@ static void render_lists(const void *const *lists, int nlists) {
     /* 3D slider: walk the lists once per eye with a horizontal disparity
      * (see pm3ds_stereo_shift); the first list is the background, which is
      * pushed to infinity. Mono costs nothing extra. */
-    float slider = osGet3DSliderState();
-#ifdef PM3DS_FORCE_STEREO   /* debug builds: the emulator's slider stays at 0 */
-    slider = 1.0f;
-#endif
+    float slider = slider_now();
     bool stereo = slider > 0.02f;
     static bool stereo_on;
     if (stereo != stereo_on) {
         gfxSet3D(stereo);
         stereo_on = stereo;
     }
+    /* pixels per eye at infinity with the slider at the top (Options: 3D depth) */
+    const float max_shift = pm3ds_depth3d_shift[pm3ds_cfg.depth3d % DEPTH3D_LEVELS];
     for (int eye = 0; eye < (stereo ? 2 : 1); eye++) {
         if (eye == 1) {
             gfx_interp_second_eye();
@@ -896,14 +912,14 @@ static void render_lists(const void *const *lists, int nlists) {
             g_scr_bytes = 0;
             g_state_valid = false;
         }
-        pm3ds_stereo_shift = stereo ? (eye == 0 ? -1.0f : 1.0f) * slider * PM3DS_STEREO_MAX_SHIFT : 0.0f;
+        pm3ds_stereo_shift = stereo ? (eye == 0 ? -1.0f : 1.0f) * slider * max_shift : 0.0f;
         for (int i = 0; i < nlists; i++) {
             g_st.cimg_is_screen = true;
             g_stereo_far = stereo && i == 0 && nlists > 1;
             g_st.bg_wide = g_view_mode == PM3DS_VIEW_WIDE && i == 0 && nlists > 1 &&
                            gfx_interp_bg_edges(&g_st.bg_left, &g_st.bg_right);
-            g_st.bg_wide_l = -g_view_ox / g_view_s - 8.0f;            /* 8: room for the 3D shift */
-            g_st.bg_wide_r = (400.0f - g_view_ox) / g_view_s + 8.0f;
+            g_st.bg_wide_l = -g_view_ox / g_view_s - max_shift - 3.0f;   /* room for the 3D shift */
+            g_st.bg_wide_r = (400.0f - g_view_ox) / g_view_s + max_shift + 3.0f;
             g_st.bg_shift = i == 0 && nlists > 1 ? gfx_interp_bg_shift(&g_st.bg_left, &g_st.bg_right) : 0.0f;
             gfx_walk_dl(&g_st, lists[i]);
             g_st.bg_shift = 0.0f;
@@ -927,6 +943,81 @@ static void render_lists(const void *const *lists, int nlists) {
     pm3ds_bc_main = "frame end";
     C3D_FrameEnd(0);
     pm3ds_bc_main = "frame done";
+    g_step_render_ticks += svcGetSystemTick() - t_busy;
+    g_step_renders++;
+}
+
+/* 60 fps with the 3D slider up: every frame is drawn once per eye, so a game
+ * step walks the lists four times. On a New 3DS that fits in most places but
+ * not in all of them, so the in-between frames stay on only while there is
+ * room: each frame's CPU and GPU work, one after the other, has to fit in one
+ * 60 Hz frame (16.7 ms), and the game step runs next to the second one's GPU
+ * work. Every time 60 fps doesn't hold, 30 fps is kept twice as long before the
+ * next try (2 s up to 16 s), so a heavy room doesn't flip between the two. */
+uint64_t pm3ds_t_game_step;            /* port_main.c: the last game step's CPU time */
+static bool g_stereo_interp;
+static float g_si_render_ms, g_si_gpu_ms, g_si_game_ms;   /* running averages */
+static float g_si_late;                /* goes up by 1 per late step, down by 0.2 per step on time */
+static int g_si_hold, g_si_backoff, g_si_on_steps;
+static bool g_si_was_stereo;
+
+static void stereo_interp_update(bool stereo, bool counted, bool interp_was_on, unsigned vblanks) {
+    float render_ms = g_step_renders ? (float)g_step_render_ticks * 1000.0f / SYSCLOCK_ARM11 / g_step_renders : 0.0f;
+    float gpu_ms = g_step_renders ? g_step_gpu_ms / g_step_renders : 0.0f;
+    float game_ms = (float)pm3ds_t_game_step * 1000.0f / SYSCLOCK_ARM11;
+    g_step_render_ticks = 0;
+    g_step_gpu_ms = 0.0f;
+    g_step_renders = 0;
+    if (!stereo) {
+        g_si_was_stereo = false;
+        return;
+    }
+    if (!g_si_was_stereo) {   /* slider just went up: measure a few 30 fps steps first */
+        g_si_was_stereo = true;
+        g_stereo_interp = false;
+        g_si_render_ms = render_ms;
+        g_si_gpu_ms = gpu_ms;
+        g_si_game_ms = game_ms;
+        g_si_hold = 8;
+        g_si_late = 0.0f;
+        g_si_backoff = 0;
+        return;
+    }
+    if (!counted || render_ms == 0.0f) return;   /* fast-forward, or nothing new drawn */
+    g_si_render_ms += (render_ms - g_si_render_ms) * 0.2f;
+    g_si_gpu_ms += (gpu_ms - g_si_gpu_ms) * 0.2f;
+    g_si_game_ms += (game_ms - g_si_game_ms) * 0.2f;
+    /* a step that took more than two 60 Hz frames ran late */
+    if (interp_was_on) {
+        g_si_late = vblanks > 2 ? g_si_late + 1.0f : (g_si_late > 0.2f ? g_si_late - 0.2f : 0.0f);
+        if (++g_si_on_steps == 600) g_si_backoff = 0;   /* held for 20 s: back to short waits */
+    }
+    if (g_si_hold > 0) {
+        g_si_hold--;
+        return;
+    }
+    /* a frame's CPU and GPU work; the game step overlaps the GPU's */
+    float need = g_si_render_ms + (g_si_gpu_ms > g_si_game_ms ? g_si_gpu_ms : g_si_game_ms);
+#ifdef PM3DS_SI_FORCE   /* debug: the emulator's timing says nothing about a 3DS */
+    need = 0.0f;
+    g_si_late = 0.0f;
+#endif
+    bool on = g_stereo_interp;
+    if (on && (need > 16.0f || g_si_late >= 3.0f)) on = false;
+    else if (!on && need < 14.0f) on = true;
+    if (on != g_stereo_interp) {
+        pm3ds_log(PM3DS_LOG_INFO, "3D: %s fps (render %.1f ms, gpu %.1f ms, game %.1f ms, late %.1f, wait %d s)",
+                  on ? "60" : "30", g_si_render_ms, g_si_gpu_ms, g_si_game_ms, g_si_late, on ? 0 : 2 << g_si_backoff);
+        g_stereo_interp = on;
+        if (on) {
+            g_si_hold = 30;
+            g_si_on_steps = 0;
+        } else {
+            g_si_hold = 60 << g_si_backoff;   /* 2 s, 4 s, 8 s, 16 s */
+            if (g_si_backoff < 3) g_si_backoff++;
+        }
+        g_si_late = 0.0f;
+    }
 }
 
 /* loading frames drawn / skipped because the GPU was still busy (netlog) */
@@ -1016,7 +1107,8 @@ void pm3ds_gfx_present_frame(void) {
     bool render = n > 0 || nlast == 0;
     /* 60 fps: one game step spans two frames. New lists are drawn twice,
      * first half way from the last step's matrices (gfx_interp.c), then as
-     * they are. Stereo stays at 30 (four walks a step would not fit). */
+     * they are. With the 3D slider up only while there is time for both
+     * eyes twice (stereo_interp_update). */
     bool fps60 = pm3ds_fps60;
     static float rate;
     if (rate != (fps60 ? 60.0f : 30.0f)) {
@@ -1024,8 +1116,9 @@ void pm3ds_gfx_present_frame(void) {
         C3D_FrameRate(rate);
     }
     int frames = fps60 ? 2 : 1;
+    bool interp_on = false;
     if (render) {
-        bool interp = fps60 && n > 0 && osGet3DSliderState() <= 0.02f && !pm3ds_fast_forward();
+        bool interp = fps60 && n > 0 && (slider_now() <= 0.02f || g_stereo_interp) && !pm3ds_fast_forward();
 #ifdef PM3DS_INTERP_ONLY   /* test: show only the in-between frames (pairing errors stay on screen) */
         if (interp) {
             gfx_interp_begin_walk(0.5f, true);
@@ -1036,6 +1129,7 @@ void pm3ds_gfx_present_frame(void) {
             goto drawn;
         }
 #endif
+        interp_on = interp;
         if (interp) {
             gfx_interp_begin_walk(0.5f, false);
             render_lists(last, nlast);
@@ -1056,6 +1150,23 @@ drawn:
         pm3ds_bc_main = "frame sync";
         C3D_FrameSync();
         pm3ds_t_wait += svcGetSystemTick() - t0;
+    }
+    {
+        static u32 last_vbl;
+        u32 vbl = C3D_FrameCounter(0);
+#ifdef PM3DS_STEP_PROF
+        {   /* debug: a slow draw, and how many textures it uploaded */
+            static unsigned up0;
+            float rms = (float)g_step_render_ticks * 1000.0f / SYSCLOCK_ARM11;
+            unsigned up = pm3ds_tstat_uploads >= up0 ? pm3ds_tstat_uploads - up0 : pm3ds_tstat_uploads;
+            if (rms > 20.0f)
+                pm3ds_log(PM3DS_LOG_INFO, "SLOWDRAW %.1fms (gpu %.1f) in %d renders, %u uploads, vbl %u", rms,
+                          g_step_gpu_ms, g_step_renders, up, (unsigned)(vbl - last_vbl));
+            up0 = pm3ds_tstat_uploads;
+        }
+#endif
+        stereo_interp_update(slider_now() > 0.02f, fps60 && n > 0 && !pm3ds_fast_forward(), interp_on, vbl - last_vbl);
+        last_vbl = vbl;
     }
 
 #ifdef PM3DS_TITLE_DBG
@@ -1099,9 +1210,9 @@ drawn:
                 pm3ds_log(PM3DS_LOG_INFO, "PERF2 audio=%.1f%% engine=%.1f%% up=%u", aud, eng, pm3ds_tstat_uploads);
                 pm3ds_t_audio = pm3ds_t_audio_engine = 0;
             }
-            pm3ds_log(PM3DS_LOG_INFO, "PERF fps=%.1f game=%.2fms render=%.2fms idle=%.2fms tris=%u draws=%u up=%u cmd=%.0f%%",
+            pm3ds_log(PM3DS_LOG_INFO, "PERF fps=%.1f game=%.2fms render=%.2fms idle=%.2fms tris=%u draws=%u up=%u cmd=%.0f%% 3d=%d",
                       fps, ms_game, ms_rend, ms_wait, pm3ds_tstat_tris, g_stat_draws, pm3ds_tstat_uploads,
-                      g_cmdbuf_peak * 100.0f);
+                      g_cmdbuf_peak * 100.0f, g_si_was_stereo ? (g_stereo_interp ? 60 : 30) : 0);
             g_cmdbuf_peak = 0.0f;
             pm3ds_tstat_uploads = 0;
             last_tick = now;

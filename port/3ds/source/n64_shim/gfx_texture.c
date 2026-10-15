@@ -250,6 +250,8 @@ typedef struct gfx_tex_entry {
     int      c3d_tex_inited;
 #endif
     struct gfx_tex_entry *lru_prev, *lru_next;
+    struct gfx_tex_entry *hash_prev, *hash_next;   /* bucket of key_addr's page */
+    int      in_hash;
     uint32_t ext_stride, ext_tlut, ext_frame;   /* M12 key extension */
     uint32_t ext_sample;                        /* M14.6: texel content sample */
 } gfx_tex_entry_t;
@@ -268,6 +270,37 @@ static void cache_unlink(gfx_tex_entry_t *e) {
     if (e->lru_next) e->lru_next->lru_prev = e->lru_prev;
     else             g_cache_tail = e->lru_prev;
     e->lru_prev = e->lru_next = NULL;
+}
+
+/* Entries are also hashed by the 4 KB page their source starts in, so a
+ * lookup or an invalidation looks at a few entries instead of walking the
+ * whole cache (a map load invalidates ~15k ranges; with ~1000 cached
+ * textures the walks cost a second per battle on a 3DS). */
+#define HASH_PAGE_SHIFT 12
+#define HASH_BUCKETS    4096
+static gfx_tex_entry_t *g_hash[HASH_BUCKETS];
+static uint32_t g_max_span;   /* largest source span of any entry: how far back a range reaches */
+
+static gfx_tex_entry_t **bucket_of(uint32_t addr) {
+    return &g_hash[(addr >> HASH_PAGE_SHIFT) & (HASH_BUCKETS - 1)];
+}
+
+static void hash_link(gfx_tex_entry_t *e) {
+    gfx_tex_entry_t **b = bucket_of(e->key_addr);
+    e->hash_prev = NULL;
+    e->hash_next = *b;
+    if (*b) (*b)->hash_prev = e;
+    *b = e;
+    e->in_hash = 1;
+}
+
+static void hash_unlink(gfx_tex_entry_t *e) {
+    if (!e->in_hash) return;
+    if (e->hash_prev) e->hash_prev->hash_next = e->hash_next;
+    else              *bucket_of(e->key_addr) = e->hash_next;
+    if (e->hash_next) e->hash_next->hash_prev = e->hash_prev;
+    e->hash_prev = e->hash_next = NULL;
+    e->in_hash = 0;
 }
 
 static void cache_push_mru(gfx_tex_entry_t *e) {
@@ -290,6 +323,7 @@ static void cache_evict_until(size_t target) {
         if (victim->ext_frame == pm3ds_gfx_frame_number()) break;
 #endif
         cache_unlink(victim);
+        hash_unlink(victim);
         g_cache_bytes -= victim->bytes;
 #ifndef PM3DS_HOST_TEST
         if (victim->c3d_tex_inited) C3D_TexDelete(&victim->c3d_tex);
@@ -301,7 +335,7 @@ static void cache_evict_until(size_t target) {
 
 gfx_tex_entry_t *gfx_tex_cache_lookup(uint32_t addr, uint8_t fmt, uint8_t siz,
                                       uint16_t w, uint16_t h, uint8_t palette) {
-    for (gfx_tex_entry_t *e = g_cache_head; e; e = e->lru_next) {
+    for (gfx_tex_entry_t *e = *bucket_of(addr); e; e = e->hash_next) {
         if (e->key_addr == addr && e->key_fmt == fmt && e->key_siz == siz &&
             e->key_w == w && e->key_h == h && e->key_palette == palette) {
             cache_unlink(e);
@@ -322,6 +356,7 @@ gfx_tex_entry_t *gfx_tex_cache_insert(uint32_t addr, uint8_t fmt, uint8_t siz,
     e->key_w = w; e->key_h = h; e->key_palette = palette;
     e->tiled_rgba8 = tiled_rgba8; e->bytes = bytes;
     cache_push_mru(e);
+    hash_link(e);
     g_cache_bytes += bytes;
     return e;
 }
@@ -330,6 +365,7 @@ void gfx_tex_cache_reset(void) {
     while (g_cache_head) {
         gfx_tex_entry_t *e = g_cache_head;
         cache_unlink(e);
+        hash_unlink(e);
 #ifndef PM3DS_HOST_TEST
         if (e->c3d_tex_inited) C3D_TexDelete(&e->c3d_tex);
 #endif
@@ -505,12 +541,40 @@ static uint32_t tex_sample_hash(uint32_t src, uint32_t stride, uint32_t row_byte
 /* Drop cached textures sourced from [addr, addr+len): called when DMA or a
  * Yay0 decode overwrites memory. Entries the GPU may still read this frame are
  * only re-keyed (unreachable) and left for the LRU to free. */
+#ifdef PM3DS_STEP_PROF
+uint64_t pm3ds_prof_inval_ticks;
+uint32_t pm3ds_prof_inval_calls;
+unsigned pm3ds_prof_tex_entries(void) { unsigned n = 0; for (gfx_tex_entry_t *e = g_cache_head; e; e = e->lru_next) n++; return n; }
+#endif
 void gfx_tex_invalidate_range(const void *addr, size_t len) {
+#ifdef PM3DS_STEP_PROF
+    uint64_t t0 = svcGetSystemTick();
+    pm3ds_prof_inval_calls++;
+#endif
     uint32_t a = (uint32_t)(uintptr_t)addr, end = a + (uint32_t)len;
-    for (gfx_tex_entry_t *e = g_cache_head; e; e = e->lru_next) {
-        uint32_t s0 = e->key_addr, s1 = s0 + e->ext_stride * e->key_h;
-        if (s0 < end && a < s1) e->key_addr = 0;
+    if (end <= a) return;
+    /* entries starting up to g_max_span before the range can reach into it */
+    uint32_t first = (a > g_max_span ? a - g_max_span : 0) >> HASH_PAGE_SHIFT;
+    uint32_t last = (end - 1) >> HASH_PAGE_SHIFT;
+    if (last - first >= HASH_BUCKETS) {   /* a huge range: every bucket */
+        first = 0;
+        last = HASH_BUCKETS - 1;
     }
+    for (uint32_t pg = first; pg <= last; pg++) {
+        gfx_tex_entry_t *e = g_hash[pg & (HASH_BUCKETS - 1)];
+        while (e) {
+            gfx_tex_entry_t *next = e->hash_next;
+            uint32_t s0 = e->key_addr, s1 = s0 + e->ext_stride * e->key_h;
+            if (s0 < end && a < s1) {
+                hash_unlink(e);
+                e->key_addr = 0;
+            }
+            e = next;
+        }
+    }
+#ifdef PM3DS_STEP_PROF
+    pm3ds_prof_inval_ticks += svcGetSystemTick() - t0;
+#endif
 }
 
 int gfx_tex_miss_reason;   /* why the last gfx_tex_get returned NULL */
@@ -668,7 +732,7 @@ gfx_tex_entry_t *gfx_tex_get(const gfx_state_t *st, int tile_idx, unsigned *out_
                            (expand_t ? 4 : 0) | (expand_t && (t->cmt & 1) ? 8 : 0) |
                            (grow_s ? 16 : 0) | (grow_t ? 32 : 0)) << 24;
 
-    for (gfx_tex_entry_t *e = g_cache_head; e; e = e->lru_next) {
+    for (gfx_tex_entry_t *e = *bucket_of(src); e; e = e->hash_next) {
         tex_key_ext_t *x = ext_of(e);
         if (e->key_addr == src && e->key_fmt == t->fmt && e->key_siz == t->siz &&
             e->key_w == ow && e->key_h == oh && e->key_palette == key_pal &&
@@ -725,6 +789,7 @@ gfx_tex_entry_t *gfx_tex_get(const gfx_state_t *st, int tile_idx, unsigned *out_
     x->stride = stride;
     x->tlut = tlut_key;
     x->sample = sample;
+    if (stride * e->key_h > g_max_span) g_max_span = stride * e->key_h;
     x->frame = pm3ds_gfx_frame_number();
     *out_w = (unsigned)w; *out_h = (unsigned)h;
     return e->c3d_tex_inited ? e : NULL;

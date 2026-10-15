@@ -30,6 +30,18 @@ static inline uint32_t be32(const uint8_t *p) {
            ((uint32_t)p[2] << 8)  |  (uint32_t)p[3];
 }
 
+#ifdef PM3DS_STEP_PROF
+#include <3ds.h>
+extern uint64_t pm3ds_prof_yay0_ticks;
+static void decode_yay0_(void *srcv, void *dstv);
+void decode_yay0(void *srcv, void *dstv) {
+    uint64_t t0 = svcGetSystemTick();
+    decode_yay0_(srcv, dstv);
+    pm3ds_prof_yay0_ticks += svcGetSystemTick() - t0;
+}
+#define decode_yay0 decode_yay0_
+static
+#endif
 void decode_yay0(void *srcv, void *dstv) {
     const uint8_t *src = (const uint8_t *)srcv;
     uint8_t       *dst = (uint8_t *)dstv;

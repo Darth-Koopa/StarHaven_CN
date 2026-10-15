@@ -295,6 +295,9 @@ int main(void) {
               /* fast-forward: several game steps per pass, only the last
                * one's display lists are drawn */
               pm3ds_ff_poll();
+#ifdef PM3DS_STEP_PROF
+              { extern void pm3ds_prof_step_begin(void); pm3ds_prof_step_begin(); }
+#endif
               int steps = pm3ds_fast_forward() ? pm3ds_cfg.ff_speed : 1;
               for (int s = 0; s < steps; s++) {
                   if (s > 0) {   /* drop the lists of the step before (the queue is bounded) */
@@ -311,6 +314,11 @@ int main(void) {
                   pm3ds_gfx_retrace_cb(retrace_task_num);
                   pm3ds_gfx_retrace_cb(retrace_task_num);
               }
+#ifdef PM3DS_STEP_PROF
+              { extern void pm3ds_prof_step_end(int); extern s32 get_game_mode(void); pm3ds_prof_step_end(get_game_mode()); }
+#endif
+              { extern uint64_t pm3ds_t_game_step;
+                pm3ds_t_game_step = svcGetSystemTick() - _t0; }
               pm3ds_t_game += svcGetSystemTick() - _t0; }
             if (_f < 20 || _tdbg) {
                 pm3ds_log(PM3DS_LOG_INFO,
