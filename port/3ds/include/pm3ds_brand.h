@@ -16,7 +16,10 @@
 #define PM3DS_VERSION_MAJOR  1
 #define PM3DS_VERSION_MINOR  0
 #define PM3DS_VERSION_MICRO  3
-#define PM3DS_VERSION_STR    "1.0.1"
+#define PM3DS_VSTR_(x)       #x
+#define PM3DS_VSTR(x)        PM3DS_VSTR_(x)
+#define PM3DS_VERSION_STR    PM3DS_VSTR(PM3DS_VERSION_MAJOR) "." PM3DS_VSTR(PM3DS_VERSION_MINOR) \
+                             "." PM3DS_VSTR(PM3DS_VERSION_MICRO)
 
 /* save, settings, log and the player's ROM */
 #define PM3DS_SD_DIR         "sdmc:/3ds/StarHaven"
