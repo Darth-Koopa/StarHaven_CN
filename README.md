@@ -15,7 +15,7 @@ on the 3DS; nothing is emulated.
 
 <img src="port/3ds/docs/screenshots/install-qr.png" align="right" width="180" alt="QR code for the latest StarHaven.cia">
 
-1. On a **New 3DS / New 2DS XL** with custom firmware, open **FBI → Remote Install →
+1. On a 3DS with custom firmware, open **FBI → Remote Install →
    Scan QR Code** and scan the code on the right. It always installs the newest release.
    You can also download `StarHaven.cia` or `StarHaven.3dsx` from
    [Releases](../../releases/latest).
@@ -33,6 +33,8 @@ Full instructions: [the player readme](port/3ds/RELEASE_README.md).
 - Original, Fill or Wide screen, the 3D slider, remappable buttons
 - A touch bottom screen: stats, world map, party, items, and the battle menus as buttons
 - A randomizer, chosen when you start a new file, with a seed you can share
+- Full speed on the New 3DS family; the original 3DS and 2DS run it slowly (about 15 fps,
+  CIA only)
 
 | | | |
 |:---:|:---:|:---:|

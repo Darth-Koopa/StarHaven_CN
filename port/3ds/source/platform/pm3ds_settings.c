@@ -61,7 +61,9 @@ static void apply(void) {
 
 void pm3ds_settings_load(void) {
     pm3ds_cfg.view_mode = 2;   /* Wide */
-    pm3ds_cfg.fps60 = true;
+    bool n3ds = false;
+    APT_CheckNew3DS(&n3ds);
+    pm3ds_cfg.fps60 = n3ds;    /* an Old 3DS can't keep up with the in-between frames */
     pm3ds_cfg.text_speed = TEXT_NORMAL;
     pm3ds_cfg.ff_speed = 3;
     pm3ds_cfg.ff_toggle = false;

@@ -8,8 +8,9 @@ your ROM from the SD card when it starts.
 
 ## What you need
 
-- A **New Nintendo 3DS, New 3DS XL, New 2DS XL** (or New 3DS LL). The original 3DS and 2DS
-  are not supported.
+- A **New Nintendo 3DS, New 3DS XL, New 2DS XL** (or New 3DS LL) for full speed. The
+  original 3DS and 2DS run it too, but slowly (about 15 fps), and only the CIA: the `.3dsx`
+  doesn't get enough memory there.
 - Custom firmware (Luma3DS) and a CIA installer such as FBI, or the Homebrew Launcher for
   the `.3dsx`.
 - A dump of **Paper Mario** as `.z64`, `.n64` or `.v64`:
