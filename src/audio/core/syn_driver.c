@@ -186,7 +186,14 @@ Acmd* alAudioFrame(Acmd* cmdList, s32* cmdLen, s16* outBuf, s32 outLen) {
                 }
 
                 // process fx for this bus
+#ifdef _3DS
+                // Old 3DS: no reverb (the effect cost about an eighth of the CPU there);
+                // audio_alist.c then also drops the voices' sends into it
+                extern bool pm3ds_audio_no_reverb;
+                if (fxBus->curEffectType != AU_FX_NONE && !pm3ds_audio_no_reverb) {
+#else
                 if (fxBus->curEffectType != AU_FX_NONE) {
+#endif
                     cmdListPos = au_pull_fx(fxBus->fxL, cmdListPos, N_AL_AUX_L_OUT, N_AL_TEMP_0);
                     cmdListPos = au_pull_fx(fxBus->fxR, cmdListPos, N_AL_AUX_R_OUT, N_AL_TEMP_0);
                 }

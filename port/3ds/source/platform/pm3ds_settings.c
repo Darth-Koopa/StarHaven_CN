@@ -17,6 +17,9 @@ extern bool pm3ds_fps60;                       /* n64_shim/gfx_interp.c */
 extern void pm3ds_set_view_mode(int mode);     /* n64_shim/gfx_present.c */
 
 pm3ds_settings_t pm3ds_cfg;
+/* Old 3DS: fewer extras (src/entity.c: only Mario's and the partner's
+ * shadows; audio_dsp.c: no reverb) */
+bool pm3ds_lite_effects;
 const float pm3ds_depth3d_shift[DEPTH3D_LEVELS] = { 3.0f, 5.0f, 7.0f, 9.0f, 11.0f };
 const char *const pm3ds_depth3d_names[DEPTH3D_LEVELS] = { "Low", "Normal", "Deep", "Deeper", "Deepest" };
 bool pm3ds_ff_button_on;
@@ -65,6 +68,10 @@ void pm3ds_settings_load(void) {
     pm3ds_cfg.view_mode = 2;   /* Wide */
     bool n3ds = false;
     APT_CheckNew3DS(&n3ds);
+#ifdef PM3DS_SIM_O3DS
+    n3ds = false;   /* test build: a New 3DS at Old 3DS speed */
+#endif
+    pm3ds_lite_effects = !n3ds;
     pm3ds_cfg.fps60 = n3ds;    /* an Old 3DS can't keep up with the in-between frames */
     pm3ds_cfg.depth3d = DEPTH3D_DEFAULT;
     pm3ds_cfg.text_speed = TEXT_NORMAL;

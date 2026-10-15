@@ -434,7 +434,15 @@ void gfx_combiner_info(const gfx_state_t *st, bool two_cycle, gfx_cc_info_t *inf
     }
 }
 
-void gfx_combiner_apply(const gfx_state_t *st, bool two_cycle, gfx_cc_info_t *info) {
+/* the six PICA stages (and buffer masks) for one combine state */
+typedef struct {
+    C3D_TexEnv env[6];
+    int rgb_mask, buf_mask;
+    gfx_cc_info_t info;
+} cc_result_t;
+
+static void build_envs(const gfx_state_t *st, bool two_cycle, cc_result_t *res) {
+    gfx_cc_info_t *info = &res->info;
     stage_t stg[6];
     int last_c1;
     s_noise_flat = false;
@@ -448,7 +456,7 @@ void gfx_combiner_apply(const gfx_state_t *st, bool two_cycle, gfx_cc_info_t *in
     int first_c2 = (two_cycle && last_c1 + 1 < n) ? last_c1 + 1 : -1;
 
     for (int i = 0; i < 6; i++) {
-        C3D_TexEnv *env = C3D_GetTexEnv(i);
+        C3D_TexEnv *env = &res->env[i];
         C3D_TexEnvInit(env);
         if (i >= n) continue;   /* pass-through: REPLACE(PREVIOUS) */
 
@@ -490,6 +498,61 @@ void gfx_combiner_apply(const gfx_state_t *st, bool two_cycle, gfx_cc_info_t *in
     int rgb_mask = buf_mask;
     for (int i = 0; i < n && i < 4; i++)
         if (stg[i].buf_rgb) rgb_mask |= 1 << i;
-    C3D_TexEnvBufUpdate(C3D_RGB, rgb_mask);
-    C3D_TexEnvBufUpdate(C3D_Alpha, buf_mask);
+    res->rgb_mask = rgb_mask;
+    res->buf_mask = buf_mask;
+}
+
+/* Translating a combine mode costs more than the draw it is for on an Old
+ * 3DS, and a frame uses a few dozen distinct ones: keep the results, keyed by
+ * everything build_envs reads. Only the stages that differ from what the GPU
+ * already has are handed to citro3d (each one it re-sends as commands). */
+typedef struct {
+    uint32_t w0, w1;
+    uint8_t prim[4], env[4], key_center[3], key_scale[3], lod, two;
+    int16_t k4, k5;
+} cc_key_t;
+
+#define CC_CACHE 128
+static struct { cc_key_t key; bool used; cc_result_t res; } s_cc[CC_CACHE];
+static C3D_TexEnv s_applied[6];
+static int s_applied_rgb = -1, s_applied_buf = -1;
+static bool s_applied_valid;
+
+/* something else (the bottom screen, fills, window clears) set the stages */
+void gfx_combiner_invalidate(void) { s_applied_valid = false; }
+
+void gfx_combiner_apply(const gfx_state_t *st, bool two_cycle, gfx_cc_info_t *info) {
+    cc_key_t k;
+    memset(&k, 0, sizeof k);
+    k.w0 = st->combine_w0;
+    k.w1 = st->combine_w1;
+    memcpy(k.prim, st->prim, 4);
+    memcpy(k.env, st->env, 4);
+    memcpy(k.key_center, st->key_center, 3);
+    memcpy(k.key_scale, st->key_scale, 3);
+    k.lod = st->prim_lod_frac;
+    k.two = two_cycle;
+    k.k4 = st->k4;
+    k.k5 = st->k5;
+    uint32_t h = 2166136261u;
+    const uint8_t *kb = (const uint8_t *)&k;
+    for (size_t i = 0; i < sizeof k; i++) h = (h ^ kb[i]) * 16777619u;
+    unsigned slot = (h ^ (h >> 16)) & (CC_CACHE - 1);
+    if (!s_cc[slot].used || memcmp(&s_cc[slot].key, &k, sizeof k)) {
+        build_envs(st, two_cycle, &s_cc[slot].res);
+        s_cc[slot].key = k;
+        s_cc[slot].used = true;
+    }
+    const cc_result_t *r = &s_cc[slot].res;
+    *info = r->info;
+    for (int i = 0; i < 6; i++) {
+        if (s_applied_valid && !memcmp(&s_applied[i], &r->env[i], sizeof r->env[i])) continue;
+        *C3D_GetTexEnv(i) = r->env[i];
+        s_applied[i] = r->env[i];
+    }
+    if (!s_applied_valid || s_applied_rgb != r->rgb_mask) C3D_TexEnvBufUpdate(C3D_RGB, r->rgb_mask);
+    if (!s_applied_valid || s_applied_buf != r->buf_mask) C3D_TexEnvBufUpdate(C3D_Alpha, r->buf_mask);
+    s_applied_rgb = r->rgb_mask;
+    s_applied_buf = r->buf_mask;
+    s_applied_valid = true;
 }

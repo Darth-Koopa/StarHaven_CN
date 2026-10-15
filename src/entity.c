@@ -4,6 +4,9 @@
 #endif
 #include "ld_addrs.h"
 #include "entity.h"
+#ifdef _3DS
+#include "world/partners.h"
+#endif
 #include "model.h"
 #include "sprite/player.h"
 
@@ -418,6 +421,24 @@ void render_entities(void) {
     render_shadows();
 }
 
+#ifdef _3DS
+// Old 3DS: only Mario's and the partner's shadows are drawn (each one is a
+// draw call of its own there); the others still fade and get deleted as usual
+extern bool pm3ds_lite_effects;
+static s32 pm3ds_shadow_skipped(s32 i) {
+    if (!pm3ds_lite_effects) {
+        return false;
+    }
+    if (gGameStatusPtr->context == CONTEXT_BATTLE) {
+        Actor* player = gBattleStatus.playerActor;
+        Actor* partner = gBattleStatus.partnerActor;
+        return !(player != nullptr && (player->shadow.id & 0xFFF) == i) &&
+               !(partner != nullptr && (partner->shadow.id & 0xFFF) == i);
+    }
+    return (gPlayerStatus.shadowID & 0xFFF) != i && !(wPartnerNpc != nullptr && (wPartnerNpc->shadowIndex & 0xFFF) == i);
+}
+#endif
+
 void render_shadows(void) {
     s32 i;
 
@@ -425,6 +446,18 @@ void render_shadows(void) {
         Shadow* shadow = get_shadow_by_index(i);
 
         if (shadow != nullptr) {
+#ifdef _3DS
+            if (pm3ds_shadow_skipped(i)) {
+                if ((shadow->flags & ENTITY_FLAG_FADING_AWAY) && !(shadow->flags & ENTITY_FLAG_HAS_ANIMATED_MODEL &&
+                                                                  !(shadow->flags & ENTITY_FLAG_HIDDEN))) {
+                    shadow->alpha -= 20;
+                    if (shadow->alpha <= 20) {
+                        shadow->flags |= ENTITY_FLAG_PENDING_INSTANCE_DELETE;
+                    }
+                }
+                continue;
+            }
+#endif
             if (shadow->flags & ENTITY_FLAG_HIDDEN) {
                 if (shadow->flags & ENTITY_FLAG_FADING_AWAY) {
                     shadow->alpha -= 20;

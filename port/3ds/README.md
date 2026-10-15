@@ -4,9 +4,10 @@ A native port of the Paper Mario decompilation (PAL `ver/pal` and US `ver/us`) t
 The game's C code is compiled for the ARM11 and linked with a 3DS platform layer;
 nothing is emulated except the N64 RSP/RDP work, which is translated on the fly.
 
-Status: the whole game plays (v1.0.5), with 60 fps in-between frames, fast-forward, a touch
+Status: the whole game plays (v1.0.6), with 60 fps in-between frames, fast-forward, a touch
 bottom screen and a randomizer. Runs on **New 3DS / New 2DS XL** (124 MB New-3DS mode); the
-original 3DS and 2DS start the CIA in their 96 MB mode, at about 15 fps.
+original 3DS and 2DS start the CIA in their 96 MB mode at about 30 fps, with the audio mixer on
+the second core, frame skip when behind, and no reverb, 3D or NPC/enemy shadows.
 Release packages hold both the PAL and the US build and pick one from the player's ROM.
 
 Players supply the ROM: it goes on the SD card as `/3ds/StarHaven/baserom.z64`, and release

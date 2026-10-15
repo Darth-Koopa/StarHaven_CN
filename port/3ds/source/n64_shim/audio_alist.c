@@ -19,6 +19,9 @@
  */
 #include <stdint.h>
 #include <string.h>
+#ifdef __ARM_FEATURE_SAT
+#include <arm_acle.h>
+#endif
 
 #include "pm3ds_log.h"
 
@@ -77,7 +80,11 @@ static const int16_t RESAMPLE_LUT[64 * 4] = {
 };
 
 static inline int16_t clamp16(int32_t v) {
+#ifdef __ARM_FEATURE_SAT   /* one SSAT instead of two compares and branches, per sample */
+    return (int16_t)__ssat(v, 16);
+#else
     return v < -32768 ? -32768 : v > 32767 ? 32767 : (int16_t)v;
+#endif
 }
 static inline int16_t *dm16(uint32_t off) { return (int16_t *)(s_dmem + (off & 0xFFE)); }
 static inline uint8_t *dm8(uint32_t off) { return s_dmem + (off & 0xFFF); }
@@ -109,7 +116,8 @@ static int32_t rdot(int n, const int16_t *x, const int16_t *y) {
     return acc;
 }
 
-static void cmd_adpcm(uint32_t w0, uint32_t w1) {
+#ifdef PM3DS_ALIST_VERIFY
+static void cmd_adpcm_ref(uint32_t w0, uint32_t w1) {
     uint32_t state;
     uint32_t flags = w1 >> 28;
     uint32_t count = ((w1 >> 16) & 0xFFF);
@@ -156,7 +164,7 @@ static void cmd_adpcm(uint32_t w0, uint32_t w1) {
     memcpy(host(state), last, sizeof(last));
 }
 
-static void cmd_resample(uint32_t w0, uint32_t w1) {
+static void cmd_resample_ref(uint32_t w0, uint32_t w1) {
     extern uint32_t pm3ds_alist_fix_addr(uint32_t a24);
     uint32_t state = pm3ds_alist_fix_addr(w0 & 0x00FFFFFF);
     uint32_t flags = w1 >> 30;
@@ -188,6 +196,115 @@ static void cmd_resample(uint32_t w0, uint32_t w1) {
     st[4] = (int16_t)acc;
 }
 
+#endif
+
+/* ADPCM: 16 samples per byte group, each predicted from the two before
+ * and the ones of its own half (the in-frame term written out, no loops) */
+static void cmd_adpcm(uint32_t w0, uint32_t w1) {
+    uint32_t state;
+    uint32_t flags = w1 >> 28;
+    uint32_t count = ((w1 >> 16) & 0xFFF);
+    uint32_t in = NAUDIO_BASE + ((w1 >> 12) & 0xF);
+    uint32_t out = NAUDIO_BASE + (w1 & 0xFFF);
+    int16_t last[16];
+
+    extern uint32_t pm3ds_alist_fix_addr(uint32_t a24);
+    state = pm3ds_alist_fix_addr(w0 & 0x00FFFFFF);
+    count = (count + 31) & ~31u;
+
+    if (flags & A_INIT) memset(last, 0, sizeof(last));
+    else memcpy(last, host((flags & A_LOOP) ? s_loop : state), sizeof(last));
+
+    for (int i = 0; i < 16; i++, out += 2) *dm16(out) = last[i];
+
+    while (count) {
+        uint8_t code = *dm8(in++);
+        int scale = code >> 4;
+        const int16_t *b1 = s_table + ((code & 0xF) << 4);
+        const int16_t *b2 = b1 + 8;
+        int rshift = scale < 12 ? 12 - scale : 0;
+        int16_t frame[16];
+        for (int i = 0; i < 8; i++) {
+            uint8_t b = *dm8(in++);
+            frame[i * 2]     = (int16_t)((int16_t)((uint16_t)(b & 0xF0) << 8) >> rshift);
+            frame[i * 2 + 1] = (int16_t)((int16_t)((uint16_t)(b & 0x0F) << 12) >> rshift);
+        }
+        for (int half = 0; half < 2; half++) {
+            const int16_t *src = frame + half * 8;
+            int32_t l1 = half ? last[6] : last[14];
+            int32_t l2 = half ? last[7] : last[15];
+            int16_t *res = last + half * 8;
+            res[0] = clamp16((((int32_t)src[0] << 11) + b1[0] * l1 + b2[0] * l2) >> 11);
+            res[1] = clamp16((((int32_t)src[1] << 11) + b1[1] * l1 + b2[1] * l2 + b2[0] * src[0]) >> 11);
+            res[2] = clamp16((((int32_t)src[2] << 11) + b1[2] * l1 + b2[2] * l2 + b2[0] * src[1] + b2[1] * src[0]) >> 11);
+            res[3] = clamp16((((int32_t)src[3] << 11) + b1[3] * l1 + b2[3] * l2 + b2[0] * src[2] + b2[1] * src[1] + b2[2] * src[0]) >> 11);
+            res[4] = clamp16((((int32_t)src[4] << 11) + b1[4] * l1 + b2[4] * l2 + b2[0] * src[3] + b2[1] * src[2] + b2[2] * src[1] + b2[3] * src[0]) >> 11);
+            res[5] = clamp16((((int32_t)src[5] << 11) + b1[5] * l1 + b2[5] * l2 + b2[0] * src[4] + b2[1] * src[3] + b2[2] * src[2] + b2[3] * src[1] + b2[4] * src[0]) >> 11);
+            res[6] = clamp16((((int32_t)src[6] << 11) + b1[6] * l1 + b2[6] * l2 + b2[0] * src[5] + b2[1] * src[4] + b2[2] * src[3] + b2[3] * src[2] + b2[4] * src[1] + b2[5] * src[0]) >> 11);
+            res[7] = clamp16((((int32_t)src[7] << 11) + b1[7] * l1 + b2[7] * l2 + b2[0] * src[6] + b2[1] * src[5] + b2[2] * src[4] + b2[3] * src[3] + b2[4] * src[2] + b2[5] * src[1] + b2[6] * src[0]) >> 11);
+        }
+        for (int i = 0; i < 16; i++, out += 2) *dm16(out) = last[i];
+        count -= 32;
+    }
+    memcpy(host(state), last, sizeof(last));
+}
+
+/* RESAMPLE: 4-tap interpolation. Away from the end of DMEM (always, in
+ * practice) the taps are read without wrapping, two at a time into SMLAD. */
+static void cmd_resample(uint32_t w0, uint32_t w1) {
+    extern uint32_t pm3ds_alist_fix_addr(uint32_t a24);
+    uint32_t state = pm3ds_alist_fix_addr(w0 & 0x00FFFFFF);
+    uint32_t flags = w1 >> 30;
+    uint32_t pitch = ((w1 >> 14) & 0xFFFF) << 1;
+    uint32_t in = NAUDIO_BASE + ((w1 >> 2) & 0xFFF);
+    uint32_t out = (w1 & 3) ? NAUDIO_MAIN2 : NAUDIO_BASE;
+    int16_t *st = (int16_t *)host(state);
+    uint32_t ipos = (in >> 1) - 4, opos = out >> 1;
+    uint32_t acc;
+    int16_t *s = (int16_t *)s_dmem;
+
+    if (flags & A_INIT) {
+        for (int k = 0; k < 4; k++) s[(ipos + k) & 0x7FF] = 0;
+        acc = 0;
+    } else {
+        for (int k = 0; k < 4; k++) s[(ipos + k) & 0x7FF] = st[k];
+        acc = (uint16_t)st[4];
+    }
+    int n = NAUDIO_COUNT >> 1;
+    uint32_t last_in = ipos + (uint32_t)(((uint64_t)acc + (uint64_t)pitch * (uint32_t)n) >> 16) + 3;
+#if defined(__ARM_FEATURE_SIMD32)
+    if (ipos < 0x800 && last_in < 0x800 && opos + (uint32_t)n <= 0x800) {
+        for (; n; n--) {
+            const int16_t *lut = RESAMPLE_LUT + ((acc & 0xFC00) >> 8);
+            const int16_t *p = s + ipos;
+            int32_t x01, x23, l01, l23;
+            memcpy(&x01, p, 4);
+            memcpy(&x23, p + 2, 4);
+            memcpy(&l01, lut, 4);
+            memcpy(&l23, lut + 2, 4);
+            int32_t v = __smlad(x01, l01, __smuad(x23, l23));   /* wraps like the plain sum */
+            s[opos++] = clamp16(v >> 15);
+            acc += pitch;
+            ipos += acc >> 16;
+            acc &= 0xFFFF;
+        }
+    }
+#else
+    (void)last_in;
+#endif
+    for (; n; n--) {
+        const int16_t *lut = RESAMPLE_LUT + ((acc & 0xFC00) >> 8);
+        int32_t v = s[ipos & 0x7FF] * lut[0] + s[(ipos + 1) & 0x7FF] * lut[1] +
+                    s[(ipos + 2) & 0x7FF] * lut[2] + s[(ipos + 3) & 0x7FF] * lut[3];
+        s[opos++ & 0x7FF] = clamp16(v >> 15);
+        acc += pitch;
+        ipos += acc >> 16;
+        acc &= 0xFFFF;
+    }
+    for (int k = 0; k < 4; k++) st[k] = s[(ipos + k) & 0x7FF];
+    st[4] = (int16_t)acc;
+}
+
 typedef struct { int64_t value, step, target; } ramp_t;
 
 static int16_t ramp_step(ramp_t *r) {
@@ -201,7 +318,8 @@ static inline void mix_into(int16_t *dst, int16_t src, int16_t gain) {
     *dst = clamp16(*dst + ((src * gain) >> 15));
 }
 
-static void cmd_envmixer(uint32_t w0, uint32_t w1) {
+#ifdef PM3DS_ALIST_VERIFY
+static void cmd_envmixer_ref(uint32_t w0, uint32_t w1) {
     uint32_t flags = (w0 >> 16) & 0xFF;
     int16_t *save = (int16_t *)host(w1);   /* 80 bytes; full 32-bit field */
     ramp_t r[2];
@@ -244,6 +362,158 @@ static void cmd_envmixer(uint32_t w0, uint32_t w1) {
     v = (int32_t)r[1].value; memcpy(&save[10], &v, 4);
 }
 
+#endif
+
+bool pm3ds_audio_no_reverb;   /* Old 3DS (audio_dsp.c) */
+
+/* ENVMIXER: one voice into the dry and wet buffers with two volume ramps.
+ * Nearly always both ramps sit at their target (step 0), and then the four
+ * gains are the same for the whole pass: that part runs as a plain
+ * multiply-add with saturation, skipping a buffer whose gain is 0 (most voices
+ * have no reverb send). Results match the per-sample version bit for bit
+ * (PM3DS_ALIST_VERIFY checks it). */
+static void cmd_envmixer(uint32_t w0, uint32_t w1) {
+    uint32_t flags = (w0 >> 16) & 0xFF;
+    int16_t *save = (int16_t *)host(w1);   /* 80 bytes; full 32-bit field */
+    ramp_t r[2];
+    int16_t dry = s_dry, wet = s_wet;
+
+    s_vol[1] = (int16_t)w0;
+    if (flags & A_INIT) {
+        r[0].step = s_rate[0] / 8; r[0].value = (int64_t)s_vol[0] << 16; r[0].target = (int64_t)s_target[0] << 16;
+        r[1].step = s_rate[1] / 8; r[1].value = (int64_t)s_vol[1] << 16; r[1].target = (int64_t)s_target[1] << 16;
+    } else {
+        int32_t v;
+        wet = save[0];
+        dry = save[1];
+        r[0].target = (int64_t)save[2] << 16;
+        r[1].target = (int64_t)save[3] << 16;
+        memcpy(&v, &save[4], 4);  r[0].step = v;
+        memcpy(&v, &save[6], 4);  r[1].step = v;
+        memcpy(&v, &save[8], 4);  r[0].value = v;
+        memcpy(&v, &save[10], 4); r[1].value = v;
+    }
+    const int16_t *in = dm16(NAUDIO_BASE);
+    int16_t *dl = dm16(NAUDIO_DRY_L), *dr = dm16(NAUDIO_DRY_R);
+    int16_t *wl = dm16(NAUDIO_WET_L), *wr = dm16(NAUDIO_WET_R);
+    int16_t wet_saved = wet;
+    if (pm3ds_audio_no_reverb) wet = 0;   /* no reverb: nothing goes to it (the voice keeps its send) */
+    int k = 0;
+    /* ramping, in 32 bits: ramp_step adds the step until the value passes
+     * the target, then holds the target. Counting those adds up front keeps
+     * every value in between start and target (no 64-bit sums per sample).
+     * A ramp with step 0 settles on its target at once if at or below it. */
+    int32_t val[2], stp[2], tgt[2];
+    int32_t rem[2];
+    for (int j = 0; j < 2; j++) {
+        val[j] = (int32_t)r[j].value;
+        stp[j] = (int32_t)r[j].step;
+        tgt[j] = (int32_t)r[j].target;
+        if (stp[j] == 0) {
+            if (val[j] <= tgt[j]) val[j] = tgt[j];
+            rem[j] = 0;
+        } else {
+            int64_t d = stp[j] > 0 ? (int64_t)tgt[j] - val[j] : (int64_t)val[j] - tgt[j];
+            int64_t a = stp[j] > 0 ? (int64_t)stp[j] : -(int64_t)stp[j];
+            int64_t adds = d <= 0 ? 1 : (d + a - 1) / a;   /* the add that reaches it */
+            rem[j] = adds > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)adds;
+        }
+    }
+    for (; k < NAUDIO_COUNT / 2 && (rem[0] || rem[1]); k++) {
+        for (int j = 0; j < 2; j++) {
+            if (!rem[j]) continue;
+            if (--rem[j] == 0) { val[j] = tgt[j]; stp[j] = 0; }
+            else val[j] += stp[j];
+        }
+        int16_t lv = (int16_t)(val[0] >> 16), rv = (int16_t)(val[1] >> 16);
+        int16_t s = in[k];
+        mix_into(&dl[k], s, clamp16((lv * dry + 0x4000) >> 15));
+        mix_into(&dr[k], s, clamp16((rv * dry + 0x4000) >> 15));
+        if (wet) {
+            mix_into(&wl[k], s, clamp16((lv * wet + 0x4000) >> 15));
+            mix_into(&wr[k], s, clamp16((rv * wet + 0x4000) >> 15));
+        }
+    }
+    for (int j = 0; j < 2; j++) {
+        r[j].value = val[j];
+        r[j].step = stp[j];
+    }
+    if (k < NAUDIO_COUNT / 2) {
+        int16_t lv = (int16_t)(r[0].value >> 16), rv = (int16_t)(r[1].value >> 16);
+        int16_t g[4] = { clamp16((lv * dry + 0x4000) >> 15), clamp16((rv * dry + 0x4000) >> 15),
+                         clamp16((lv * wet + 0x4000) >> 15), clamp16((rv * wet + 0x4000) >> 15) };
+        int16_t *dst[4] = { dl, dr, wl, wr };
+        for (int b = 0; b < 4; b++) {
+            int32_t gain = g[b];
+            if (gain == 0) continue;   /* adds 0: the buffer stays as it is */
+            int16_t *d = dst[b];
+            for (int i = k; i < NAUDIO_COUNT / 2; i++) d[i] = clamp16(d[i] + ((in[i] * gain) >> 15));
+        }
+    }
+    int32_t v;
+    save[0] = wet_saved;
+    save[1] = dry;
+    save[2] = (int16_t)(r[0].target >> 16);
+    save[3] = (int16_t)(r[1].target >> 16);
+    v = (int32_t)r[0].step;  memcpy(&save[4], &v, 4);
+    v = (int32_t)r[1].step;  memcpy(&save[6], &v, 4);
+    v = (int32_t)r[0].value; memcpy(&save[8], &v, 4);
+    v = (int32_t)r[1].value; memcpy(&save[10], &v, 4);
+}
+
+#ifdef PM3DS_ALIST_VERIFY
+/* debug: run both versions on the same input and compare */
+unsigned pm3ds_alist_verify_calls, pm3ds_alist_verify_bad;
+static void cmd_envmixer_checked(uint32_t w0, uint32_t w1) {
+    static uint8_t dmem_in[sizeof s_dmem], dmem_ref[sizeof s_dmem];
+    int16_t save_in[12], save_ref[12];
+    int16_t *save = (int16_t *)host(w1);
+    int16_t vol1 = s_vol[1];
+    memcpy(dmem_in, s_dmem, sizeof s_dmem);
+    memcpy(save_in, save, sizeof save_in);
+    cmd_envmixer_ref(w0, w1);
+    memcpy(dmem_ref, s_dmem, sizeof s_dmem);
+    memcpy(save_ref, save, sizeof save_ref);
+    memcpy(s_dmem, dmem_in, sizeof s_dmem);
+    memcpy(save, save_in, sizeof save_in);
+    s_vol[1] = vol1;
+    cmd_envmixer(w0, w1);
+    pm3ds_alist_verify_calls++;
+    if (memcmp(dmem_ref, s_dmem, sizeof s_dmem) || memcmp(save_ref, save, sizeof save_ref)) {
+        if (pm3ds_alist_verify_bad++ < 8)
+            pm3ds_log(PM3DS_LOG_WARN, "alist verify: ENVMIXER differs (w0=%08lX)", (unsigned long)w0);
+    }
+    if ((pm3ds_alist_verify_calls & 0x3FFF) == 0)
+        pm3ds_log(PM3DS_LOG_INFO, "alist verify: %u calls, %u differ", pm3ds_alist_verify_calls, pm3ds_alist_verify_bad);
+}
+#define cmd_envmixer cmd_envmixer_checked
+
+/* the same for ADPCM and RESAMPLE: DMEM plus their state in the engine heap */
+static void checked(const char *what, void (*fast)(uint32_t, uint32_t), void (*ref)(uint32_t, uint32_t),
+                    uint32_t w0, uint32_t w1, uint32_t state_bytes) {
+    static uint8_t dmem_in[sizeof s_dmem], dmem_ref[sizeof s_dmem];
+    uint8_t st_in[32], st_ref[32];
+    uint8_t *st = (uint8_t *)host(pm3ds_alist_fix_addr(w0 & 0x00FFFFFF));
+    memcpy(dmem_in, s_dmem, sizeof s_dmem);
+    memcpy(st_in, st, state_bytes);
+    ref(w0, w1);
+    memcpy(dmem_ref, s_dmem, sizeof s_dmem);
+    memcpy(st_ref, st, state_bytes);
+    memcpy(s_dmem, dmem_in, sizeof s_dmem);
+    memcpy(st, st_in, state_bytes);
+    fast(w0, w1);
+    pm3ds_alist_verify_calls++;
+    if (memcmp(dmem_ref, s_dmem, sizeof s_dmem) || memcmp(st_ref, st, state_bytes)) {
+        if (pm3ds_alist_verify_bad++ < 8)
+            pm3ds_log(PM3DS_LOG_WARN, "alist verify: %s differs (w0=%08lX w1=%08lX)", what, (unsigned long)w0, (unsigned long)w1);
+    }
+}
+static void cmd_adpcm_checked(uint32_t w0, uint32_t w1) { checked("ADPCM", cmd_adpcm, cmd_adpcm_ref, w0, w1, 32); }
+static void cmd_resample_checked(uint32_t w0, uint32_t w1) { checked("RESAMPLE", cmd_resample, cmd_resample_ref, w0, w1, 10); }
+#define cmd_adpcm cmd_adpcm_checked
+#define cmd_resample cmd_resample_checked
+#endif
+
 static void cmd_polef(uint32_t w0, uint32_t w1) {
     extern uint32_t pm3ds_alist_fix_addr(uint32_t a24);
     uint32_t flags = (w0 >> 16) & 0xFF;
@@ -279,10 +549,19 @@ static void cmd_polef(uint32_t w0, uint32_t w1) {
 
 unsigned pm3ds_alist_cmds, pm3ds_alist_unknown;
 
+#ifdef PM3DS_STEP_PROF
+/* debug: CPU ticks per command type (logged with PERF2) */
+uint64_t pm3ds_alist_ticks[16];
+extern uint64_t svcGetSystemTick(void);
+#endif
+
 void pm3ds_alist_run(const uint32_t *cmds, int nwords) {
     for (int i = 0; i + 1 < nwords; i += 2) {
         uint32_t w0 = cmds[i], w1 = cmds[i + 1];
         pm3ds_alist_cmds++;
+#ifdef PM3DS_STEP_PROF
+        uint64_t t0 = svcGetSystemTick();
+#endif
         switch (w0 >> 24) {
             case 0: break;                                                  /* SPNOOP */
             case 1: cmd_adpcm(w0, w1); break;                               /* ADPCM */
@@ -345,5 +624,8 @@ void pm3ds_alist_run(const uint32_t *cmds, int nwords) {
                     pm3ds_log(PM3DS_LOG_WARN, "alist: unknown command %08X %08X", (unsigned)w0, (unsigned)w1);
                 break;
         }
+#ifdef PM3DS_STEP_PROF
+        pm3ds_alist_ticks[(w0 >> 24) & 15] += svcGetSystemTick() - t0;
+#endif
     }
 }

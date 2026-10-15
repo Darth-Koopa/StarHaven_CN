@@ -428,6 +428,9 @@ gfx_tex_entry_t *gfx_tex_upload(uint32_t addr, uint8_t fmt, uint8_t siz,
         return NULL;
     }
     C3D_TexUpload(&e->c3d_tex, tiled_rgba8);
+    /* the frame flushes only its vertices (gfx_present.c); svc, not the GSP
+     * IPC, which is slow when the system core is lent to the audio mixer */
+    svcFlushProcessDataCache(CUR_PROCESS_HANDLE, (u32)e->c3d_tex.data, e->c3d_tex.size);
     { extern unsigned pm3ds_tstat_uploads; pm3ds_tstat_uploads++; }
     PM3DS_TEX_FREE(e->tiled_rgba8);
     e->tiled_rgba8 = NULL;
@@ -510,10 +513,6 @@ bool gfx_tex_load_source(const gfx_state_t *st, int tile, uint32_t *addr, int *c
 typedef struct { uint32_t stride, tlut, frame, sample; } tex_key_ext_t;
 static tex_key_ext_t *ext_of(gfx_tex_entry_t *e) { return (tex_key_ext_t *)&e->ext_stride; }
 
-static uint32_t fnv1a(uint32_t h, const uint8_t *p, size_t n) {
-    for (size_t i = 0; i < n; i++) h = (h ^ p[i]) * 16777619u;
-    return h;
-}
 
 /* Texture data read from the cart never changes; everything else (map
  * texture heap, sprite rasters, decoded backgrounds, generated images) can be
@@ -522,18 +521,27 @@ static int tex_src_is_static(uint32_t src) {
     return pm3ds_addr_rom_offset(src, 1) != (uint32_t)-1;
 }
 
+/* FNV over 32-bit words (a quarter of the multiplies); the texture is in
+ * RAM here (tex_src_is_static sends cart data elsewhere), read in place */
+static uint32_t fnv1a_words(uint32_t h, const uint8_t *p, size_t n) {
+    size_t i = 0;
+    for (; i + 4 <= n; i += 4) {
+        uint32_t w;
+        memcpy(&w, p + i, 4);
+        h = (h ^ w) * 16777619u;
+    }
+    for (; i < n; i++) h = (h ^ p[i]) * 16777619u;
+    return h;
+}
+
 static uint32_t tex_sample_hash(uint32_t src, uint32_t stride, uint32_t row_bytes, int h) {
-    uint8_t buf[64];
-    uint32_t n = row_bytes < sizeof(buf) ? row_bytes : (uint32_t)sizeof(buf);
+    uint32_t n = row_bytes < 64 ? row_bytes : 64;
     uint32_t hash = 2166136261u;
     int rows[3] = { 0, h / 2, h - 1 };
     for (int i = 0; i < 3; i++) {
-        pm3ds_pi_read(src + (uint32_t)rows[i] * stride, buf, n);
-        hash = fnv1a(hash, buf, n);
-        if (row_bytes > n) {   /* the row's tail too */
-            pm3ds_pi_read(src + (uint32_t)rows[i] * stride + row_bytes - n, buf, n);
-            hash = fnv1a(hash, buf, n);
-        }
+        const uint8_t *row = (const uint8_t *)(uintptr_t)(src + (uint32_t)rows[i] * stride);
+        hash = fnv1a_words(hash, row, n);
+        if (row_bytes > n) hash = fnv1a_words(hash, row + row_bytes - n, n);   /* the row's tail too */
     }
     return hash;
 }
@@ -721,8 +729,12 @@ gfx_tex_entry_t *gfx_tex_get(const gfx_state_t *st, int tile_idx, unsigned *out_
      * blends, flashing), so the source address alone goes stale */
     uint32_t tlut_key = 0;
     if (t->fmt == 2) {
-        const uint8_t *pal = (t->siz == 0) ? st->tlut + (size_t)(t->palette & 0xF) * 16 * 2 : st->tlut;
-        tlut_key = fnv1a(2166136261u, pal, t->siz == 0 ? 16 * 2 : 256 * 2);
+        if (t->siz == 0) {
+            tlut_key = st->tlut_hash[t->palette & 0xF];
+        } else {
+            tlut_key = 2166136261u;
+            for (int b = 0; b < 16; b++) tlut_key = (tlut_key ^ st->tlut_hash[b]) * 16777619u;
+        }
         tlut_key ^= (st->othermode_h & OMH_TT_MASK);
     }
     uint32_t sample = tex_src_is_static(src) ? 0 : tex_sample_hash(src, stride, row_bytes, h);
@@ -802,6 +814,7 @@ void gfx_tex_bind_unit(gfx_tex_entry_t *e, int unit, int filter_linear, int cms,
     GPU_TEXTURE_WRAP_PARAM ws = (cms & 2) ? GPU_CLAMP_TO_EDGE : (cms & 1) ? GPU_MIRRORED_REPEAT : GPU_REPEAT;
     GPU_TEXTURE_WRAP_PARAM wt = (cmt & 2) ? GPU_CLAMP_TO_EDGE : (cmt & 1) ? GPU_MIRRORED_REPEAT : GPU_REPEAT;
     C3D_TexSetWrap(&e->c3d_tex, ws, wt);
-    C3D_TexBind(unit, &e->c3d_tex);
+    extern void pm3ds_tex_bind(int unit, C3D_Tex *t);
+    pm3ds_tex_bind(unit, &e->c3d_tex);
 }
 #endif

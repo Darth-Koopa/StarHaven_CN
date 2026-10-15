@@ -94,7 +94,7 @@ static bool platform_init(void) {
      * citro3d answers an overflow with svcBreak. gfx_present.c also stops
      * drawing before it fills up (CMDBUF_STOP). */
     C3D_Init(PM3DS_CMDBUF_BYTES);
-    C3D_FrameRate(30.0f);   /* one game step per pass; 60 with interpolation (gfx_present.c) */
+    C3D_FrameRate(60.0f);   /* count every vblank: gfx_present.c paces the game steps */
 
     pm3ds_log_init();
     { extern void pm3ds_sd_migrate(void); pm3ds_sd_migrate(); }     /* before any SD write */
@@ -298,7 +298,9 @@ int main(void) {
 #ifdef PM3DS_STEP_PROF
               { extern void pm3ds_prof_step_begin(void); pm3ds_prof_step_begin(); }
 #endif
-              int steps = pm3ds_fast_forward() ? pm3ds_cfg.ff_speed : 1;
+              extern int pm3ds_gfx_extra_steps(void);
+              int extra = pm3ds_gfx_extra_steps();   /* Old 3DS: frames behind, made up without drawing them */
+              int steps = pm3ds_fast_forward() ? pm3ds_cfg.ff_speed : 1 + extra;
               for (int s = 0; s < steps; s++) {
                   if (s > 0) {   /* drop the lists of the step before (the queue is bounded) */
                       const void *skipped[16];

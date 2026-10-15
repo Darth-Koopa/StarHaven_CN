@@ -16,6 +16,7 @@
  */
 
 #include <math.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -26,6 +27,7 @@
 
 #include "pm3ds_log.h"
 #include "gfx_interp.h"
+#include "gfx_prof.h"
 #include "pm3ds_settings.h"
 #include "gfx_state.h"
 
@@ -65,6 +67,7 @@ typedef struct {
 } gpu_vtx_t;
 
 #define FRAME_MAX_VERTS (96 * 1024)
+#define FRAME_MAX_IDX   (128 * 1024)
 
 static C3D_RenderTarget *g_target, *g_target_right;
 static DVLB_s          *g_dvlb;
@@ -117,8 +120,18 @@ static C3D_AttrInfo     g_attr;
 static C3D_BufInfo      g_buf;
 static gpu_vtx_t       *g_vbuf;
 static int              g_vcount;       /* vertices written this frame */
-static int              g_batch_start;  /* first vertex of the open batch */
+static uint16_t        *g_ibuf;         /* triangles as indices into g_vbuf + g_vbase */
+static int              g_icount;       /* indices written this frame */
+static int              g_batch_start;  /* first index of the open batch */
+static int              g_vbase;        /* the attribute buffer's start (16-bit indices reach 64K past it) */
+/* Each pool vertex (G_VTX) is converted to a GPU vertex once and shared by
+ * the triangles that use it, while its serial and the draw state that went
+ * into its texture coordinates (g_vc_epoch) stay the same. */
+static uint16_t         g_vc_idx[GFX_VTX_POOL_SIZE];
+static uint32_t         g_vc_serial[GFX_VTX_POOL_SIZE], g_vc_ep[GFX_VTX_POOL_SIZE];
+static uint32_t         g_vc_epoch = 1;
 static C3D_FogLut       g_fog_lut;
+static bool             g_fog_lut_bound;   /* citro3d uploads all 128 entries on every bind: only when it changed */
 static int16_t          g_fog_lut_mul = 0x7FFF, g_fog_lut_ofs = 0x7FFF;
 
 /* Texture parameters the open batch was set up with (for UV generation). */
@@ -128,6 +141,7 @@ static struct {
     float w, h;          /* POT-padded GPU texture size */
     float off_s, off_t;  /* texel origin of the tile in that texture (window texture) */
     bool screen;         /* sampling the screen copy: N64 pixel -> render-target texel */
+    float us, ut, ub, vs, vt, vb;   /* u = s*us + t*ut + ub, v likewise (tex_coeffs) */
 } g_tex[2];
 static int  g_applied_tile = -1;
 static bool g_applied_rect;
@@ -196,6 +210,7 @@ void pm3ds_gfx_present_init(void) {
             uint32_t r = 0x12345678u;
             for (int i = 0; i < 64 * 64; i++) { r = r * 1664525u + 1013904223u; px[i] = (uint8_t)(r >> 24); }
             C3D_TexUpload(&g_noise_tex, px);   /* random in any texel order: no swizzle needed */
+            svcFlushProcessDataCache(CUR_PROCESS_HANDLE, (u32)g_noise_tex.data, g_noise_tex.size);
             linearFree(px);
             C3D_TexSetFilter(&g_noise_tex, GPU_NEAREST, GPU_NEAREST);
             C3D_TexSetWrap(&g_noise_tex, GPU_REPEAT, GPU_REPEAT);
@@ -210,6 +225,7 @@ void pm3ds_gfx_present_init(void) {
     AttrInfo_AddLoader(&g_attr, 3, GPU_FLOAT, 2);           /* uv1      */
 
     g_vbuf = (gpu_vtx_t *)linearAlloc(sizeof(gpu_vtx_t) * FRAME_MAX_VERTS);
+    g_ibuf = (uint16_t *)linearAlloc(sizeof(uint16_t) * FRAME_MAX_IDX);
     BufInfo_Init(&g_buf);
     BufInfo_Add(&g_buf, g_vbuf, sizeof(gpu_vtx_t), 4, 0x3210);
 
@@ -236,6 +252,23 @@ void pm3ds_gfx_present_init(void) {
 
 /* ---- render state --------------------------------------------------------- */
 
+/* citro3d re-sends a whole register group whenever one of its setters is
+ * called, even with the values it already has; per draw that is most of
+ * the GPU command cost on an Old 3DS. These pass a call on only when its
+ * arguments differ from the last one this frame (g_fx_epoch: anything else
+ * that set the state, like the bottom screen, starts a new epoch). */
+static uint32_t g_fx_epoch = 1;
+typedef struct { uint32_t ep; int32_t a[4]; } fx_cache_t;
+static fx_cache_t g_fxc_scissor, g_fxc_depth, g_fxc_depthmap, g_fxc_blend, g_fxc_atest, g_fxc_fogmode, g_fxc_fogcolor;
+/* one cache per setter (several call sites set the same state) */
+#define FX_CACHED(cache, call, n, ...) \
+    do { \
+        const int32_t v_[4] = { __VA_ARGS__ }; \
+        if ((cache).ep == g_fx_epoch && !memcmp((cache).a, v_, sizeof v_)) break; \
+        (cache).ep = g_fx_epoch; memcpy((cache).a, v_, sizeof v_); \
+        call; \
+    } while (0)
+
 static void set_scissor(const gfx_state_t *st) {
     if (g_in_rtt) {   /* texel space: framebuffer y = N64 y */
         int x0 = st->scissor.ulx >> 2, y0 = st->scissor.uly >> 2;
@@ -243,7 +276,7 @@ static void set_scissor(const gfx_state_t *st) {
         if (x1 > RTT_W) x1 = RTT_W;
         if (y1 > RTT_H) y1 = RTT_H;
         if (x1 <= x0 || y1 <= y0) { x0 = y0 = 0; x1 = y1 = 1; }
-        C3D_SetScissor(GPU_SCISSOR_NORMAL, (u32)x0, (u32)y0, (u32)x1, (u32)y1);
+        FX_CACHED(g_fxc_scissor, C3D_SetScissor(GPU_SCISSOR_NORMAL, (u32)x0, (u32)y0, (u32)x1, (u32)y1), 4, x0, y0, x1, y1);
         return;
     }
     float ulx = st->scissor.ulx / 4.0f, uly = st->scissor.uly / 4.0f;
@@ -258,7 +291,7 @@ static void set_scissor(const gfx_state_t *st) {
     if (right > 240) right = 240;
     if (bottom > 400) bottom = 400;
     if (right <= left || bottom <= top) { left = top = 0; right = bottom = 1; }
-    C3D_SetScissor(GPU_SCISSOR_NORMAL, (u32)left, (u32)top, (u32)right, (u32)bottom);
+    FX_CACHED(g_fxc_scissor, C3D_SetScissor(GPU_SCISSOR_NORMAL, (u32)left, (u32)top, (u32)right, (u32)bottom), 4, left, top, right, bottom);
 }
 
 static void update_fog_lut(const gfx_state_t *st) {
@@ -279,6 +312,7 @@ static void update_fog_lut(const gfx_state_t *st) {
     }
     for (int i = 0; i < 128; i++) { data[i] = vals[i]; data[128 + i] = vals[i + 1] - vals[i]; }
     FogLut_FromArray(&g_fog_lut, data);
+    g_fog_lut_bound = false;
 }
 
 #ifdef PM3DS_DRAWLOG_FRAME
@@ -310,6 +344,53 @@ static float combined_alpha_max(const gfx_state_t *st, bool two_cycle) {
     return comb;
 }
 
+/* Texture units as citro3d has them: binding the same texture with the same
+ * settings again would only make it send the unit's registers again. The
+ * whole C3D_Tex is compared, not just its address (a freed cache entry's
+ * address comes back for another texture). Reset each frame: the bottom
+ * screen binds its own. */
+static struct { const C3D_Tex *tex; C3D_Tex copy; bool valid; } g_bound[3];
+void pm3ds_tex_bind(int unit, C3D_Tex *t) {
+    if (unit >= 0 && unit < 3) {
+        if (g_bound[unit].valid && g_bound[unit].tex == t && !memcmp(&g_bound[unit].copy, t, sizeof *t)) return;
+        g_bound[unit].tex = t;
+        g_bound[unit].copy = *t;
+        g_bound[unit].valid = true;
+    }
+    C3D_TexBind(unit, t);
+}
+static void tex_bind_invalidate(void) { for (int i = 0; i < 3; i++) g_bound[i].valid = false; }
+
+/* N64 texel coordinates (s10.5, before the tile's shift) -> normalized GPU
+ * texcoords are affine; work the factors out once per state change, so a
+ * vertex costs two multiply-adds per axis instead of several divisions */
+static void tex_coeffs(int unit) {
+    const gfx_tile_t *tl = g_tex[unit].tile;
+    float fs = 1.0f, ft = 1.0f;
+    if (tl->shifts) fs = tl->shifts <= 10 ? 1.0f / (float)(1 << tl->shifts) : (float)(1 << (16 - tl->shifts));
+    if (tl->shiftt) ft = tl->shiftt <= 10 ? 1.0f / (float)(1 << tl->shiftt) : (float)(1 << (16 - tl->shiftt));
+    /* x = s * xs + xb, y = t * yt + yb: texels in the GPU texture */
+    float xs = fs / 32.0f, xb = g_tex[unit].off_s - tl->uls / 4.0f;
+    float yt = ft / 32.0f, yb = g_tex[unit].off_t - tl->ult / 4.0f;
+    if (g_tex[unit].screen) {   /* N64 pixel -> render target texel (see set_scissor) */
+        /* the target's 400 rows land in the last 400 of the texture's 512:
+         * u = (240 - (view_s * y + view_oy)) / SCR_W, v = (SCR_H - (view_s * x + view_ox)) / SCR_H */
+        g_tex[unit].us = 0.0f;
+        g_tex[unit].ut = -g_view_s * yt / SCR_W;
+        g_tex[unit].ub = (240.0f - g_view_s * yb - g_view_oy) / SCR_W;
+        g_tex[unit].vs = -g_view_s * xs / SCR_H;
+        g_tex[unit].vt = 0.0f;
+        g_tex[unit].vb = (SCR_H - g_view_s * xb - g_view_ox) / SCR_H;
+        return;
+    }
+    g_tex[unit].us = xs / g_tex[unit].w;
+    g_tex[unit].ut = 0.0f;
+    g_tex[unit].ub = xb / g_tex[unit].w;
+    g_tex[unit].vs = 0.0f;
+    g_tex[unit].vt = yt / g_tex[unit].h;
+    g_tex[unit].vb = yb / g_tex[unit].h;
+}
+
 static void apply_state(gfx_state_t *st, bool rect) {
     uint32_t l = st->othermode_l;
     uint32_t cyc = st->othermode_h & OMH_CYC_MASK;
@@ -339,15 +420,19 @@ static void apply_state(gfx_state_t *st, bool rect) {
         uint32_t a = (!g_in_rtt || (c16 & 1)) ? 0xFF000000u : 0;
         C3D_TexEnvColor(env, (uint32_t)r | ((uint32_t)g << 8) | ((uint32_t)b << 16) | a);
         for (int i = 1; i < 6; i++) C3D_TexEnvInit(C3D_GetTexEnv(i));
+        gfx_combiner_invalidate();
     } else if (cyc == OMH_CYC_COPY) {
         C3D_TexEnv *env = C3D_GetTexEnv(0);
         C3D_TexEnvInit(env);
         C3D_TexEnvSrc(env, C3D_Both, GPU_TEXTURE0, 0, 0);
         C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
         for (int i = 1; i < 6; i++) C3D_TexEnvInit(C3D_GetTexEnv(i));
+        gfx_combiner_invalidate();
         info.uses_tex0 = true;
     } else {
+        GP_BEGIN(tc);
         gfx_combiner_apply(st, cyc == OMH_CYC_2, &info);
+        GP_END(tc, GP_COMB);
     }
 
     /* --- textures --- */
@@ -367,7 +452,7 @@ static void apply_state(gfx_state_t *st, bool rect) {
                 GPU_TEXTURE_FILTER_PARAM f = linear ? GPU_LINEAR : GPU_NEAREST;
                 C3D_TexSetFilter(&g_scr_tex, f, f);
                 C3D_TexSetWrap(&g_scr_tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
-                C3D_TexBind(u, &g_scr_tex);
+                pm3ds_tex_bind(u, &g_scr_tex);
                 g_tex[u].on = true;
                 g_tex[u].screen = true;
                 g_tex[u].tile = &st->tiles[tile];
@@ -382,7 +467,7 @@ static void apply_state(gfx_state_t *st, bool rect) {
                 GPU_TEXTURE_FILTER_PARAM f = linear ? GPU_LINEAR : GPU_NEAREST;
                 C3D_TexSetFilter(&g_rtt_tex, f, f);
                 C3D_TexSetWrap(&g_rtt_tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
-                C3D_TexBind(u, &g_rtt_tex);
+                pm3ds_tex_bind(u, &g_rtt_tex);
                 g_tex[u].on = true;
                 g_tex[u].tile = &st->tiles[tile];
                 g_tex[u].w = RTT_W;
@@ -393,7 +478,11 @@ static void apply_state(gfx_state_t *st, bool rect) {
             }
         }
         unsigned w = 0, h = 0;
+        GP_BEGIN(tt);
+        PROF_PHASE(PH_TEX);
         gfx_tex_entry_t *e = gfx_tex_get(st, tile, &w, &h);
+        PROF_PHASE(PH_STATE);
+        GP_END(tt, GP_TEX);
         if (!e) {
 #ifdef PM3DS_TITLE_DBG
             extern int gfx_tex_miss_reason;
@@ -425,6 +514,8 @@ static void apply_state(gfx_state_t *st, bool rect) {
         g_tex[u].w = (float)pm3ds_tex_pot(w);
         g_tex[u].h = (float)pm3ds_tex_pot(h);
     }
+    for (int u = 0; u < 2; u++)
+        if (g_tex[u].on) tex_coeffs(u);
     /* NOISE reads unit 1 when the combine mode leaves TEXEL1 unused (the
      * combiner maps it to a flat 0.5 otherwise) */
     g_noise_uv = info.uses_noise && !info.uses_tex1 && g_noise_ok;
@@ -434,7 +525,7 @@ static void apply_state(gfx_state_t *st, bool rect) {
             logged = true;
             pm3ds_log(PM3DS_LOG_INFO, "gfx: first NOISE draw (frame %u)", (unsigned)g_frame_no);
         }
-        C3D_TexBind(1, &g_noise_tex);
+        pm3ds_tex_bind(1, &g_noise_tex);
     }
     g_applied_tile = st->tex_tile;
 #ifdef PM3DS_TITLE_DBG
@@ -478,10 +569,17 @@ static void apply_state(gfx_state_t *st, bool rect) {
     uint32_t p2_ = (l >> (28 + bsh)) & 3, m2_ = (l >> (20 + bsh)) & 3;
     bool keep_color = cyc != OMH_CYC_FILL && cyc != OMH_CYC_COPY && p2_ == 1 && (m2_ == 1 || !(l & RM_FORCE_BL));
     GPU_WRITEMASK wmask = keep_color ? (zupd ? GPU_WRITE_DEPTH : 0) : (zupd ? GPU_WRITE_ALL : GPU_WRITE_COLOR);
-    if (g_in_rtt) C3D_DepthTest(false, GPU_ALWAYS, keep_color ? (GPU_WRITEMASK)0 : GPU_WRITE_COLOR);
-    else C3D_DepthTest(zcmp || zupd || keep_color, zcmp ? GPU_GEQUAL : GPU_ALWAYS, wmask);
+    {
+        bool den = g_in_rtt ? false : (zcmp || zupd || keep_color);
+        GPU_TESTFUNC dfn = g_in_rtt ? GPU_ALWAYS : zcmp ? GPU_GEQUAL : GPU_ALWAYS;
+        GPU_WRITEMASK dm = g_in_rtt ? (keep_color ? (GPU_WRITEMASK)0 : GPU_WRITE_COLOR) : wmask;
+        FX_CACHED(g_fxc_depth, C3D_DepthTest(den, dfn, dm), 3, den, dfn, dm);
+    }
     /* decal: nudge toward the viewer so co-planar decals win */
-    C3D_DepthMap(true, -1.0f, (l & RM_ZMODE_DEC) == RM_ZMODE_DEC ? 0.0002f : 0.0f);
+    {
+        int decal = (l & RM_ZMODE_DEC) == RM_ZMODE_DEC;
+        FX_CACHED(g_fxc_depthmap, C3D_DepthMap(true, -1.0f, decal ? 0.0002f : 0.0f), 1, decal);
+    }
 
     /* --- blend (the blender word that applies, see bsh) --- */
     uint32_t p2 = (l >> (28 + bsh)) & 3, a2 = (l >> (24 + bsh)) & 3, m2 = (l >> (20 + bsh)) & 3, b2 = (l >> (16 + bsh)) & 3;
@@ -505,41 +603,45 @@ static void apply_state(gfx_state_t *st, bool rect) {
     if (cvg_surface) cvg_amax = combined_alpha_max(st, cyc == OMH_CYC_2);
     bool cvg_blend = cvg_surface && cvg_amax < 0.99f;
     if (blend && additive) {
-        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE, GPU_SRC_ALPHA, GPU_ONE);
+        FX_CACHED(g_fxc_blend, C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE, GPU_SRC_ALPHA, GPU_ONE), 1, 1);
     } else if (blend || cvg_blend) {
         /* in a window texture the alpha left behind is what the window shows
          * through later: compose it with "over" */
-        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA,
-                       g_in_rtt ? GPU_ONE : GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
+        FX_CACHED(g_fxc_blend, C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA,
+                                 g_in_rtt ? GPU_ONE : GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA), 1, g_in_rtt ? 3 : 2);
     } else {
-        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+        FX_CACHED(g_fxc_blend, C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO), 1, 0);
     }
 
     /* --- alpha compare --- */
     if ((l & RM_AC_MASK) == RM_AC_THRESHOLD) {
         int ref = st->blend[3];
-        C3D_AlphaTest(true, ref ? GPU_GEQUAL : GPU_GREATER, ref);
+        FX_CACHED(g_fxc_atest, C3D_AlphaTest(true, ref ? GPU_GEQUAL : GPU_GREATER, ref), 2, 1, ref);
     } else if (cvg_blend) {
         int ref = (int)(cvg_amax * 0x80);
-        C3D_AlphaTest(true, GPU_GEQUAL, ref < 1 ? 1 : ref);
+        FX_CACHED(g_fxc_atest, C3D_AlphaTest(true, GPU_GEQUAL, ref < 1 ? 1 : ref), 2, 2, ref < 1 ? 1 : ref);
     } else if (cyc != OMH_CYC_FILL && !blend && (l & RM_CVG_X_ALPHA)) {
         /* coverage x alpha: a zero-alpha texel gets no coverage and is not
          * written (sprites use this without ALPHA_CVG_SEL) */
-        C3D_AlphaTest(true, GPU_GEQUAL, 0x80);
+        FX_CACHED(g_fxc_atest, C3D_AlphaTest(true, GPU_GEQUAL, 0x80), 2, 2, 0x80);
     } else if (cyc == OMH_CYC_COPY) {
-        C3D_AlphaTest(true, GPU_GREATER, 0);
+        FX_CACHED(g_fxc_atest, C3D_AlphaTest(true, GPU_GREATER, 0), 2, 3, 0);
     } else {
-        C3D_AlphaTest(false, GPU_ALWAYS, 0);
+        FX_CACHED(g_fxc_atest, C3D_AlphaTest(false, GPU_ALWAYS, 0), 2, 0, 0);
     }
 
     /* --- fog (first-cycle blender = CLR_FOG with shade alpha) --- */
     if (!rect && (st->geometry_mode & GM_FOG) && ((l >> 30) & 3) == 3) {
         update_fog_lut(st);
-        C3D_FogGasMode(GPU_FOG, GPU_PLAIN_DENSITY, false);
-        C3D_FogColor(rgba8(st->fog) & 0x00FFFFFFu);
-        C3D_FogLutBind(&g_fog_lut);
+        FX_CACHED(g_fxc_fogmode, C3D_FogGasMode(GPU_FOG, GPU_PLAIN_DENSITY, false), 1, 1);
+        uint32_t fc = rgba8(st->fog) & 0x00FFFFFFu;
+        FX_CACHED(g_fxc_fogcolor, C3D_FogColor(fc), 1, (int32_t)fc);
+        if (!g_fog_lut_bound) {
+            C3D_FogLutBind(&g_fog_lut);
+            g_fog_lut_bound = true;
+        }
     } else {
-        C3D_FogGasMode(GPU_NO_FOG, GPU_PLAIN_DENSITY, false);
+        FX_CACHED(g_fxc_fogmode, C3D_FogGasMode(GPU_NO_FOG, GPU_PLAIN_DENSITY, false), 1, 0);
     }
 
     set_scissor(st);
@@ -550,12 +652,41 @@ static void apply_state(gfx_state_t *st, bool rect) {
 /* Close the open batch: one draw call for everything since g_batch_start. */
 void gfx_backend_flush(gfx_state_t *st) {
     (void)st;
-    int n = g_vcount - g_batch_start;
+    int n = g_icount - g_batch_start;
     if (n > 0) {
-        C3D_DrawArrays(GPU_TRIANGLES, g_batch_start, n);
+        GP_BEGIN(tf);
+        PROF_SAVE(ph);
+        PROF_PHASE(PH_DRAW);
+        C3D_DrawElements(GPU_TRIANGLES, n, C3D_UNSIGNED_SHORT, g_ibuf + g_batch_start);
+        PROF_RESTORE(ph);
+        GP_END(tf, GP_FLUSH);
         g_stat_draws++;
     }
-    g_batch_start = g_vcount;
+    g_batch_start = g_icount;
+}
+
+/* attribute buffer from vertex `base` on (16-bit indices count from there) */
+static void set_vbase(int base) {
+    g_vbase = base;
+    BufInfo_Init(&g_buf);
+    BufInfo_Add(&g_buf, g_vbuf + base, sizeof(gpu_vtx_t), 4, 0x3210);
+    C3D_SetBufInfo(&g_buf);
+    g_vc_epoch++;
+}
+
+/* room for nverts more vertices and nidx indices (flushes first if the
+ * 16-bit indices would run out); false when the frame's budget is spent */
+static bool vtx_room(gfx_state_t *st, int nverts, int nidx) {
+    if (g_vcount + nverts > FRAME_MAX_VERTS || g_icount + nidx > FRAME_MAX_IDX) {
+        static int warned;
+        if (!warned++) pm3ds_log(PM3DS_LOG_WARN, "gfx: frame vertex budget (%d/%d) exhausted", FRAME_MAX_VERTS, FRAME_MAX_IDX);
+        return false;
+    }
+    if (g_vcount + nverts - g_vbase > 0xFFFF) {
+        gfx_backend_flush(st);
+        set_vbase(g_vcount);
+    }
+    return true;
 }
 
 static unsigned g_stat_offscreen;
@@ -572,14 +703,43 @@ static float cmdbuf_use(void) {
     return size ? (float)offset / (float)size : 0.0f;
 }
 static float g_cmdbuf_peak;   /* highest use in a frame, for the PERF line */
+#ifdef PM3DS_STEP_PROF
+/* debug: how many state changes leave the draw state as it was */
+static unsigned g_gp_applies, g_gp_same;
+static void gp_count_apply(const gfx_state_t *st, bool rect) {
+    static uint8_t last[512 + 256];
+    uint8_t cur[sizeof last];
+    size_t n = 0;
+#define GP_PUT(p, sz) do { memcpy(cur + n, (p), (sz)); n += (sz); } while (0)
+    size_t a = offsetof(gfx_state_t, othermode_h), b = offsetof(gfx_state_t, timg_addr);
+    GP_PUT((const uint8_t *)st + a, b - a);
+    GP_PUT(&st->geometry_mode, sizeof st->geometry_mode);
+    GP_PUT(&st->fog_mul, 4);
+    GP_PUT(&st->tex_tile, 1);
+    GP_PUT(&rect, 1);
+    GP_PUT(&g_in_rtt, 1);
+    for (int u = 0; u < 2; u++) {
+        int tile = (st->tex_tile + u) & 7;
+        uint32_t src = 0;
+        int col = 0, row = 0;
+        gfx_tex_load_source(st, tile, &src, &col, &row);
+        GP_PUT(&st->tiles[tile], sizeof st->tiles[tile]);
+        GP_PUT(&src, 4);
+    }
+    uint32_t th = 2166136261u;
+    for (int i = 0; i < 512; i++) th = (th ^ st->tlut[i]) * 16777619u;
+    GP_PUT(&th, 4);
+#undef GP_PUT
+    g_gp_applies++;
+    if (!memcmp(cur, last, n)) g_gp_same++;
+    memcpy(last, cur, n);
+}
+#endif
+
 static bool begin_prims(gfx_state_t *st, bool rect, int nverts) {
     if (!g_draw_enabled || !(st->cimg_is_screen || st->cimg_rtt)) { g_stat_offscreen++; return false; }
     if (g_cmdbuf_full) return false;
-    if (g_vcount + nverts > FRAME_MAX_VERTS) {
-        static int warned;
-        if (!warned++) pm3ds_log(PM3DS_LOG_WARN, "gfx: frame vertex budget (%d) exhausted", FRAME_MAX_VERTS);
-        return false;
-    }
+    if (!vtx_room(st, nverts, nverts)) return false;
     if (st->dirty || !g_state_valid || rect != g_applied_rect || st->tex_tile != g_applied_tile) {
         gfx_backend_flush(st);
         /* commands are only added here (state + the draw of the batch) */
@@ -591,7 +751,15 @@ static bool begin_prims(gfx_state_t *st, bool rect, int nverts) {
             g_cmdbuf_full = true;
             return false;
         }
+#ifdef PM3DS_STEP_PROF
+        gp_count_apply(st, rect);
+#endif
+        GP_BEGIN(t);
+        PROF_PHASE(PH_STATE);
         apply_state(st, rect);
+        PROF_PHASE(PH_WALK);
+        GP_END(t, GP_STATE);
+        g_vc_epoch++;   /* texture coordinates of cached vertices are stale */
         st->dirty = 0;
     }
     return true;
@@ -600,22 +768,12 @@ static bool begin_prims(gfx_state_t *st, bool rect, int nverts) {
 /* N64 texel space -> normalized GPU texcoords for one texture unit. */
 static inline void tex_uv(int unit, float s, float t, float *u, float *v) {
     if (!g_tex[unit].on) { *u = *v = 0.0f; return; }
-    const gfx_tile_t *tl = g_tex[unit].tile;
-    if (tl->shifts) s = tl->shifts <= 10 ? s / (float)(1 << tl->shifts) : s * (float)(1 << (16 - tl->shifts));
-    if (tl->shiftt) t = tl->shiftt <= 10 ? t / (float)(1 << tl->shiftt) : t * (float)(1 << (16 - tl->shiftt));
-    float x = s / 32.0f - tl->uls / 4.0f + g_tex[unit].off_s;
-    float y = t / 32.0f - tl->ult / 4.0f + g_tex[unit].off_t;
-    if (g_tex[unit].screen) {   /* N64 pixel -> render target texel (see set_scissor) */
-        /* the target's 400 rows land in the last 400 of the texture's 512 */
-        *u = (240.0f - (g_view_s * y + g_view_oy)) / SCR_W;
-        *v = (SCR_H - (g_view_s * x + g_view_ox)) / SCR_H;
-        return;
-    }
-    *u = x / g_tex[unit].w;
-    *v = y / g_tex[unit].h;
+    *u = s * g_tex[unit].us + t * g_tex[unit].ut + g_tex[unit].ub;
+    *v = s * g_tex[unit].vs + t * g_tex[unit].vt + g_tex[unit].vb;
 }
 
-static inline void put_vtx(const gfx_vtx_t *v) {
+static inline uint16_t put_vtx(const gfx_vtx_t *v) {
+    uint16_t idx = (uint16_t)(g_vcount - g_vbase);
     gpu_vtx_t *o = &g_vbuf[g_vcount++];
     o->x = v->px; o->y = v->py; o->z = v->cz; o->w = v->cw;
     o->r = v->r; o->g = v->g; o->b = v->b; o->a = v->a;
@@ -627,6 +785,19 @@ static inline void put_vtx(const gfx_vtx_t *v) {
     } else {
         tex_uv(1, v->s, v->t, &o->u1, &o->v1);
     }
+    return idx;
+}
+
+/* a pool vertex's GPU copy, converted on first use */
+static inline uint16_t pool_vtx(const gfx_state_t *st, const gfx_vtx_t *v) {
+    unsigned i = (unsigned)(v - st->vtx);
+    if (i < GFX_VTX_POOL_SIZE) {
+        if (g_vc_serial[i] == v->serial && g_vc_ep[i] == g_vc_epoch) return g_vc_idx[i];
+        g_vc_serial[i] = v->serial;
+        g_vc_ep[i] = g_vc_epoch;
+        return g_vc_idx[i] = put_vtx(v);
+    }
+    return put_vtx(v);
 }
 
 void gfx_backend_tri(gfx_state_t *st, const gfx_vtx_t *a, const gfx_vtx_t *b, const gfx_vtx_t *c) {
@@ -638,10 +809,14 @@ void gfx_backend_tri(gfx_state_t *st, const gfx_vtx_t *a, const gfx_vtx_t *b, co
         float z = (st->prim_depth & 0x7FFF) / 16383.5f - 1.0f;
         gfx_vtx_t v[3] = { *a, *b, *c };
         for (int i = 0; i < 3; i++) v[i].cz = z * v[i].cw;
-        put_vtx(&v[0]); put_vtx(&v[1]); put_vtx(&v[2]);
+        g_ibuf[g_icount++] = put_vtx(&v[0]);
+        g_ibuf[g_icount++] = put_vtx(&v[1]);
+        g_ibuf[g_icount++] = put_vtx(&v[2]);
         return;
     }
-    put_vtx(a); put_vtx(b); put_vtx(c);
+    g_ibuf[g_icount++] = pool_vtx(st, a);
+    g_ibuf[g_icount++] = pool_vtx(st, b);
+    g_ibuf[g_icount++] = pool_vtx(st, c);
 }
 
 extern float pm3ds_stereo_shift;
@@ -687,35 +862,44 @@ void gfx_backend_rect(gfx_state_t *st, float x0, float y0, float x1, float y1,
         else       { ss[0] = s0; tt[0] = t0; ss[1] = s0; tt[1] = t1; ss[2] = s1; tt[2] = t1; ss[3] = s1; tt[3] = t0; }
         for (int i = 0; i < 4; i++) { v[i].s = ss[i]; v[i].t = tt[i]; }
     }
-    put_vtx(&v[0]); put_vtx(&v[1]); put_vtx(&v[2]);
-    put_vtx(&v[0]); put_vtx(&v[2]); put_vtx(&v[3]);
+    uint16_t i0 = put_vtx(&v[0]), i1 = put_vtx(&v[1]), i2 = put_vtx(&v[2]), i3 = put_vtx(&v[3]);
+    uint16_t *o = &g_ibuf[g_icount];
+    o[0] = i0; o[1] = i1; o[2] = i2;
+    o[3] = i0; o[4] = i2; o[5] = i3;
+    g_icount += 6;
 }
 
 /* ---- window texture -------------------------------------------------------- */
 
 /* The whole texture to transparent black, drawn in the command stream (a GX
  * fill would run before the frame's draws, not between two windows). */
-static void rtt_clear(void) {
-    if (g_vcount + 6 > FRAME_MAX_VERTS) return;
+static void rtt_clear(gfx_state_t *st) {
+    if (!vtx_room(st, 4, 6)) return;
     C3D_TexEnv *env = C3D_GetTexEnv(0);
     C3D_TexEnvInit(env);
     C3D_TexEnvSrc(env, C3D_Both, GPU_CONSTANT, 0, 0);
     C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
     C3D_TexEnvColor(env, 0);
     for (int i = 1; i < 6; i++) C3D_TexEnvInit(C3D_GetTexEnv(i));
+    gfx_combiner_invalidate();
     C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
     C3D_AlphaTest(false, GPU_ALWAYS, 0);
     C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
     C3D_FogGasMode(GPU_NO_FOG, GPU_PLAIN_DENSITY, false);
     C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
-    static const float xs[6] = { 0, RTT_W, RTT_W, 0, RTT_W, 0 }, ys[6] = { 0, 0, RTT_H, 0, RTT_H, RTT_H };
-    for (int i = 0; i < 6; i++) {
+    g_fx_epoch++;   /* set directly above */
+    static const float xs[4] = { 0, RTT_W, RTT_W, 0 }, ys[4] = { 0, 0, RTT_H, RTT_H };
+    static const uint8_t quad[6] = { 0, 1, 2, 0, 2, 3 };
+    uint16_t first = (uint16_t)(g_vcount - g_vbase);
+    for (int i = 0; i < 4; i++) {
         gpu_vtx_t *o = &g_vbuf[g_vcount++];
         memset(o, 0, sizeof(*o));
         o->x = xs[i]; o->y = ys[i]; o->z = -1.0f; o->w = 1.0f;
     }
-    C3D_DrawArrays(GPU_TRIANGLES, g_batch_start, 6);
-    g_batch_start = g_vcount;
+    for (int i = 0; i < 6; i++) g_ibuf[g_icount + i] = (uint16_t)(first + quad[i]);
+    C3D_DrawElements(GPU_TRIANGLES, 6, C3D_UNSIGNED_SHORT, g_ibuf + g_icount);
+    g_icount += 6;
+    g_batch_start = g_icount;
     g_state_valid = false;
 }
 
@@ -729,10 +913,10 @@ bool gfx_backend_rtt_begin(gfx_state_t *st, uint32_t addr, uint16_t width) {
         }
     }
     gfx_backend_flush(st);
-    C3D_FrameDrawOn(g_rtt_target);
+    C3D_FrameDrawOn(g_rtt_target); g_fx_epoch++;
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, g_uloc_screen, &g_rtt_mtx);
     g_in_rtt = true;
-    rtt_clear();
+    rtt_clear(st);
     g_rtt_addr = addr;
     g_rtt_stride = (uint32_t)width * 2u;
     g_rtt_bytes = g_rtt_stride * RTT_H;
@@ -742,7 +926,7 @@ bool gfx_backend_rtt_begin(gfx_state_t *st, uint32_t addr, uint16_t width) {
 
 void gfx_backend_rtt_end(gfx_state_t *st) {
     gfx_backend_flush(st);
-    C3D_FrameDrawOn(g_cur_target);
+    C3D_FrameDrawOn(g_cur_target); g_fx_epoch++;
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, g_uloc_screen, &g_screen_mtx);
     g_in_rtt = false;
     g_state_valid = false;
@@ -827,8 +1011,11 @@ static void capture_frame(uint16_t *dst) {
     linearFree(tmp);
 }
 
-/* 3D slider position, 0 = down (mono) */
+/* 3D slider position, 0 = down (mono). Not on the Old 3DS: drawing every
+ * frame twice would halve its frame rate (Options says 3D is off there). */
 static float slider_now(void) {
+    extern bool pm3ds_lite_effects;
+    if (pm3ds_lite_effects) return 0.0f;
 #ifdef PM3DS_FORCE_STEREO   /* debug builds: the emulator's slider stays at 0 */
     return 1.0f;
 #else
@@ -836,11 +1023,61 @@ static float slider_now(void) {
 #endif
 }
 
+#ifdef PM3DS_STEP_PROF
+uint64_t pm3ds_gp_ticks[GP_COUNT];
+static unsigned g_gp_renders;
+
+/* Sampling profiler: a thread on another core reads, 1000 times a second,
+ * which phase (and display list command) the main thread is in. Exclusive
+ * shares at almost no cost to the measured code. */
+volatile uint8_t pm3ds_prof_phase, pm3ds_prof_op;
+static volatile uint32_t g_samples[PH_COUNT + 256];
+static void sampler_entry(void *arg) {
+    (void)arg;
+    for (;;) {
+        svcSleepThread(1000 * 1000);
+        uint8_t ph = pm3ds_prof_phase;
+        g_samples[ph == PH_WALK ? PH_COUNT + pm3ds_prof_op : ph]++;
+    }
+}
+static void sampler_start(void) {
+    static bool started;
+    if (started) return;
+    started = true;
+    Thread t = threadCreate(sampler_entry, NULL, 0x1000, 0x30, 1, true);   /* below the audio mixer */
+    if (!t) t = threadCreate(sampler_entry, NULL, 0x1000, 0x30, 2, true);
+    pm3ds_log(PM3DS_LOG_INFO, "prof: sampler %s", t ? "running" : "failed");
+}
+static void sampler_report(void) {
+    static const char *const names[PH_COUNT] = { "walk", "state", "draw", "tex", "game", "wait", "bottom", "end", "present" };
+    uint32_t snap[PH_COUNT + 256], total = 0;
+    for (int i = 0; i < PH_COUNT + 256; i++) { snap[i] = g_samples[i]; g_samples[i] = 0; total += snap[i]; }
+    if (!total) return;
+    char buf[200];
+    int n = snprintf(buf, sizeof buf, "SAMPLE n=%lu", (unsigned long)total);
+    for (int i = 0; i < PH_COUNT; i++)
+        if (i != PH_WALK && snap[i]) n += snprintf(buf + n, sizeof buf - n, " %s=%lu%%", names[i], (unsigned long)(snap[i] * 100 / total));
+    pm3ds_log(PM3DS_LOG_INFO, "%s", buf);
+    n = snprintf(buf, sizeof buf, "SAMPLE ops");
+    for (int k = 0; k < 10 && n < (int)sizeof buf - 16; k++) {   /* the busiest display list commands */
+        int best = -1;
+        for (int i = 0; i < 256; i++) if (snap[PH_COUNT + i] && (best < 0 || snap[PH_COUNT + i] > snap[PH_COUNT + best])) best = i;
+        if (best < 0) break;
+        n += snprintf(buf + n, sizeof buf - n, " %02X=%lu%%", best, (unsigned long)(snap[PH_COUNT + best] * 100 / total));
+        snap[PH_COUNT + best] = 0;
+    }
+    pm3ds_log(PM3DS_LOG_INFO, "%s", buf);
+}
+#endif
+
+static bool g_skip_auto;   /* Old 3DS (pm3ds_gfx_extra_steps) */
+
 /* CPU time of this game step's render_lists calls (waits left out), and the
  * GPU's time on the frames before them (citro3d measures each frame from
  * C3D_FrameEnd until the GPU is done; the next C3D_FrameBegin waits for it) */
 static uint64_t g_step_render_ticks;
 static float g_step_gpu_ms;
+static u32 g_frame_vbl;   /* vblank count when the last frame began (C3D_FrameRate 60: every vblank) */
 static int g_step_renders;
 
 /* Translate and draw the frame's display lists (once per eye in stereo). */
@@ -852,7 +1089,9 @@ static void render_lists(const void *const *lists, int nlists) {
     /* C3D_FRAME_SYNCDRAW in two steps, so a hang report can tell a missing
      * vblank from a GPU that never finished the previous frame */
     pm3ds_bc_main = "vblank wait";
+    PROF_PHASE(PH_WAIT);
     C3D_FrameSync();
+    g_frame_vbl = C3D_FrameCounter(0);
     pm3ds_bc_main = "gpu wait";
     C3D_FrameBegin(0);
     pm3ds_t_wait += svcGetSystemTick() - t0;
@@ -862,8 +1101,13 @@ static void render_lists(const void *const *lists, int nlists) {
         pm3ds_log(PM3DS_LOG_INFO, "gfx: frame %u begins after %llu ms", (unsigned)g_frame_no,
                   (unsigned long long)((svcGetSystemTick() - t0) / (SYSCLOCK_ARM11 / 1000)));
     pm3ds_bc_main = "draw lists";
+    PROF_PHASE(PH_PRESENT);
     C3D_RenderTargetClear(g_target, C3D_CLEAR_ALL, 0x000000FFu, 0);
-    C3D_FrameDrawOn(g_target);
+    C3D_FrameDrawOn(g_target); g_fx_epoch++;
+    gfx_combiner_invalidate();   /* the bottom screen set its own stages last frame */
+    tex_bind_invalidate();
+    g_fog_lut_bound = false;
+    g_fx_epoch++;
     g_cur_target = g_target;
     g_in_rtt = false;
     g_rtt_bytes = 0;
@@ -877,9 +1121,9 @@ static void render_lists(const void *const *lists, int nlists) {
         g_noise_ofs_v = (float)((r >> 16) & 63) / 64.0f;
     }
     C3D_SetAttrInfo(&g_attr);
-    C3D_SetBufInfo(&g_buf);
+    g_vcount = g_icount = g_batch_start = 0;
+    set_vbase(0);   /* also C3D_SetBufInfo */
 
-    g_vcount = g_batch_start = 0;
     g_state_valid = false;
     g_cmdbuf_full = false;
     g_draw_enabled = true;
@@ -906,7 +1150,7 @@ static void render_lists(const void *const *lists, int nlists) {
             gfx_interp_second_eye();
             gfx_backend_flush(&g_st);
             C3D_RenderTargetClear(g_target_right, C3D_CLEAR_ALL, 0x000000FFu, 0);
-            C3D_FrameDrawOn(g_target_right);
+            C3D_FrameDrawOn(g_target_right); g_fx_epoch++;
             g_cur_target = g_target_right;
             g_rtt_bytes = 0;
             g_scr_bytes = 0;
@@ -921,7 +1165,9 @@ static void render_lists(const void *const *lists, int nlists) {
             g_st.bg_wide_l = -g_view_ox / g_view_s - max_shift - 3.0f;   /* room for the 3D shift */
             g_st.bg_wide_r = (400.0f - g_view_ox) / g_view_s + max_shift + 3.0f;
             g_st.bg_shift = i == 0 && nlists > 1 ? gfx_interp_bg_shift(&g_st.bg_left, &g_st.bg_right) : 0.0f;
+            GP_BEGIN(tw);
             gfx_walk_dl(&g_st, lists[i]);
+            GP_END(tw, GP_WALK);
             g_st.bg_shift = 0.0f;
             g_st.bg_wide = false;
             if (g_st.cimg_rtt) {   /* a list that ended inside a window texture */
@@ -938,13 +1184,38 @@ static void render_lists(const void *const *lists, int nlists) {
     pm3ds_bc_main = "bottom screen";
     {
         extern void pm3ds_bottom_screen_render(C3D_RenderTarget *, C3D_RenderTarget *);
-        pm3ds_bottom_screen_render(g_target, stereo ? g_target_right : NULL);
+        /* Old 3DS: every other frame (it holds its image in between, and
+         * touches are read in pm3ds_bottom_screen_tick either way) */
+        static unsigned bottom_n;
+        extern bool pm3ds_new_game_picker_blocks_input(void);   /* the picker draws on the top screen too */
+        if (!g_skip_auto || (bottom_n++ & 1) == 0 || pm3ds_new_game_picker_blocks_input()) {
+            GP_BEGIN(tb);
+            PROF_PHASE(PH_BOTTOM);
+            pm3ds_bottom_screen_render(g_target, stereo ? g_target_right : NULL);
+            GP_END(tb, GP_BOTTOM);
+        }
     }
+#ifdef PM3DS_SLOW_MS   /* test: a slower console (frame skip, pacing) */
+    for (uint64_t t = svcGetSystemTick(); svcGetSystemTick() - t < (uint64_t)SYSCLOCK_ARM11 / 1000 * PM3DS_SLOW_MS;) {}
+#endif
     pm3ds_bc_main = "frame end";
-    C3D_FrameEnd(0);
+    GP_BEGIN(te);
+    PROF_PHASE(PH_END);
+    /* Without flags citro3d flushes the whole linear heap (32 MB) from the
+     * CPU cache every frame. The GPU only needs what was written for it: this
+     * frame's vertices, the bottom screen's (flushed there), textures
+     * (flushed on upload) and the command list (GX_CMDLIST_FLUSH). */
+    svcFlushProcessDataCache(CUR_PROCESS_HANDLE, (u32)g_vbuf, (u32)(sizeof(gpu_vtx_t) * g_vcount));
+    svcFlushProcessDataCache(CUR_PROCESS_HANDLE, (u32)g_ibuf, (u32)(sizeof(uint16_t) * g_icount));
+    C3D_FrameEnd(GX_CMDLIST_FLUSH);
+    GP_END(te, GP_FRAMEEND);
     pm3ds_bc_main = "frame done";
     g_step_render_ticks += svcGetSystemTick() - t_busy;
     g_step_renders++;
+#ifdef PM3DS_STEP_PROF
+    pm3ds_gp_ticks[GP_RENDER] += svcGetSystemTick() - t_busy;
+    g_gp_renders++;
+#endif
 }
 
 /* 60 fps with the 3D slider up: every frame is drawn once per eye, so a game
@@ -983,6 +1254,21 @@ static void stereo_interp_update(bool stereo, bool counted, bool interp_was_on, 
         g_si_backoff = 0;
         return;
     }
+    {   /* battles stay at 30 with the slider up: the in-between frames rarely
+         * fit there, and dropping in and out of 60 felt worse than a steady 30 */
+        extern s32 get_game_mode(void);
+        static bool was_battle;
+        bool battle = get_game_mode() == 8;   /* GAME_MODE_BATTLE */
+        if (battle != was_battle) {
+            was_battle = battle;
+            g_stereo_interp = false;
+            g_si_late = 0.0f;
+            g_si_backoff = 0;
+            g_si_hold = 8;   /* after a battle: measure a few steps at 30, then decide */
+            pm3ds_log(PM3DS_LOG_INFO, "3D: %s", battle ? "battle, 30 fps" : "battle over");
+        }
+        if (battle) return;
+    }
     if (!counted || render_ms == 0.0f) return;   /* fast-forward, or nothing new drawn */
     g_si_render_ms += (render_ms - g_si_render_ms) * 0.2f;
     g_si_gpu_ms += (gpu_ms - g_si_gpu_ms) * 0.2f;
@@ -1020,6 +1306,29 @@ static void stereo_interp_update(bool stereo, bool counted, bool interp_was_on, 
     }
 }
 
+/* Frame skip (Old 3DS): game steps owed because frames came late; the main
+ * loop runs up to one of them per pass on top of the normal step. */
+static bool g_skip_auto, g_skip_auto_set;
+static float g_skip_debt;
+static int g_skipped_steps;   /* extra steps run before this frame (no in-between frame then) */
+int pm3ds_gfx_extra_steps(void) {
+    if (!g_skip_auto_set) {
+        bool n3ds = false;
+        APT_CheckNew3DS(&n3ds);
+#ifdef PM3DS_SIM_O3DS
+        n3ds = false;
+#endif
+        g_skip_auto = !n3ds;
+        g_skip_auto_set = true;
+    }
+    g_skipped_steps = 0;
+    if (g_skip_debt >= 1.0f) {
+        g_skip_debt -= 1.0f;
+        g_skipped_steps = 1;
+    }
+    return g_skipped_steps;
+}
+
 /* loading frames drawn / skipped because the GPU was still busy (netlog) */
 volatile unsigned pm3ds_load_frames_ok, pm3ds_load_frames_busy;
 
@@ -1051,6 +1360,7 @@ void pm3ds_gfx_present_message(const char *const *lines, int n) {
 static uint32_t g_shown;   /* frames put on screen (60 a second with interpolation) */
 
 void pm3ds_gfx_present_frame(void) {
+    PROF_PHASE(PH_PRESENT);
     g_frame_no++;
     pm3ds_bc_frames = g_frame_no;
     if (!g_st_inited) { gfx_state_init(&g_st); g_st_inited = true; }
@@ -1110,47 +1420,62 @@ void pm3ds_gfx_present_frame(void) {
      * they are. With the 3D slider up only while there is time for both
      * eyes twice (stereo_interp_update). */
     bool fps60 = pm3ds_fps60;
-    static float rate;
-    if (rate != (fps60 ? 60.0f : 30.0f)) {
-        rate = fps60 ? 60.0f : 30.0f;
-        C3D_FrameRate(rate);
+    /* Pacing: citro3d counts every vblank (port_main.c: rate 60) and a game step is due
+     * every second one. A frame that starts late starts at the next vblank
+     * instead of the next 30 Hz tick (a 40 ms frame showed every 66 ms), and
+     * on the Old 3DS the steps it fell behind are made up by running extra
+     * game steps without drawing them (pm3ds_gfx_extra_steps). */
+    static u32 due;           /* vblank the next step's first frame is due at */
+    static bool due_valid;
+    {   /* wait for it; render_lists' C3D_FrameSync waits the last vblank */
+        PROF_PHASE(PH_WAIT);
+        uint64_t t0 = svcGetSystemTick();
+        pm3ds_bc_main = "frame sync";
+        while (due_valid && (s32)(due - (render ? 1u : 0u) - C3D_FrameCounter(0)) > 0) C3D_FrameSync();
+        pm3ds_t_wait += svcGetSystemTick() - t0;
     }
-    int frames = fps60 ? 2 : 1;
+    u32 step_vbl = C3D_FrameCounter(0) + (render ? 1u : 0u);
     bool interp_on = false;
     if (render) {
-        bool interp = fps60 && n > 0 && (slider_now() <= 0.02f || g_stereo_interp) && !pm3ds_fast_forward();
+        bool interp = fps60 && n > 0 && (slider_now() <= 0.02f || g_stereo_interp) && !pm3ds_fast_forward() &&
+                      !g_skipped_steps;
 #ifdef PM3DS_INTERP_ONLY   /* test: show only the in-between frames (pairing errors stay on screen) */
         if (interp) {
             gfx_interp_begin_walk(0.5f, true);
             render_lists(last, nlast);
+            step_vbl = g_frame_vbl;
             g_shown++;
-            frames--;
             gfx_interp_end_step();
             goto drawn;
         }
 #endif
         interp_on = interp;
+        bool first = true;
         if (interp) {
             gfx_interp_begin_walk(0.5f, false);
             render_lists(last, nlast);
+            step_vbl = g_frame_vbl;
+            first = false;
             g_shown++;
-            frames--;
         }
         gfx_interp_begin_walk(1.0f, n > 0);
         render_lists(last, nlast);
+        if (first) step_vbl = g_frame_vbl;
         g_shown++;
-        frames--;
         if (n > 0) gfx_interp_end_step();
     }
 #ifdef PM3DS_INTERP_ONLY
 drawn:
 #endif
-    while (frames-- > 0) {   /* keep the 30 Hz step: the screen holds its frame */
-        uint64_t t0 = svcGetSystemTick();
-        pm3ds_bc_main = "frame sync";
-        C3D_FrameSync();
-        pm3ds_t_wait += svcGetSystemTick() - t0;
+    if (due_valid && render && n > 0 && g_skip_auto && !pm3ds_fast_forward()) {
+        /* steps this frame came late by, owed to the game (capped: a long
+         * load is not made up for) */
+        int late = (s32)(step_vbl - due);
+        if (late > 0) g_skip_debt += late * 0.5f;
+        if (g_skip_debt > 2.0f) g_skip_debt = 2.0f;
     }
+    due = step_vbl + 2;
+    due_valid = true;
     {
         static u32 last_vbl;
         u32 vbl = C3D_FrameCounter(0);
@@ -1208,8 +1533,36 @@ drawn:
                 snprintf(pm3ds_perf_text[2], sizeof pm3ds_perf_text[2], "tex %u/s  audio %.1f%% core%d  eng %.1f%%",
                          pm3ds_tstat_uploads, aud, s_audio_core, eng);
                 pm3ds_log(PM3DS_LOG_INFO, "PERF2 audio=%.1f%% engine=%.1f%% up=%u", aud, eng, pm3ds_tstat_uploads);
+#ifdef PM3DS_STEP_PROF
+                {   /* debug: the mixer's commands, % of one core */
+                    extern uint64_t pm3ds_alist_ticks[16];
+                    double k = 100.0 / SYSCLOCK_ARM11 / secs;
+                    pm3ds_log(PM3DS_LOG_INFO, "AUDPROF adpcm=%.1f env=%.1f resample=%.1f polef=%.1f mixer=%.1f load/save=%.1f other=%.1f",
+                              pm3ds_alist_ticks[1] * k, pm3ds_alist_ticks[3] * k, pm3ds_alist_ticks[5] * k,
+                              pm3ds_alist_ticks[14] * k, pm3ds_alist_ticks[12] * k,
+                              (pm3ds_alist_ticks[4] + pm3ds_alist_ticks[6]) * k,
+                              (pm3ds_alist_ticks[0] + pm3ds_alist_ticks[2] + pm3ds_alist_ticks[9] + pm3ds_alist_ticks[10] +
+                               pm3ds_alist_ticks[11] + pm3ds_alist_ticks[13] + pm3ds_alist_ticks[15]) * k);
+                    memset(pm3ds_alist_ticks, 0, sizeof pm3ds_alist_ticks);
+                }
+#endif
                 pm3ds_t_audio = pm3ds_t_audio_engine = 0;
             }
+#ifdef PM3DS_STEP_PROF
+            if (g_gp_renders) {   /* debug: where a render's CPU time goes, ms per render */
+                double k = 1000.0 / SYSCLOCK_ARM11 / g_gp_renders;
+                pm3ds_log(PM3DS_LOG_INFO, "GPROF n=%u applies=%u same=%u render=%.2f walk=%.2f vtx=%.2f tri=%.2f state=%.2f tex=%.2f comb=%.2f draw=%.2f bottom=%.2f end=%.2f",
+                          g_gp_renders, g_gp_applies / g_gp_renders, g_gp_same / g_gp_renders, pm3ds_gp_ticks[GP_RENDER] * k, pm3ds_gp_ticks[GP_WALK] * k, pm3ds_gp_ticks[GP_VTX] * k,
+                          pm3ds_gp_ticks[GP_TRI] * k, pm3ds_gp_ticks[GP_STATE] * k, pm3ds_gp_ticks[GP_TEX] * k,
+                          pm3ds_gp_ticks[GP_COMB] * k, pm3ds_gp_ticks[GP_FLUSH] * k,
+                          pm3ds_gp_ticks[GP_BOTTOM] * k, pm3ds_gp_ticks[GP_FRAMEEND] * k);
+                memset(pm3ds_gp_ticks, 0, sizeof pm3ds_gp_ticks);
+                g_gp_applies = g_gp_same = 0;
+                sampler_start();
+                sampler_report();
+                g_gp_renders = 0;
+            }
+#endif
             pm3ds_log(PM3DS_LOG_INFO, "PERF fps=%.1f game=%.2fms render=%.2fms idle=%.2fms tris=%u draws=%u up=%u cmd=%.0f%% 3d=%d",
                       fps, ms_game, ms_rend, ms_wait, pm3ds_tstat_tris, g_stat_draws, pm3ds_tstat_uploads,
                       g_cmdbuf_peak * 100.0f, g_si_was_stereo ? (g_stereo_interp ? 60 : 30) : 0);
@@ -1220,10 +1573,12 @@ drawn:
             pm3ds_t_game = pm3ds_t_present = pm3ds_t_wait = 0;
         }
     }
+    PROF_PHASE(PH_GAME);   /* the main loop runs the next game step now */
 }
 
 void pm3ds_gfx_present_shutdown(void) {
     if (g_vbuf) { linearFree(g_vbuf); g_vbuf = NULL; }
+    if (g_ibuf) { linearFree(g_ibuf); g_ibuf = NULL; }
     shaderProgramFree(&g_prog);
     if (g_dvlb) { DVLB_Free(g_dvlb); g_dvlb = NULL; }
     if (g_target) { C3D_RenderTargetDelete(g_target); g_target = NULL; }

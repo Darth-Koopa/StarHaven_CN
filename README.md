@@ -33,8 +33,8 @@ Full instructions: [the player readme](port/3ds/RELEASE_README.md).
 - Original, Fill or Wide screen, the 3D slider with a depth setting, remappable buttons
 - A touch bottom screen: stats, world map, party, items, and the battle menus as buttons
 - A randomizer, chosen when you start a new file, with a seed you can share
-- Full speed on the New 3DS family; the original 3DS and 2DS run it slowly (about 15 fps,
-  CIA only)
+- 60 fps on the New 3DS family; about 30 fps on the original 3DS and 2DS, with a few extras
+  off there (CIA only)
 
 | | | |
 |:---:|:---:|:---:|

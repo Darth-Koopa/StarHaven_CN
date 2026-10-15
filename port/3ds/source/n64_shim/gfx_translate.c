@@ -22,6 +22,7 @@
 #include "pm3ds_log.h"
 #ifndef PM3DS_HOST_TEST
 #include "gfx_interp.h"
+#include "gfx_prof.h"
 #endif
 
 typedef struct { uint32_t w0, w1; } gfx_cmd_t;
@@ -157,8 +158,18 @@ static void log_bad_addr(const char *what, uint32_t addr, const void *cmd) {
 
 /* ---- state -------------------------------------------------------------- */
 
+/* the texture cache keys paletted textures by palette content; hashing it
+ * here, once per load, instead of on every draw */
+void gfx_tlut_rehash(gfx_state_t *st, int bank) {
+    const uint8_t *p = &st->tlut[bank * 32];
+    uint32_t h = 2166136261u;
+    for (int i = 0; i < 32; i++) h = (h ^ p[i]) * 16777619u;
+    st->tlut_hash[bank] = h;
+}
+
 void gfx_state_init(gfx_state_t *st) {
     memset(st, 0, sizeof(*st));
+    for (int b = 0; b < 16; b++) gfx_tlut_rehash(st, b);
     mtx_ident(st->mv[0]);
     mtx_ident(st->proj);
     st->vp_scale[0] = 320 * 2; st->vp_scale[1] = 240 * 2; st->vp_scale[2] = 0x1FF;
@@ -224,6 +235,8 @@ int pm3ds_gfx_dbg_vtx;
 float pm3ds_stereo_shift;              /* signed pixels at infinity, 0 = mono */
 #define PM3DS_STEREO_CONV 420.0f       /* ~ the field camera's distance to Mario */
 
+uint32_t gfx_vtx_serial;   /* gfx_vtx_t.serial source */
+
 /* gSPModifyVertex: change one field of a loaded vertex (the underwater
  * ripple moves its grid's corners in screen space this way). */
 static void handle_modifyvtx(gfx_state_t *st, const gfx_cmd_t *g) {
@@ -231,6 +244,7 @@ static void handle_modifyvtx(gfx_state_t *st, const gfx_cmd_t *g) {
     int idx = (int)bf(g->w0, 0, 16) / 2;
     if (idx >= GFX_VTX_POOL_SIZE) return;
     gfx_vtx_t *d = &st->vtx[idx];
+    d->serial = ++gfx_vtx_serial;
     switch (where) {
         case 0x10:   /* G_MWO_POINT_RGBA */
             d->r = (uint8_t)(g->w1 >> 24); d->g = (uint8_t)(g->w1 >> 16);
@@ -274,6 +288,7 @@ static void handle_vtx(gfx_state_t *st, const gfx_cmd_t *g) {
     for (int i = 0; i < n; i++) {
         const n64_vtx_t *v = &src[i];
         gfx_vtx_t *d = &st->vtx[v0 + i];
+        d->serial = ++gfx_vtx_serial;
         float x = v->ob[0], y = v->ob[1], z = v->ob[2];
         d->cx = x * m[0][0] + y * m[1][0] + z * m[2][0] + m[3][0];
         d->cy = x * m[0][1] + y * m[1][1] + z * m[2][1] + m[3][1];
@@ -401,10 +416,10 @@ static void emit_tri(gfx_state_t *st, unsigned ia, unsigned ib, unsigned ic) {
             return;
         }
         if (a->cw > 0.0f && b->cw > 0.0f && c->cw > 0.0f) {
-            float ax = a->cx / a->cw, ay = a->cy / a->cw;
-            float bx = b->cx / b->cw, by = b->cy / b->cw;
-            float cx = c->cx / c->cw, cy = c->cy / c->cw;
-            float cross = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+            /* the winding of the projected triangle, without dividing by w:
+             * det |x y w| over the three vertices = wa*wb*wc * the 2D cross */
+            float cross = a->cx * (b->cy * c->cw - b->cw * c->cy) - a->cy * (b->cx * c->cw - b->cw * c->cx) +
+                          a->cw * (b->cx * c->cy - b->cy * c->cx);
             /* counter-clockwise (cross > 0) is front-facing */
             if ((cull & GM_CULL_BACK) && cross <= 0.0f) { pm3ds_tstat_culled++; return; }
             if ((cull & GM_CULL_FRONT) && cross >= 0.0f) { pm3ds_tstat_culled++; return; }
@@ -630,6 +645,7 @@ static void handle_loadtlut(gfx_state_t *st, const gfx_cmd_t *g) {
     pm3ds_pi_read(st->timg_addr, &st->tlut[base * 2], (uint32_t)count * 2);
     for (int bank = base / 16; bank <= (base + count - 1) / 16 && bank < 16; bank++) {
         st->tlut_src[bank] = st->timg_addr + (uint32_t)(bank * 16 - base) * 2;
+        gfx_tlut_rehash(st, bank);
     }
     st->dirty |= GFX_DIRTY_TEXTURE;
 }
@@ -819,20 +835,33 @@ int gfx_walk_dl(gfx_state_t *st, const void *dl) {
         }
         if (!addr_plausible((uint32_t)(uintptr_t)g)) break;
         uint32_t op = g->w0 >> 24;
+        PROF_OP(op);
+        PROF_PHASE(PH_WALK);
         n++;
         pm3ds_tstat_ops++;
         switch (op) {
-            case OP_VTX:        handle_vtx(st, g); break;
-            case OP_TRI1:
+            case OP_VTX: {
+                GP_BEGIN(t);
+                handle_vtx(st, g);
+                GP_END(t, GP_VTX);
+                break;
+            }
+            case OP_TRI1: {
+                GP_BEGIN(t);
                 emit_tri(st, bf(g->w0, 16, 8) / 2, bf(g->w0, 8, 8) / 2, bf(g->w0, 0, 8) / 2);
+                GP_END(t, GP_TRI);
                 pm3ds_tstat_tris++;
                 break;
+            }
             case OP_TRI2:
-            case OP_QUAD:
+            case OP_QUAD: {
+                GP_BEGIN(t);
                 emit_tri(st, bf(g->w0, 16, 8) / 2, bf(g->w0, 8, 8) / 2, bf(g->w0, 0, 8) / 2);
                 emit_tri(st, bf(g->w1, 16, 8) / 2, bf(g->w1, 8, 8) / 2, bf(g->w1, 0, 8) / 2);
+                GP_END(t, GP_TRI);
                 pm3ds_tstat_tris += 2;
                 break;
+            }
             case OP_MTX:        handle_mtx(st, g); break;
             case OP_POPMTX:     handle_popmtx(st, g); break;
             case OP_GEOMETRYMODE: handle_geometrymode(st, g); break;

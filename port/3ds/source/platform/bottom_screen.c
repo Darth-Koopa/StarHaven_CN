@@ -126,6 +126,7 @@ static void upload_rgba8(C3D_Tex *tex, const u8 *rgba, int w, int h) {
         }
     }
     C3D_TexUpload(tex, tiled);
+    svcFlushProcessDataCache(CUR_PROCESS_HANDLE, (u32)tex->data, tex->size);   /* the frame flushes only its vertices (gfx_present.c) */
     free(tiled);
 }
 
@@ -141,6 +142,7 @@ static void upload_rgb565(C3D_Tex *tex, const u8 *rgba, int w, int h) {
         }
     }
     C3D_TexUpload(tex, tiled);
+    svcFlushProcessDataCache(CUR_PROCESS_HANDLE, (u32)tex->data, tex->size);
     free(tiled);
 }
 
@@ -812,7 +814,10 @@ static void draw_options(void) {
     panel(4, 4, 316, 204, COL_PANEL);
     opt_row(0, "Screen", s_view_names[pm3ds_cfg.view_mode % 3]);
     opt_row(1, "Frame rate", s_fps_names[pm3ds_cfg.fps60]);
-    opt_row(2, "3D depth", pm3ds_depth3d_names[pm3ds_cfg.depth3d % DEPTH3D_LEVELS]);
+    {   /* Old 3DS: no 3D (gfx_present.c), say so instead of a setting that does nothing */
+        extern bool pm3ds_lite_effects;
+        opt_row(2, "3D depth", pm3ds_lite_effects ? "Off (Old 3DS)" : pm3ds_depth3d_names[pm3ds_cfg.depth3d % DEPTH3D_LEVELS]);
+    }
     opt_row(3, "Text speed", s_text_names[pm3ds_cfg.text_speed % TEXT_SPEEDS]);
     snprintf(buf, sizeof buf, "%dx", pm3ds_cfg.ff_speed);
     opt_row(4, "Fast-forward speed", buf);
@@ -1245,7 +1250,11 @@ static void handle_touch(void) {
         switch (row) {
             case 0: pm3ds_cfg.view_mode = (pm3ds_cfg.view_mode + 1) % 3; break;   /* Original -> Fill -> Wide */
             case 1: pm3ds_cfg.fps60 = !pm3ds_cfg.fps60; break;
-            case 2: pm3ds_cfg.depth3d = (pm3ds_cfg.depth3d + 1) % DEPTH3D_LEVELS; break;
+            case 2: {
+                extern bool pm3ds_lite_effects;
+                if (!pm3ds_lite_effects) pm3ds_cfg.depth3d = (pm3ds_cfg.depth3d + 1) % DEPTH3D_LEVELS;
+                break;
+            }
             case 3: pm3ds_cfg.text_speed = (pm3ds_cfg.text_speed + 1) % TEXT_SPEEDS; break;
             case 4: pm3ds_cfg.ff_speed = pm3ds_cfg.ff_speed >= 4 ? 2 : pm3ds_cfg.ff_speed + 1; break;
             case 5: pm3ds_cfg.ff_toggle = !pm3ds_cfg.ff_toggle; break;
@@ -1377,7 +1386,9 @@ static bool begin_ui_on(C3D_RenderTarget *t, const C3D_Mtx *m, bool after) {
 
 static void end_ui(void) {
     flush();
-    GSPGPU_FlushDataCache(s_vbuf, sizeof(vtx_t) * (u32)s_vcount);
+    /* not GSPGPU_FlushDataCache: an IPC to the system core, slow on the
+     * Old 3DS where the audio mixer has most of that core */
+    svcFlushProcessDataCache(CUR_PROCESS_HANDLE, (u32)s_vbuf, sizeof(vtx_t) * (u32)s_vcount);
 }
 
 /* inside a citro3d frame, after the top screen; top, top_right: its render

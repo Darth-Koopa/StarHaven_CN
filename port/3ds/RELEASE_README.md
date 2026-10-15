@@ -8,9 +8,10 @@ your ROM from the SD card when it starts.
 
 ## What you need
 
-- A **New Nintendo 3DS, New 3DS XL, New 2DS XL** (or New 3DS LL) for full speed. The
-  original 3DS and 2DS run it too, but slowly (about 15 fps), and only the CIA: the `.3dsx`
-  doesn't get enough memory there.
+- A **New Nintendo 3DS, New 3DS XL, New 2DS XL** (or New 3DS LL) for 60 fps. The original
+  3DS and 2DS run it at about 30 fps, with a few extras off to get there (no reverb, no 3D,
+  shadows only under Mario and your partner), and only the CIA: the `.3dsx` doesn't get
+  enough memory there.
 - Custom firmware (Luma3DS) and a CIA installer such as FBI, or the Homebrew Launcher for
   the `.3dsx`.
 - A dump of **Paper Mario** as `.z64`, `.n64` or `.v64`:
@@ -52,7 +53,8 @@ Your saves are on the SD card and are kept.
 | D-Pad, C-Stick | C buttons |
 | ZR (hold) | Fast-forward |
 
-Every button can be changed under **Options → Controls**. The 3D slider works.
+Every button can be changed under **Options → Controls**. The 3D slider works (not on the
+original 3DS and 2DS).
 
 ## Bottom screen
 
@@ -66,7 +68,7 @@ Every button can be changed under **Options → Controls**. The 3D slider works.
   - **3D depth**: how deep the 3D slider goes, from *Low* to *Deepest*.
   - **Frame rate**: 60 fps (in-between frames are added) or the original 30 fps. With the 3D
     slider up, 60 fps holds where there is time to draw both eyes twice and drops to 30
-    elsewhere.
+    elsewhere; battles stay at 30.
   - **Text speed**: Normal, Fast or Instant.
   - **Fast-forward**: speed (2x to 4x), and whether the button is held or toggles.
   - **Controls**: remap any button.

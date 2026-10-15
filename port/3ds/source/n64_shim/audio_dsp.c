@@ -128,9 +128,35 @@ int pm3ds_audio_init(void) {
 #endif
     s_audio_core = -1;
     s_audio_thread = NULL;
+    {   /* Old 3DS: no reverb (audio_alist.c, syn_driver.c) */
+        extern bool pm3ds_audio_no_reverb;
+        pm3ds_audio_no_reverb = !n3ds;
+    }
     if (n3ds) {
         s_audio_thread = threadCreate(audio_thread_entry, NULL, 0x10000, 0x18, 2, false);
         if (s_audio_thread) s_audio_core = 2;
+    } else {
+        /* Old 3DS: the mixer took ~half of the game's 268 MHz core. The
+         * system core can lend apps a share of its time (as the 3DS sm64
+         * port does for its audio); ask for as much as it gives. */
+        static const u32 limits[] = { 80, 70, 60, 55, 50, 45, 40, 35, 30 };
+        for (unsigned i = 0; i < sizeof limits / sizeof limits[0] && !s_audio_thread; i++) {
+            Result rc = APT_SetAppCpuTimeLimit(limits[i]);
+            if (R_FAILED(rc)) {
+                pm3ds_log(PM3DS_LOG_INFO, "audio: core 1 time limit %lu%% refused (0x%08lX)", (unsigned long)limits[i],
+                          (unsigned long)rc);
+                continue;
+            }
+#ifdef PM3DS_AUDIO_CORE0   /* test: measure the mixer on the game's core */
+            pm3ds_log(PM3DS_LOG_INFO, "audio: core 1 would give %lu%%; mixer stays on core 0 (test)", (unsigned long)limits[i]);
+            break;
+#endif
+            s_audio_thread = threadCreate(audio_thread_entry, NULL, 0x10000, 0x18, 1, false);
+            if (s_audio_thread) {
+                s_audio_core = 1;
+                pm3ds_log(PM3DS_LOG_INFO, "audio: mixer on core 1 with %lu%% of its time", (unsigned long)limits[i]);
+            }
+        }
     }
     if (!s_audio_thread)
         s_audio_thread = threadCreate(audio_thread_entry, NULL,

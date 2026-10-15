@@ -61,6 +61,7 @@ typedef struct {
     float px, py;          /* homogeneous N64 pixel x,y (multiply of cw) */
     float s, t;            /* texcoords after G_TEXTURE scale, s10.5 units */
     uint8_t r, g, b, a;    /* shade */
+    uint32_t serial;       /* new on every load/change: the backend reuses its GPU copy until then */
 } gfx_vtx_t;
 
 typedef struct {
@@ -118,6 +119,7 @@ typedef struct gfx_state {
 
     uint8_t  tlut[512];             /* 256 RGBA16/IA16 entries, raw big-endian */
     uint32_t tlut_src[16];          /* source address per 16-entry bank (cache key) */
+    uint32_t tlut_hash[16];         /* content hash per bank, kept by G_LOADTLUT (texture cache key) */
 
     uint32_t cimg_addr, zimg_addr;
     uint16_t cimg_width;
@@ -173,6 +175,7 @@ void gfx_tex_bind_unit(gfx_tex_entry_t *e, int unit, int filter_linear, int cms,
 /* Where the TMEM contents `tile` reads came from: the source image address
  * and the texel column/row of the loaded rectangle's origin in it. */
 bool gfx_tex_load_source(const gfx_state_t *st, int tile, uint32_t *addr, int *col, int *row);
+void gfx_tlut_rehash(gfx_state_t *st, int bank);
 void gfx_tex_cache_reset(void);
 
 /* --- combiner (gfx_combiner.c) -------------------------------------------- */
@@ -182,6 +185,7 @@ typedef struct {
 } gfx_cc_info_t;
 /* Program the PICA TexEnv stages for the current combine mode. */
 void gfx_combiner_apply(const gfx_state_t *st, bool two_cycle, gfx_cc_info_t *info);
+void gfx_combiner_invalidate(void);   /* the TexEnv stages were set elsewhere */
 void gfx_combiner_info(const gfx_state_t *st, bool two_cycle, gfx_cc_info_t *info);
 
 #endif /* PM3DS_GFX_STATE_H */

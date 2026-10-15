@@ -20,6 +20,7 @@
 #include <string.h>
 #ifndef PM3DS_HOST_TEST
 #include <3ds.h>
+#include <math.h>
 #include "pm3ds_settings.h"
 #endif
 
@@ -75,9 +76,20 @@ void osContStartReadData(void *mq) {
     for (int k = 0; k < KEY_IDX_COUNT; k++)
         if (kHeld & pm3ds_settings_key_bit(k)) b |= act_bits[pm3ds_cfg.keymap[k] % ACT_COUNT];
 
-    /* Circle pad on 3DS reports −0x9C ... +0x9C-ish; N64 stick is ±80. */
-    int8_t sx = (int8_t)(cp.dx  * 80 / 156);
-    int8_t sy = (int8_t)(cp.dy  * 80 / 156);
+    /* Circle pad on 3DS reports −0x9C ... +0x9C-ish; N64 stick is ±80. A
+     * resting pad sits a few units off centre (an N64 stick reads 0 there),
+     * which walked Mario slowly: a round dead zone, then the rest of the
+     * range stretched so the edge still gives full speed. */
+    int8_t sx = 0, sy = 0;
+    {
+        const float dead = 14.0f, full = 150.0f;
+        float m = sqrtf((float)cp.dx * cp.dx + (float)cp.dy * cp.dy);
+        if (m > dead) {
+            float k = (m >= full ? 80.0f : 80.0f * (m - dead) / (full - dead)) / m;
+            sx = (int8_t)(cp.dx * k);
+            sy = (int8_t)(cp.dy * k);
+        }
+    }
 
     {   /* debug sweeps hold buttons here (always 0 otherwise) */
         extern uint16_t pm3ds_debug_pad_or;
