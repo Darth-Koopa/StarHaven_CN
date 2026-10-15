@@ -753,15 +753,27 @@ void tattle_cam_pre_render(Camera* camera) {
         mdl_get_shroud_tint_params(&r1, &g1, &b1, &a1);
         if (fogA == 255) {
             for (i = 0; i < ARRAY_COUNT(gTattleBgPalette); i++) {
+#ifdef _3DS
+                gTattleBgPalette[i] = 0x0100;   // opaque black, big-endian like the palette it replaces
+#else
                 gTattleBgPalette[i] = 1;
+#endif
             }
         } else {
             for (i = 0; i < ARRAY_COUNT(gTattleBgPalette); i++) {
+#ifdef _3DS
+                u16 palColor = __builtin_bswap16(gGameStatusPtr->backgroundPalette[i]);   // big-endian in memory
+#else
                 u16 palColor = gGameStatusPtr->backgroundPalette[i];
+#endif
                 u16 blendedB = blend_tattle_background_channel(UNPACK_PAL_B(palColor), fogB >> 3, fogA);
                 u16 blendedG = blend_tattle_background_channel(UNPACK_PAL_G(palColor), fogG >> 3, fogA);
                 u16 blendedR = blend_tattle_background_channel(UNPACK_PAL_R(palColor), fogR >> 3, fogA);
+#ifdef _3DS
+                gTattleBgPalette[i] = __builtin_bswap16(blendedB << 1 | blendedG << 6 | blendedR << 11 | 1);
+#else
                 gTattleBgPalette[i] = blendedB << 1 | blendedG << 6 | blendedR << 11 | 1;
+#endif
             }
         }
     }

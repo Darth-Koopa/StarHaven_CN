@@ -11,6 +11,9 @@
 #include "effects.h"
 #include <malloc.h>
 #include "pm3ds_brand.h"
+#ifdef PM3DS_SHOP_TEST
+#include "hud_element.h"
+#endif
 #if defined(PM3DS_BATTLE_SWEEP) || defined(PM3DS_STORY_SWEEP)
 #include "../../../../src/battle/battle.h"
 #endif
@@ -22,7 +25,8 @@ void set_battle_formation(Battle* battle);
     defined(PM3DS_RO_CHECK) || defined(PM3DS_MAGENTA_HUNT) || defined(PM3DS_OVERLAY_DBG) || \
     defined(PM3DS_TELEPORT_X) || defined(PM3DS_COLLIDER_CHECK) || defined(PM3DS_START_BARE) || \
     defined(PM3DS_FX_TEST) || defined(PM3DS_TEST_LEVELUP) || defined(PM3DS_BATTLE_SWEEP) || \
-    defined(PM3DS_STORY_SWEEP) || defined(PM3DS_FX_SWEEP) || defined(PM3DS_NO_BATTLES)
+    defined(PM3DS_STORY_SWEEP) || defined(PM3DS_FX_SWEEP) || defined(PM3DS_NO_BATTLES) || \
+    defined(PM3DS_SHOP_TEST)
 /* make_cia.sh refuses to publish a binary containing this string */
 __attribute__((used)) const char pm3ds_debug_build_marker[] = "PM3DS-DEBUG-BUILD";
 #endif
@@ -418,7 +422,8 @@ void pm3ds_game_debug_tick(u32 frame) {
     defined(PM3DS_RO_CHECK) || defined(PM3DS_MAGENTA_HUNT) || defined(PM3DS_OVERLAY_DBG) || \
     defined(PM3DS_TELEPORT_X) || defined(PM3DS_COLLIDER_CHECK) || defined(PM3DS_START_BARE) || \
     defined(PM3DS_FX_TEST) || defined(PM3DS_TEST_LEVELUP) || defined(PM3DS_BATTLE_SWEEP) || \
-    defined(PM3DS_STORY_SWEEP) || defined(PM3DS_FX_SWEEP) || defined(PM3DS_NO_BATTLES)
+    defined(PM3DS_STORY_SWEEP) || defined(PM3DS_FX_SWEEP) || defined(PM3DS_NO_BATTLES) || \
+    defined(PM3DS_SHOP_TEST)
     if (frame == 1) {
         pm3ds_log(2, "%s", pm3ds_debug_build_marker);   /* keeps the marker linked */
     }
@@ -530,6 +535,19 @@ void pm3ds_game_debug_tick(u32 frame) {
             gPlayerStatus.pos.z = PM3DS_TELEPORT_Z;
             pm3ds_log(2, "TELEPORT player -> (%d,%d,%d)", PM3DS_TELEPORT_X, PM3DS_TELEPORT_Y, PM3DS_TELEPORT_Z);
         }
+    }
+#endif
+#ifdef PM3DS_SHOP_TEST
+    /* debug: where the map's shop items and the player are, every 2 s */
+    if (frame % 60 == 0 && gGameStatusPtr != nullptr && gGameStatusPtr->mapShop != nullptr) {
+        Shop* shop = gGameStatusPtr->mapShop;
+        for (s32 i = 0; i < shop->numItems; i++) {
+            pm3ds_log(2, "SHOP item %d id=%d price=%d at (%d,%d,%d)", (int)i, (int)shop->staticInventory[i].itemID,
+                      (int)shop->staticInventory[i].price, (int)gGameStatusPtr->shopItemEntities[i].pos.x,
+                      (int)gGameStatusPtr->shopItemEntities[i].pos.y, (int)gGameStatusPtr->shopItemEntities[i].pos.z);
+        }
+        pm3ds_log(2, "SHOP player (%d,%d,%d) coins=%d flags=%X", (int)gPlayerStatus.pos.x, (int)gPlayerStatus.pos.y,
+                  (int)gPlayerStatus.pos.z, (int)gPlayerData.coins, (unsigned)shop->flags);
     }
 #endif
     if (frame % 300 != 0 || gGameStatusPtr == nullptr) {

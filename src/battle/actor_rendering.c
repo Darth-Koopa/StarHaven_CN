@@ -4,6 +4,21 @@
 #include "battle/battle.h"
 #include "sprite/npc/BattleWatt.h"
 
+#ifdef _3DS
+// 3DS port: sprite palettes stay big-endian RGBA16 in memory (N64 order, which the GPU
+// upload expects), so swap each color as it is unpacked and packed again
+#undef UNPACK_PAL_R
+#undef UNPACK_PAL_G
+#undef UNPACK_PAL_B
+#undef UNPACK_PAL_A
+#undef PACK_PAL_RGBA
+#define UNPACK_PAL_R(color) ((__builtin_bswap16((u16)(color)) >> 11) & 0x1F)
+#define UNPACK_PAL_G(color) ((__builtin_bswap16((u16)(color)) >> 6) & 0x1F)
+#define UNPACK_PAL_B(color) ((__builtin_bswap16((u16)(color)) >> 1) & 0x1F)
+#define UNPACK_PAL_A(color) (__builtin_bswap16((u16)(color)) & 1)
+#define PACK_PAL_RGBA(r, g, b, a) __builtin_bswap16((u16)(((r) << 11) | ((g) << 6) | ((b) << 1) | (a)));
+#endif
+
 enum StandardPalettes {
     STANDARD_PAL_POISON     = 1,
     STANDARD_PAL_DIZZY      = 2,

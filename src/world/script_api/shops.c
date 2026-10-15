@@ -4,6 +4,16 @@
 #include "model.h"
 #include "pause/pause_common.h"
 
+// 3DS port: bool is 1 byte here (the N64 build's is 4), so functionTempBool[2] is byte 2 of
+// functionTemp[0], the dialog state. The printer writing true there turned the state into a
+// value no case handles, and every buy/sell/deposit/claim hung after the Yes/No choice.
+// Keep the flag in functionTemp[2], where the N64 build has it.
+#ifdef _3DS
+#define SHOP_PRINTER_CLOSED(script) (*(bool*)&(script)->functionTemp[2])
+#else
+#define SHOP_PRINTER_CLOSED(script) ((script)->functionTempBool[2])
+#endif
+
 #if !VERSION_JP
 extern u8 MessagePlural[];
 extern u8 MessageSingular[];
@@ -281,7 +291,7 @@ API_CALLABLE(ShowShopPurchaseDialog) {
 
     // functionTemp[0] is PurchaseDialogState
     // functionTemp[1] is speech script ID
-    // functionTempBool[2] is speech printer isClosed writeback
+    // SHOP_PRINTER_CLOSED (functionTempBool[2]) is speech printer isClosed writeback
 
     shop->flags &= ~SHOP_FLAG_SHOWING_ITEM_INFO;
     status_bar_always_show_off();
@@ -304,12 +314,12 @@ API_CALLABLE(ShowShopPurchaseDialog) {
         case PURCHASE_DIALOG_STATE_INIT:
             if (!does_script_exist(script->functionTemp[1])) {
                 script->functionTemp[0] = PURCHASE_DIALOG_STATE_WAIT_FOR_SPEECH;
-                script->functionTempBool[2] = false;
-                D_80286528 = msg_get_printer_for_msg(MSG_Choice_0001, &script->functionTempBool[2]);
+                SHOP_PRINTER_CLOSED(script) = false;
+                D_80286528 = msg_get_printer_for_msg(MSG_Choice_0001, &SHOP_PRINTER_CLOSED(script));
             }
             break;
         case PURCHASE_DIALOG_STATE_WAIT_FOR_SPEECH:
-            if (script->functionTempBool[2] == true) {
+            if (SHOP_PRINTER_CLOSED(script) == true) {
                 if (D_80286528->curOption == 0) {
                     if (playerData->coins < shopInventory->price) {
                         script->functionTemp[1] = shop_owner_continue_speech(SHOP_MSG_NOT_ENOUGH_COINS);
@@ -542,12 +552,12 @@ API_CALLABLE(ShowShopOwnerDialog) {
         case DIALOG_STATE_AWAIT_GREETING:
             if (!does_script_exist(script->functionTemp[1])) {
                 script->functionTemp[0] = DIALOG_STATE_AWAIT_MAIN_MENU;
-                script->functionTempBool[2] = false;
-                ShopOwnerPrintState = msg_get_printer_for_msg(MSG_Choice_0003, &script->functionTempBool[2]);
+                SHOP_PRINTER_CLOSED(script) = false;
+                ShopOwnerPrintState = msg_get_printer_for_msg(MSG_Choice_0003, &SHOP_PRINTER_CLOSED(script));
             }
             break;
         case DIALOG_STATE_AWAIT_MAIN_MENU:
-            if (script->functionTempBool[2] == true) {
+            if (SHOP_PRINTER_CLOSED(script) == true) {
                 switch (ShopOwnerPrintState->curOption) {
                     case 0:
                         script->functionTemp[1] = shop_owner_continue_speech(SHOP_MSG_INSTRUCTIONS);
@@ -628,12 +638,12 @@ API_CALLABLE(ShowShopOwnerDialog) {
         case DIALOG_STATE_AWAIT_SELL_CONFIRM:
             if (!does_script_exist(script->functionTemp[1])) {
                 script->functionTemp[0] = DIALOG_STATE_HANDLE_SELL_CHOICE;
-                script->functionTempBool[2] = false;
-                ShopOwnerPrintState = msg_get_printer_for_msg(MSG_Choice_0002, &script->functionTempBool[2]);
+                SHOP_PRINTER_CLOSED(script) = false;
+                ShopOwnerPrintState = msg_get_printer_for_msg(MSG_Choice_0002, &SHOP_PRINTER_CLOSED(script));
             }
             break;
         case DIALOG_STATE_HANDLE_SELL_CHOICE:
-            if (script->functionTempBool[2] == true) {
+            if (SHOP_PRINTER_CLOSED(script) == true) {
                 if (ShopOwnerPrintState->curOption == 0) {
                     add_coins(shop_get_sell_price(playerData->invItems[shop->selectedStoreItemSlot]));
                     playerData->invItems[shop->selectedStoreItemSlot] = ITEM_NONE;
@@ -655,12 +665,12 @@ API_CALLABLE(ShowShopOwnerDialog) {
         case DIALOG_STATE_INIT_SELL_MORE_CHOICE:
             if (!does_script_exist(script->functionTemp[1])) {
                 script->functionTemp[0] = DIALOG_STATE_AWAIT_SELL_MORE_CHOICE;
-                script->functionTempBool[2] = false;
-                ShopOwnerPrintState = msg_get_printer_for_msg(MSG_Choice_0004, &script->functionTempBool[2]);
+                SHOP_PRINTER_CLOSED(script) = false;
+                ShopOwnerPrintState = msg_get_printer_for_msg(MSG_Choice_0004, &SHOP_PRINTER_CLOSED(script));
             }
             break;
         case DIALOG_STATE_AWAIT_SELL_MORE_CHOICE:
-            if (script->functionTempBool[2] == true) {
+            if (SHOP_PRINTER_CLOSED(script) == true) {
                 if (ShopOwnerPrintState->curOption == 0) {
                     script->functionTemp[1] = shop_owner_end_speech();
                     script->functionTemp[0] = DIALOG_STATE_INIT_SELL_CHOICE;
@@ -710,12 +720,12 @@ API_CALLABLE(ShowShopOwnerDialog) {
         case DIALOG_STATE_INIT_CHECK_MORE_CHOICE:
             if (!does_script_exist(script->functionTemp[1])) {
                 script->functionTemp[0] = DIALOG_STATE_AWAIT_CHECK_MORE_CHOICE;
-                script->functionTempBool[2] = false;
-                ShopOwnerPrintState = msg_get_printer_for_msg(MSG_Choice_0005, &script->functionTempBool[2]);
+                SHOP_PRINTER_CLOSED(script) = false;
+                ShopOwnerPrintState = msg_get_printer_for_msg(MSG_Choice_0005, &SHOP_PRINTER_CLOSED(script));
             }
             break;
         case DIALOG_STATE_AWAIT_CHECK_MORE_CHOICE:
-            if (script->functionTempBool[2] == true) {
+            if (SHOP_PRINTER_CLOSED(script) == true) {
                 if (ShopOwnerPrintState->curOption == 0) {
                     script->functionTemp[1] = shop_owner_end_speech();
                     script->functionTemp[0] = DIALOG_STATE_INIT_CHECK_CHOICE;
@@ -763,12 +773,12 @@ API_CALLABLE(ShowShopOwnerDialog) {
         case DIALOG_STATE_INIT_CLAIM_MORE_CHOICE:
             if (!does_script_exist(script->functionTemp[1])) {
                 script->functionTemp[0] = DIALOG_STATE_AWAIT_CLAIM_MORE_CHOICE;
-                script->functionTempBool[2] = false;
-                ShopOwnerPrintState = msg_get_printer_for_msg(MSG_Choice_0005, &script->functionTempBool[2]);
+                SHOP_PRINTER_CLOSED(script) = false;
+                ShopOwnerPrintState = msg_get_printer_for_msg(MSG_Choice_0005, &SHOP_PRINTER_CLOSED(script));
             }
             break;
         case DIALOG_STATE_AWAIT_CLAIM_MORE_CHOICE:
-            if (script->functionTempBool[2] == true) {
+            if (SHOP_PRINTER_CLOSED(script) == true) {
                 if (ShopOwnerPrintState->curOption == 0) {
                     script->functionTemp[1] = shop_owner_end_speech();
                     script->functionTemp[0] = DIALOG_STATE_INIT_CLAIM_CHOICE;
