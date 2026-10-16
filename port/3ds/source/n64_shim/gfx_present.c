@@ -226,6 +226,9 @@ void pm3ds_gfx_present_init(void) {
 
     g_vbuf = (gpu_vtx_t *)linearAlloc(sizeof(gpu_vtx_t) * FRAME_MAX_VERTS);
     g_ibuf = (uint16_t *)linearAlloc(sizeof(uint16_t) * FRAME_MAX_IDX);
+#ifdef PM3DS_MEMBENCH
+    { extern void pm3ds_membench(void *lin); pm3ds_membench(g_vbuf); }
+#endif
     BufInfo_Init(&g_buf);
     BufInfo_Add(&g_buf, g_vbuf, sizeof(gpu_vtx_t), 4, 0x3210);
 
@@ -516,6 +519,16 @@ static void apply_state(gfx_state_t *st, bool rect) {
     }
     for (int u = 0; u < 2; u++)
         if (g_tex[u].on) tex_coeffs(u);
+#ifdef PM3DS_DRAWLOG_FRAME
+    if (g_frame_no == pm3ds_drawlog_frame && (info.uses_tex0 || info.uses_tex1)) {
+        for (int u = 0; u < 2; u++) {
+            const gfx_tile_t *t = &st->tiles[(st->tex_tile + u) & 7];
+            pm3ds_log(PM3DS_LOG_INFO, "  unit%d want=%d on=%d %gx%g tile s=%u..%u t=%u..%u tmem=%u line=%u mask=%u/%u cm=%u/%u",
+                      u, u == 0 ? info.uses_tex0 : info.uses_tex1, g_tex[u].on, g_tex[u].w, g_tex[u].h,
+                      t->uls, t->lrs, t->ult, t->lrt, t->tmem, t->line, t->masks, t->maskt, t->cms, t->cmt);
+        }
+    }
+#endif
     /* NOISE reads unit 1 when the combine mode leaves TEXEL1 unused (the
      * combiner maps it to a flat 0.5 otherwise) */
     g_noise_uv = info.uses_noise && !info.uses_tex1 && g_noise_ok;
@@ -1007,6 +1020,25 @@ static void capture_frame(uint16_t *dst) {
         for (int i = 0; i < 240 * 400; i += 97) sum += (tmp[i] >> 8) & 0xFF;
         pm3ds_log(PM3DS_LOG_INFO, "CAPTURE frame -> %p, avg green %u, sample %08X",
                   (void *)dst, (unsigned)(sum / (240 * 400 / 97)), (unsigned)tmp[120 * 240 + 120]);
+        /* what the game gets back: 8x6 cells of the 320x240 copy, RGB 4 bits each */
+        char grid[8 * 6 * 4 + 8];
+        int k = 0;
+        for (int cy = 0; cy < 6; cy++) {
+            for (int cx = 0; cx < 8; cx++) {
+                uint32_t r = 0, g = 0, b = 0;
+                for (int y = cy * 40 + 4; y < cy * 40 + 40; y += 8) {
+                    for (int x = cx * 40 + 4; x < cx * 40 + 40; x += 8) {
+                        uint16_t v = dst[y * 320 + x];
+                        v = (uint16_t)((v >> 8) | (v << 8));
+                        r += (v >> 11) & 31; g += (v >> 6) & 31; b += (v >> 1) & 31;
+                    }
+                }
+                k += snprintf(grid + k, sizeof(grid) - k, "%X%X%X ", (unsigned)(r / 25 >> 1), (unsigned)(g / 25 >> 1),
+                              (unsigned)(b / 25 >> 1));
+            }
+            if (cy == 2) { pm3ds_log(PM3DS_LOG_INFO, "CAPTURE grid %s", grid); k = 0; }
+        }
+        pm3ds_log(PM3DS_LOG_INFO, "CAPTURE grid %s", grid);
     }
     linearFree(tmp);
 }
@@ -1044,8 +1076,9 @@ static void sampler_start(void) {
     static bool started;
     if (started) return;
     started = true;
-    Thread t = threadCreate(sampler_entry, NULL, 0x1000, 0x30, 1, true);   /* below the audio mixer */
-    if (!t) t = threadCreate(sampler_entry, NULL, 0x1000, 0x30, 2, true);
+    /* New 3DS: core 2, so the sampler doesn't share the mixer's time-limited core 1 */
+    Thread t = threadCreate(sampler_entry, NULL, 0x1000, 0x30, 2, true);
+    if (!t) t = threadCreate(sampler_entry, NULL, 0x1000, 0x30, 1, true);   /* below the audio mixer */
     pm3ds_log(PM3DS_LOG_INFO, "prof: sampler %s", t ? "running" : "failed");
 }
 static void sampler_report(void) {
@@ -1067,6 +1100,54 @@ static void sampler_report(void) {
         snap[PH_COUNT + best] = 0;
     }
     pm3ds_log(PM3DS_LOG_INFO, "%s", buf);
+}
+#endif
+
+#ifdef PM3DS_MEMBENCH
+#include <stdlib.h>
+/* debug: what a vertex store costs on this CPU, by destination (log only) */
+__attribute__((noinline)) static void mb_fill(gpu_vtx_t *o, int n, unsigned wrap) {
+    for (int i = 0; i < n; i++) {
+        gpu_vtx_t *d = &o[wrap ? (i & (wrap - 1)) : i];
+        float f = (float)i;
+        d->x = f; d->y = f * 0.5f; d->z = f * 0.25f; d->w = 1.0f;
+        d->r = d->g = d->b = d->a = (uint8_t)i;
+        d->u0 = f * 0.1f + 1.0f; d->v0 = f * 0.2f + 2.0f; d->u1 = f * 0.3f; d->v1 = f * 0.4f;
+    }
+}
+__attribute__((noinline)) static float mb_read(const gpu_vtx_t *o, int n) {
+    float s = 0.0f;
+    for (int i = 0; i < n; i++) s += o[i].x + o[i].v1;
+    return s;
+}
+void pm3ds_membench(void *lin) {
+    enum { N = 8192 };
+    gpu_vtx_t *heap = (gpu_vtx_t *)malloc(sizeof(gpu_vtx_t) * N);
+    if (!heap || !lin) return;
+    for (int pass = 0; pass < 2; pass++) {
+        uint64_t t[8];
+        t[0] = svcGetSystemTick();
+        mb_fill((gpu_vtx_t *)lin, N, 0);          /* linear heap (the GPU vertex buffer) */
+        t[1] = svcGetSystemTick();
+        mb_fill(heap, N, 0);                      /* normal heap */
+        t[2] = svcGetSystemTick();
+        mb_fill(heap, N, 128);                    /* 4.5 KB ring, stays in L1 */
+        t[3] = svcGetSystemTick();
+        memcpy(lin, heap, sizeof(gpu_vtx_t) * N); /* heap -> linear copy */
+        t[4] = svcGetSystemTick();
+        volatile float r1 = mb_read((const gpu_vtx_t *)lin, N);
+        t[5] = svcGetSystemTick();
+        volatile float r2 = mb_read(heap, N);
+        t[6] = svcGetSystemTick();
+        for (int i = 0; i < 1000; i++) (void)svcGetSystemTick();
+        t[7] = svcGetSystemTick();
+        (void)r1; (void)r2;
+        double k = 1e9 / SYSCLOCK_ARM11 / N;   /* ns per vertex */
+        pm3ds_log(PM3DS_LOG_INFO, "MEMBENCH pass %d ns/vtx: fill linear %.1f heap %.1f l1 %.1f | copy heap->linear %.1f | read linear %.1f heap %.1f | svcGetSystemTick %.0f ns",
+                  pass, (t[1] - t[0]) * k, (t[2] - t[1]) * k, (t[3] - t[2]) * k, (t[4] - t[3]) * k, (t[5] - t[4]) * k,
+                  (t[6] - t[5]) * k, (t[7] - t[6]) * 1e9 / SYSCLOCK_ARM11 / 1000);
+    }
+    free(heap);
 }
 #endif
 

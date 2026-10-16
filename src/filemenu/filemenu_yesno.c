@@ -424,6 +424,9 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
                             gPlayerData.maxBP = 10;
                             gPlayerData.hammerLevel = 0;
                             gPlayerData.bootsLevel = 0;
+#ifdef PM3DS_START_EQUIP   // e.g. -DPM3DS_START_EQUIP=ITEM_QUAKE_HAMMER
+                            gPlayerData.equippedBadges[0] = PM3DS_START_EQUIP;
+#endif
                         }
 #endif
 #endif

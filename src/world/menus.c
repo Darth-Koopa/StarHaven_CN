@@ -233,12 +233,23 @@ void check_input_open_menus(void) {
     }
 #ifdef _3DS
     {   // 3DS port: bottom-screen shortcuts (platform/bottom_screen.c), allowed
-        // exactly when the matching popup menu could open
+        // exactly when the matching popup menu could open. Taps don't come through the
+        // buttons, which read as released while input is off, so check that here too
+        // (a second tap during a partner switch restarted it and disabled input twice:
+        // Mario never moved again)
         extern volatile s32 pm3ds_touch_req;
+        extern s32 NextPartnerCommand;
         s32 req = pm3ds_touch_req;
         if (req != 0) {
             pm3ds_touch_req = 0;
-            if (WorldMenuState == WORLD_MENU_STATE_NONE && evt_get_variable(nullptr, GB_StoryProgress) < STORY_EPILOGUE) {
+            // riding Lakilester/Sushie or hiding with Bow, the partner's input drives the menus
+            s32 partnerDrives = partnerStatus->partnerActionState != PARTNER_ACTION_NONE &&
+                (partnerStatus->actingPartner == PARTNER_SUSHIE || partnerStatus->actingPartner == PARTNER_LAKILESTER ||
+                 partnerStatus->actingPartner == PARTNER_BOW);
+            s32 inputOff = partnerDrives ? partnerStatus->inputDisabledCount : playerStatus->inputDisabledCount;
+            if (inputOff != 0 || NextPartnerCommand != PARTNER_CMD_NONE) {
+                sfx_play_sound(SOUND_MENU_ERROR);
+            } else if (WorldMenuState == WORLD_MENU_STATE_NONE && evt_get_variable(nullptr, GB_StoryProgress) < STORY_EPILOGUE) {
                 if (req == 1) {
                     pressedButtons |= BUTTON_C_LEFT;    // the item menu, as its button opens it
                 } else if (req >= 0x100) {              // switch straight to partner req - 0x100

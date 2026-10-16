@@ -26,7 +26,7 @@ void set_battle_formation(Battle* battle);
     defined(PM3DS_TELEPORT_X) || defined(PM3DS_COLLIDER_CHECK) || defined(PM3DS_START_BARE) || \
     defined(PM3DS_FX_TEST) || defined(PM3DS_TEST_LEVELUP) || defined(PM3DS_BATTLE_SWEEP) || \
     defined(PM3DS_STORY_SWEEP) || defined(PM3DS_FX_SWEEP) || defined(PM3DS_NO_BATTLES) || \
-    defined(PM3DS_SHOP_TEST)
+    defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST)
 /* make_cia.sh refuses to publish a binary containing this string */
 __attribute__((used)) const char pm3ds_debug_build_marker[] = "PM3DS-DEBUG-BUILD";
 #endif
@@ -423,7 +423,7 @@ void pm3ds_game_debug_tick(u32 frame) {
     defined(PM3DS_TELEPORT_X) || defined(PM3DS_COLLIDER_CHECK) || defined(PM3DS_START_BARE) || \
     defined(PM3DS_FX_TEST) || defined(PM3DS_TEST_LEVELUP) || defined(PM3DS_BATTLE_SWEEP) || \
     defined(PM3DS_STORY_SWEEP) || defined(PM3DS_FX_SWEEP) || defined(PM3DS_NO_BATTLES) || \
-    defined(PM3DS_SHOP_TEST)
+    defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST)
     if (frame == 1) {
         pm3ds_log(2, "%s", pm3ds_debug_build_marker);   /* keeps the marker linked */
     }
@@ -506,6 +506,25 @@ void pm3ds_game_debug_tick(u32 frame) {
         }
     }
 #endif
+#if defined(PM3DS_DRAWLOG_FRAME) && defined(PM3DS_DRAWLOG_PREBATTLE)
+    {   /* debug: dump the draws PM3DS_DRAWLOG_PREBATTLE frames into the first pre-battle (issue #5 white box) */
+        extern uint32_t pm3ds_drawlog_frame;
+        static int armedPre;
+        if (!armedPre && gEncounterState == ENCOUNTER_STATE_PRE_BATTLE) {
+            armedPre = 1;
+            pm3ds_drawlog_frame = frame + PM3DS_DRAWLOG_PREBATTLE;
+            pm3ds_log(2, "DRAWLOG armed for frame %u", (unsigned)pm3ds_drawlog_frame);
+        }
+    }
+#endif
+#ifdef PM3DS_FX_DUST
+    {   /* debug: landing dust beside Mario every half second (issue #5 white box) */
+        static s32 worldFrames;
+        if (gGameStatusPtr != nullptr && get_game_mode() == GAME_MODE_WORLD && ++worldFrames > 150 && worldFrames % 30 == 0) {
+            fx_landing_dust(0, gPlayerStatus.pos.x + 30.0f, gPlayerStatus.pos.y, gPlayerStatus.pos.z, 0.0f);
+        }
+    }
+#endif
 #ifdef PM3DS_FX_TEST
     {   /* debug: spawn battle effects beside Mario in turn, one every 3 s */
         static s32 worldFrames;
@@ -534,7 +553,13 @@ void pm3ds_game_debug_tick(u32 frame) {
 #endif
                     break;
                 case 1: fx_fire_breath(2, x - 80, y + 40, z, x + 80, y + 20, z, 50, 1, 24); break;
-                case 2: fx_damage_stars(FX_DAMAGE_STARS_3, x + 20, y + 30, z, 0.0f, -1.0f, 0.0f, 5); break;
+                case 2:
+                    fx_damage_stars(FX_DAMAGE_STARS_3, x + 20, y + 30, z, 0.0f, -1.0f, 0.0f, 5);
+#ifdef PM3DS_DRAWLOG_FRAME
+                    { extern uint32_t pm3ds_drawlog_frame; static int armedStars;   /* mid-fade (issue #5 white box) */
+                      if (!armedStars) { armedStars = 1; pm3ds_drawlog_frame = frame + PM3DS_DRAWLOG_FRAME; } }
+#endif
+                    break;
                 case 3: fx_attack_result_text(0, x, y + 20, z - 10.0f, 3.0f, 90); break;   /* "Nice" */
                 case 4: fx_underwater(0, -50.0f, 20.0f, 0.0f, 1.0f, 60); break;   /* Sushie's Tidal Wave tint */
             }

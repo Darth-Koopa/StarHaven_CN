@@ -90,7 +90,15 @@ API_CALLABLE(N(start)) {
     Bytecode* args = script->ptrReadPos;
 
     if (battleStatus->actionCommandMode == AC_MODE_NOT_LEARNED) {
+#ifdef _3DS
+        // 3DS port: the quake and spin smash moves wait for a nonzero quality, which
+        // never comes before the action command is learned (the randomizer can hand
+        // those badges out in the prologue): report a miss, as a learned player's
+        // missed command would. GetPlayerActionQuality counts it as 0 like before.
+        battleStatus->actionQuality = AC_QUALITY_FAILED;
+#else
         battleStatus->actionQuality = 0;
+#endif
         battleStatus->actionProgress = 0;
         return ApiStatus_DONE2;
     }
