@@ -256,13 +256,38 @@ typedef struct gfx_tex_entry {
     uint32_t ext_sample;                        /* M14.6: texel content sample */
 } gfx_tex_entry_t;
 
-/* GPU texture bytes (linear heap, 32 MB in total, shared with framebuffers,
- * vertex buffers, audio and the 8 MB pm3ds heap) */
+/* GPU texture bytes (linear heap, shared with framebuffers, vertex buffers,
+ * audio and the 8 MB pm3ds heap). 12 MB at most; the Old 3DS's 80 MB mode
+ * has only ~9 MB of linear memory left when the first texture comes in, so
+ * the cap is what is free then, less a reserve for everything else. */
 #define GFX_TEX_CACHE_CAP_BYTES (12u * 1024u * 1024u)
+#define GFX_TEX_CACHE_MIN_BYTES (4u * 1024u * 1024u)
+#define GFX_TEX_LINEAR_RESERVE  (3u * 1024u * 1024u)
+
+static size_t g_cache_cap;   /* set at the first texture */
+static size_t cache_cap(void) {
+    size_t cap = g_cache_cap;
+    if (!cap) {
+#ifndef PM3DS_HOST_TEST
+        size_t free_now = linearSpaceFree();
+        cap = free_now > GFX_TEX_LINEAR_RESERVE ? free_now - GFX_TEX_LINEAR_RESERVE : 0;
+        if (cap > GFX_TEX_CACHE_CAP_BYTES) cap = GFX_TEX_CACHE_CAP_BYTES;
+        if (cap < GFX_TEX_CACHE_MIN_BYTES) cap = GFX_TEX_CACHE_MIN_BYTES;
+#else
+        cap = GFX_TEX_CACHE_CAP_BYTES;
+#endif
+        g_cache_cap = cap;
+    }
+    return cap;
+}
 
 static gfx_tex_entry_t *g_cache_head = NULL;   /* MRU */
 static gfx_tex_entry_t *g_cache_tail = NULL;   /* LRU */
 static size_t           g_cache_bytes = 0;
+
+/* for the Wi-Fi log's heartbeat */
+unsigned gfx_tex_cache_kb(void) { return (unsigned)(g_cache_bytes >> 10); }
+unsigned gfx_tex_cache_cap_kb(void) { return (unsigned)(g_cache_cap >> 10); }
 
 static void cache_unlink(gfx_tex_entry_t *e) {
     if (e->lru_prev) e->lru_prev->lru_next = e->lru_next;
@@ -349,7 +374,7 @@ gfx_tex_entry_t *gfx_tex_cache_lookup(uint32_t addr, uint8_t fmt, uint8_t siz,
 gfx_tex_entry_t *gfx_tex_cache_insert(uint32_t addr, uint8_t fmt, uint8_t siz,
                                       uint16_t w, uint16_t h, uint8_t palette,
                                       uint8_t *tiled_rgba8, size_t bytes) {
-    cache_evict_until(GFX_TEX_CACHE_CAP_BYTES - bytes);
+    cache_evict_until(cache_cap() > bytes ? cache_cap() - bytes : 0);
     gfx_tex_entry_t *e = (gfx_tex_entry_t *)calloc(1, sizeof(*e));
     if (!e) { PM3DS_TEX_FREE(tiled_rgba8); return NULL; }
     e->key_addr = addr; e->key_fmt = fmt; e->key_siz = siz;

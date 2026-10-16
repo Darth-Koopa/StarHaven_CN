@@ -35,6 +35,8 @@ Full instructions: [the player readme](port/3ds/RELEASE_README.md).
 - A randomizer, chosen when you start a new file, with a seed you can share
 - 60 fps on the New 3DS family; about 30 fps on the original 3DS and 2DS, with a few extras
   off there (CIA only)
+- Tells you on the bottom screen when a newer version is out (one check at start, nothing is
+  downloaded; Options can turn it off)
 
 | | | |
 |:---:|:---:|:---:|

@@ -15,11 +15,14 @@
  * title version comes from these numbers too (tools/package.sh) */
 #define PM3DS_VERSION_MAJOR  1
 #define PM3DS_VERSION_MINOR  0
-#define PM3DS_VERSION_MICRO  7
+#define PM3DS_VERSION_MICRO  8
 #define PM3DS_VSTR_(x)       #x
 #define PM3DS_VSTR(x)        PM3DS_VSTR_(x)
 #define PM3DS_VERSION_STR    PM3DS_VSTR(PM3DS_VERSION_MAJOR) "." PM3DS_VSTR(PM3DS_VERSION_MINOR) \
                              "." PM3DS_VSTR(PM3DS_VERSION_MICRO)
+
+/* where releases are published (platform/pm3ds_update.c checks it) */
+#define PM3DS_GITHUB_REPO    "SecondaryLifer/StarHaven"
 
 /* save, settings, log and the player's ROM */
 #define PM3DS_SD_DIR         "sdmc:/3ds/StarHaven"

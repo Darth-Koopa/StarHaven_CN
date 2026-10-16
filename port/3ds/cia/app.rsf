@@ -32,7 +32,7 @@ AccessControlInfo:
   MemoryMapping:
    - 1f000000-1f5fffff:r # VRAM
   MemoryType                    : Application
-  SystemMode                    : 96MB    # Old 3DS: 96 MB mode (the game needs ~80 MB)
+  SystemMode                    : 80MB    # Old 3DS: 80 MB (the game needs ~70 MB); 96 MB crashes HOME Menu
   SystemModeExt                 : 124MB
   CpuSpeed                      : 804MHz
   EnableL2Cache                 : true

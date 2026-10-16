@@ -71,6 +71,9 @@ original 3DS and 2DS).
     elsewhere; battles stay at 30.
   - **Text speed**: Normal, Fast or Instant.
   - **Fast-forward**: speed (2x to 4x), and whether the button is held or toggles.
+  - **Update check**: when Star Haven starts, it asks GitHub whether a newer version is out
+    and, if so, says so on the bottom screen (*Skip* stops it mentioning that version). It
+    downloads and installs nothing. Off here, from the next start.
   - **Controls**: remap any button.
 
 Settings are remembered.

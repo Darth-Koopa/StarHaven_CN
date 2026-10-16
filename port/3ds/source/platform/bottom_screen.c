@@ -31,6 +31,7 @@
 #include "pm3ds_rando.h"
 #include "pm3ds_settings.h"
 #include "pm3ds_touch_menu.h"
+#include "pm3ds_update.h"
 
 extern void pm3ds_set_view_mode(int mode);   /* 0 Original, 1 Fill, 2 Wide */
 extern int pm3ds_view_mode(void);
@@ -789,23 +790,23 @@ static bool tmenu_tap(int px, int py, float y_top) {
 }
 
 /* ---- Options and Controls pages ------------------------------------------ */
-#define OPT_ROWS 8
+#define OPT_ROWS 9
 #define OPT_Y0 8
-#define OPT_ROW_H 24
+#define OPT_ROW_H 21
 static const char *const s_fps_names[2] = { "30 fps", "60 fps" };
 static const char *const s_text_names[TEXT_SPEEDS] = { "Normal", "Fast", "Instant" };
 
 static void opt_row(int i, const char *label, const char *value) {
     float y = OPT_Y0 + i * OPT_ROW_H;
-    text(18, y + 4, label, 1.0f, 0, COL_WHITE);
+    text(18, y + 2, label, 1.0f, 0, COL_WHITE);
     if (value) {
         float w = text_width(value, 1.0f) + 24;
         if (w < 96) w = 96;
-        round_rect(302 - w, y + 1, 302, y + 23, 9, COL_PANEL_EDGE);
-        round_rect(304 - w, y + 3, 300, y + 21, 7, RGBA(255, 214, 120, 255));
-        text_center(302 - w / 2, y + 4, value, 1.0f, 0, COL_WHITE);
+        round_rect(302 - w, y + 1, 302, y + OPT_ROW_H - 1, 9, COL_PANEL_EDGE);
+        round_rect(304 - w, y + 3, 300, y + OPT_ROW_H - 3, 7, RGBA(255, 214, 120, 255));
+        text_center(302 - w / 2, y + 2, value, 1.0f, 0, COL_WHITE);
     } else {
-        text(282, y + 4, ">", 1.0f, 0, COL_WHITE);
+        text(282, y + 2, ">", 1.0f, 0, COL_WHITE);
     }
 }
 
@@ -822,8 +823,9 @@ static void draw_options(void) {
     snprintf(buf, sizeof buf, "%dx", pm3ds_cfg.ff_speed);
     opt_row(4, "Fast-forward speed", buf);
     opt_row(5, "Fast-forward button", pm3ds_cfg.ff_toggle ? "Toggle" : "Hold");
-    opt_row(6, "Controls", NULL);
-    opt_row(7, "Debug info", NULL);
+    opt_row(6, "Update check", pm3ds_cfg.update_check ? "On" : "Off");
+    opt_row(7, "Controls", NULL);
+    opt_row(8, "Debug info", NULL);
     small_text(12, 221, PM3DS_APP_NAME " v" PM3DS_VERSION_STR, 40, COL_PANEL_EDGE);
     round_rect(250, 214, 316, 236, 8, COL_BTN);
     text_center(283, 217, "Back", 1.0f, 1, COL_WHITE);
@@ -1141,7 +1143,44 @@ static void draw_new_game(float w) {
     ng_button(dx + 196, 212, dx + 312, 234, "Start", s_ng_cursor == NG_ROW_START);
 }
 
+/* ---- update notice -------------------------------------------------------- */
+/* pm3ds_update.c found a newer release: a notice over the menu until it is
+ * tapped away (not in battle, not over the new-game picker) */
+#define UPD_OK_X0 196
+#define UPD_OK_X1 292
+#define UPD_SKIP_X0 28
+#define UPD_SKIP_X1 168
+#define UPD_BTN_Y0 166
+#define UPD_BTN_Y1 188
+static bool update_notice_up(void) {
+    return pm3ds_update_available() && !s_info.in_battle && s_ng_page == NG_CLOSED;
+}
+
+static void draw_update_notice(void) {
+    int v = pm3ds_update_available();
+    char line[48], skip[24];
+    fill(0, 0, 320, 240, RGBA(40, 20, 0, 150));
+    panel(10, 28, 310, 200, COL_PANEL);
+    text_center(160, 38, "Update available", 1.2f, 0, COL_WHITE);
+    snprintf(line, sizeof line, PM3DS_APP_NAME " v%d.%d.%d is out.", v / 10000, v / 100 % 100, v % 100);
+    small_text_center(160, 70, line, 1.0f, COL_PANEL_EDGE);
+    small_text_center(160, 82, "You have v" PM3DS_VERSION_STR ".", 1.0f, COL_PANEL_EDGE);
+    small_text_center(160, 104, "Get it on GitHub:", 1.0f, COL_PANEL_EDGE);
+    small_text_center(160, 116, "github.com/" PM3DS_GITHUB_REPO, 1.0f, COL_PANEL_EDGE);
+    small_text_center(160, 136, "FBI can install it from the", 1.0f, COL_PANEL_EDGE);
+    small_text_center(160, 148, "QR code on that page.", 1.0f, COL_PANEL_EDGE);
+    snprintf(skip, sizeof skip, "Skip v%d.%d.%d", v / 10000, v / 100 % 100, v % 100);
+    ng_button(UPD_SKIP_X0, UPD_BTN_Y0, UPD_SKIP_X1, UPD_BTN_Y1, skip, false);
+    ng_button(UPD_OK_X0, UPD_BTN_Y0, UPD_OK_X1, UPD_BTN_Y1, "OK", false);
+}
+
+static void draw_menu_page(void);
 static void draw_menu(void) {
+    draw_menu_page();
+    if (update_notice_up()) draw_update_notice();
+}
+
+static void draw_menu_page(void) {
     gradient(0, 0, 320, 240, COL_BG_TOP, COL_BG_BOTTOM);
     if (s_ng_page != NG_CLOSED) {
         draw_new_game(320);
@@ -1219,6 +1258,14 @@ static void handle_touch(void) {
     }
     if (down) { last_x = tp.px; last_y = tp.py; }
 
+    if (update_notice_up()) {   /* the notice takes every tap until it is closed */
+        pm3ds_touch_pad = 0;
+        pm3ds_touch_stick_x = 0;
+        if (pressed && in(tp.px, tp.py, UPD_OK_X0, UPD_BTN_Y0, UPD_OK_X1, UPD_BTN_Y1)) pm3ds_update_dismiss(false);
+        else if (pressed && in(tp.px, tp.py, UPD_SKIP_X0, UPD_BTN_Y0, UPD_SKIP_X1, UPD_BTN_Y1)) pm3ds_update_dismiss(true);
+        return;
+    }
+
     /* held buttons: the battle pad and Back/Swap */
     pm3ds_touch_pad = 0;
     pm3ds_touch_stick_x = 0;
@@ -1258,8 +1305,9 @@ static void handle_touch(void) {
             case 3: pm3ds_cfg.text_speed = (pm3ds_cfg.text_speed + 1) % TEXT_SPEEDS; break;
             case 4: pm3ds_cfg.ff_speed = pm3ds_cfg.ff_speed >= 4 ? 2 : pm3ds_cfg.ff_speed + 1; break;
             case 5: pm3ds_cfg.ff_toggle = !pm3ds_cfg.ff_toggle; break;
-            case 6: s_tab = TAB_CONTROLS; return;
-            case 7: s_tab = TAB_DEBUG; return;
+            case 6: pm3ds_cfg.update_check = !pm3ds_cfg.update_check; break;   /* from the next launch */
+            case 7: s_tab = TAB_CONTROLS; return;
+            case 8: s_tab = TAB_DEBUG; return;
         }
         pm3ds_settings_save();
         return;
@@ -1336,6 +1384,7 @@ void pm3ds_bottom_screen_init(void) {
     build_atlas();
     build_map();
     build_small_font();
+    pm3ds_update_check_start();
 }
 
 /* once per presented frame (input + state) */

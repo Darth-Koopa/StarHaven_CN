@@ -117,16 +117,17 @@ static void heartbeat(void) {
     extern u32 nuAuFrameCounter;
     extern u32 __ctru_heap_size;
     extern volatile unsigned pm3ds_load_frames_ok, pm3ds_load_frames_busy;
+    extern unsigned gfx_tex_cache_kb(void), gfx_tex_cache_cap_kb(void);
     struct mallinfo mi = mallinfo();
     char hb[320];
     u64 now = osGetTime();
     snprintf(hb, sizeof hb,
-             "HB t=%.1fs main=%s load=%d frames=%u audio=%u heapfree=%uK linearfree=%uK "
+             "HB t=%.1fs main=%s load=%d frames=%u audio=%u heapfree=%uK linearfree=%uK tex=%uK/%uK "
              "| ldf=%u/%u vbl=%lu/%lu gpu=%08lX psc=%lX/%lX ppf=%lX pdc=%lX/%lX probe=%ldms r=%08lX",
              (double)(svcGetSystemTick() - s_t0) / SYSCLOCK_ARM11, (const char *)pm3ds_bc_main, pm3ds_boot_permille,
              pm3ds_bc_frames, (unsigned)nuAuFrameCounter,
              (unsigned)((__ctru_heap_size - mi.arena + mi.fordblks) >> 10),
-             (unsigned)(linearSpaceFree() >> 10),
+             (unsigned)(linearSpaceFree() >> 10), gfx_tex_cache_kb(), gfx_tex_cache_cap_kb(),
              pm3ds_load_frames_ok, pm3ds_load_frames_busy,
              (unsigned long)C3D_FrameCounter(0), (unsigned long)C3D_FrameCounter(1),
              (unsigned long)s_gpu_busy, (unsigned long)s_psc0, (unsigned long)s_psc1, (unsigned long)s_ppf,

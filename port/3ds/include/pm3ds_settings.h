@@ -38,6 +38,8 @@ typedef struct {
     bool ff_toggle;             /* the fast-forward button toggles instead of being held */
     unsigned rando_flags;       /* the new-game picker's last choice (pm3ds_rando.h; ON clear: classic) */
     uint8_t keymap[KEY_IDX_COUNT];   /* ACT_* per 3DS button */
+    bool update_check;          /* ask GitHub for a newer release at launch (pm3ds_update.c) */
+    int update_skip;            /* a release the player said not to mention again (version code) */
 } pm3ds_settings_t;
 
 extern pm3ds_settings_t pm3ds_cfg;

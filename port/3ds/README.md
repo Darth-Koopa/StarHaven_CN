@@ -4,10 +4,11 @@ A native port of the Paper Mario decompilation (PAL `ver/pal` and US `ver/us`) t
 The game's C code is compiled for the ARM11 and linked with a 3DS platform layer;
 nothing is emulated except the N64 RSP/RDP work, which is translated on the fly.
 
-Status: the whole game plays (v1.0.7), with 60 fps in-between frames, fast-forward, a touch
+Status: the whole game plays (v1.0.8), with 60 fps in-between frames, fast-forward, a touch
 bottom screen and a randomizer. Runs on **New 3DS / New 2DS XL** (124 MB New-3DS mode); the
-original 3DS and 2DS start the CIA in their 96 MB mode at about 30 fps, with the audio mixer on
-the second core, frame skip when behind, and no reverb, 3D or NPC/enemy shadows.
+original 3DS and 2DS start the CIA in their 80 MB mode (96 MB crashes HOME Menu) at about
+30 fps, with the audio mixer on the second core, frame skip when behind, and no reverb, 3D or
+NPC/enemy shadows.
 Release packages hold both the PAL and the US build and pick one from the player's ROM.
 
 Players supply the ROM: it goes on the SD card as `/3ds/StarHaven/baserom.z64`, and release
@@ -25,6 +26,7 @@ The name, icon and banner are the port's own (`include/pm3ds_brand.h`, `tools/ma
 | Input | `source/n64_shim/os_cont.c` | see *Controls* |
 | Saves | `source/n64_shim/os_flash.c` | `sdmc:/3ds/StarHaven/save.fla` (128 KB, write-through; the old `/3ds/PaperMario3DS` folder is moved on first boot) |
 | Big-endian data | `audio_endian.c`, `src/collision.c` (`hit_fix_endian`), `m10_shape_reloc.c`, `m10_texheader_endian.c`, … | ROM data is byte-swapped where it is loaded |
+| Update notice | `source/platform/pm3ds_update.c` | at launch, one request to `github.com/<repo>/releases/latest` (its redirect names the newest tag); a newer version shows a notice on the bottom screen. Options → Update check turns it off |
 | Debug probes | `source/n64_shim/m13_debug.c` | GAMESTAT / HPSTAT / MEMSTAT / PERF log lines, map sweep, teleport, collision checks |
 
 Decomp sources are edited in place under `#ifdef _3DS` / `PM3DS_*` guards only.

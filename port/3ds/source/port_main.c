@@ -102,12 +102,9 @@ static bool platform_init(void) {
     pm3ds_clock_init();
     pm3ds_panic_install();
 
-    if (!pm3ds_heap_init(PM3DS_HEAP_BYTES)) {
-        consoleInit(GFX_BOTTOM, NULL);
-        printf("FATAL: heap init (%u bytes) failed\n", PM3DS_HEAP_BYTES);
-        while (aptMainLoop()) { hidScanInput(); gspWaitForVBlank(); }
-        return false;
-    }
+    /* (no pm3ds_heap arena any more: the game allocates from its own heaps
+     * (src/heaps2.c, heaps3.c), and those 8 MB of linear memory are what the
+     * texture cache lives on in the Old 3DS's 80 MB mode) */
 
     /* M5.0: bring the NDSP audio service up. Non-fatal on failure —
      * audio is silenced and the rest of the platform continues. */
