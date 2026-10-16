@@ -343,6 +343,12 @@ s32 create_mesh_animator(s16* animPos, s16* animBuffer) {
     animator->animationBuffer = animBuffer;
     animator->nextUpdateTime = 1.0f;
     animator->timeScale = 1.0f;
+#ifdef _3DS
+    // linked-in entity data has no animation buffer (animBuffer == nullptr) and its
+    // address can sit above 16 MB (the US half of the universal build): keep it whole,
+    // as play_model_animation() already does
+    if (animator->animationBuffer != nullptr)
+#endif
     animPos = (s16*)(((s32)animPos & 0xFFFFFF) + (s32)animator->animationBuffer);
     animator->animReadPos = animPos;
     animator->savedReadPos = animPos;

@@ -422,10 +422,13 @@ void render_entities(void) {
 }
 
 #ifdef _3DS
-// Old 3DS: only Mario's and the partner's shadows are drawn (each one is a
-// draw call of its own there); the others still fade and get deleted as usual
+// Old 3DS: only Mario's, the partner's and the entities' (save blocks, floating
+// blocks: a few per map) shadows are drawn, each one is a draw call of its own
+// there; the NPC/enemy ones still fade and get deleted as usual
 extern bool pm3ds_lite_effects;
 static s32 pm3ds_shadow_skipped(s32 i) {
+    s32 j;
+
     if (!pm3ds_lite_effects) {
         return false;
     }
@@ -435,7 +438,16 @@ static s32 pm3ds_shadow_skipped(s32 i) {
         return !(player != nullptr && (player->shadow.id & 0xFFF) == i) &&
                !(partner != nullptr && (partner->shadow.id & 0xFFF) == i);
     }
-    return (gPlayerStatus.shadowID & 0xFFF) != i && !(wPartnerNpc != nullptr && (wPartnerNpc->shadowIndex & 0xFFF) == i);
+    if ((gPlayerStatus.shadowID & 0xFFF) == i || (wPartnerNpc != nullptr && (wPartnerNpc->shadowIndex & 0xFFF) == i)) {
+        return false;
+    }
+    for (j = 0; j < MAX_ENTITIES; j++) {
+        Entity* entity = (*gCurrentEntityListPtr)[j];
+        if (entity != nullptr && entity->shadowIndex == i) {
+            return false;
+        }
+    }
+    return true;
 }
 #endif
 
