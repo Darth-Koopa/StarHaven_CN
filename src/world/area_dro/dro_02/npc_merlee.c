@@ -212,6 +212,14 @@ u32 N(appendGfx_ritual_card)(RitualCard* card, Matrix4f mtxParent) {
     if (card->unk_00 == 0) {
         return 1;
     }
+#ifdef _3DS
+    // The shuffle and the first two flips pass ifxImg without filling it in
+    // (the card animations use absolute coords and skip the texture setup, so
+    // only alpha is read). On the N64 the stack left it nonzero; here it can be
+    // 0, which makes imgfx_appendGfx_component return 0 forever and the ritual
+    // never leaves the shuffle (softlock after paying Merlee).
+    ifxImg.alpha = 255;
+#endif
 
     gSPDisplayList(gMainGfxPos++, N(card_setup_gfx));
 
