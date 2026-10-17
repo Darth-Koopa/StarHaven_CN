@@ -132,6 +132,18 @@ int pm3ds_audio_init(void) {
         extern bool pm3ds_audio_no_reverb;
         pm3ds_audio_no_reverb = !n3ds;
     }
+    {   /* Old 3DS: the DSP's channels play the voices (audio_hwvoice.c); needs NDSP */
+        extern bool pm3ds_au_hwvoices;
+        extern void pm3ds_hwv_init(void);
+#if defined(PM3DS_AUDIO_SWMIX)        /* test: the software mixer everywhere */
+        pm3ds_au_hwvoices = false;
+#elif defined(PM3DS_AUDIO_HWVOICES)   /* test: the DSP's voices on a New 3DS too */
+        pm3ds_au_hwvoices = !s_use_csnd;
+#else
+        pm3ds_au_hwvoices = !n3ds && !s_use_csnd;
+#endif
+        if (pm3ds_au_hwvoices) pm3ds_hwv_init();
+    }
     if (n3ds) {
         s_audio_thread = threadCreate(audio_thread_entry, NULL, 0x10000, 0x18, 2, false);
         if (s_audio_thread) s_audio_core = 2;
@@ -486,6 +498,14 @@ static void step_init(void) {
 
 void pm3ds_audio_step(void) {
     if (!s_audio_dsp_up) return;
+    {
+        extern bool pm3ds_au_hwvoices;
+        extern void pm3ds_audio_engine_tick_hw(void);
+        if (pm3ds_au_hwvoices) {   /* no stream: the engine runs by the clock */
+            pm3ds_audio_engine_tick_hw();
+            return;
+        }
+    }
     if (!s_step_inited) step_init();
     if (!s_step_inited) return;  /* init failed — keep silent */
 

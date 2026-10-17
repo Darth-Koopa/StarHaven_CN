@@ -434,7 +434,9 @@ static void apply_state(gfx_state_t *st, bool rect) {
         info.uses_tex0 = true;
     } else {
         GP_BEGIN(tc);
+        PROF_PHASE(PH_COMB);
         gfx_combiner_apply(st, cyc == OMH_CYC_2, &info);
+        PROF_PHASE(PH_STATE);
         GP_END(tc, GP_COMB);
     }
 
@@ -541,6 +543,7 @@ static void apply_state(gfx_state_t *st, bool rect) {
         pm3ds_tex_bind(1, &g_noise_tex);
     }
     g_applied_tile = st->tex_tile;
+    PROF_PHASE(PH_FX);
 #ifdef PM3DS_TITLE_DBG
     {   /* one line per distinct render state that samples a texture */
         static uint32_t seen[64][4];
@@ -669,8 +672,17 @@ void gfx_backend_flush(gfx_state_t *st) {
     if (n > 0) {
         GP_BEGIN(tf);
         PROF_SAVE(ph);
+#ifdef PM3DS_STEP_PROF
+        {   /* the context flush C3D_DrawElements would do, timed on its own */
+            extern void C3Di_UpdateContext(void);
+            PROF_PHASE(PH_CTX);
+            C3Di_UpdateContext();
+        }
+#endif
         PROF_PHASE(PH_DRAW);
-        C3D_DrawElements(GPU_TRIANGLES, n, C3D_UNSIGNED_SHORT, g_ibuf + g_batch_start);
+        extern bool pm3ds_c3d_draw_tris(const u16 *idx, int count);
+        if (!pm3ds_c3d_draw_tris(g_ibuf + g_batch_start, n))
+            C3D_DrawElements(GPU_TRIANGLES, n, C3D_UNSIGNED_SHORT, g_ibuf + g_batch_start);
         PROF_RESTORE(ph);
         GP_END(tf, GP_FLUSH);
         g_stat_draws++;
@@ -718,7 +730,7 @@ static float cmdbuf_use(void) {
 static float g_cmdbuf_peak;   /* highest use in a frame, for the PERF line */
 #ifdef PM3DS_STEP_PROF
 /* debug: how many state changes leave the draw state as it was */
-static unsigned g_gp_applies, g_gp_same;
+static unsigned g_gp_applies, g_gp_same, g_gp_verts;
 static void gp_count_apply(const gfx_state_t *st, bool rect) {
     static uint8_t last[512 + 256];
     uint8_t cur[sizeof last];
@@ -815,6 +827,7 @@ static inline uint16_t pool_vtx(const gfx_state_t *st, const gfx_vtx_t *v) {
 
 void gfx_backend_tri(gfx_state_t *st, const gfx_vtx_t *a, const gfx_vtx_t *b, const gfx_vtx_t *c) {
     if (!begin_prims(st, false, 3)) return;
+    PROF_PHASE(PH_PUT);
     if (st->othermode_l & RM_ZS_PRIM) {
         /* depth source = primitive: every pixel tests and writes the prim
          * depth (the battle "Nice"/"Good" text sits in front of the actors
@@ -825,11 +838,13 @@ void gfx_backend_tri(gfx_state_t *st, const gfx_vtx_t *a, const gfx_vtx_t *b, co
         g_ibuf[g_icount++] = put_vtx(&v[0]);
         g_ibuf[g_icount++] = put_vtx(&v[1]);
         g_ibuf[g_icount++] = put_vtx(&v[2]);
+        PROF_PHASE(PH_WALK);
         return;
     }
     g_ibuf[g_icount++] = pool_vtx(st, a);
     g_ibuf[g_icount++] = pool_vtx(st, b);
     g_ibuf[g_icount++] = pool_vtx(st, c);
+    PROF_PHASE(PH_WALK);
 }
 
 extern float pm3ds_stereo_shift;
@@ -1076,17 +1091,21 @@ static void sampler_start(void) {
     static bool started;
     if (started) return;
     started = true;
-    /* New 3DS: core 2, so the sampler doesn't share the mixer's time-limited core 1 */
-    Thread t = threadCreate(sampler_entry, NULL, 0x1000, 0x30, 2, true);
+    /* New 3DS: core 2, so the sampler doesn't share the mixer's time-limited core 1
+     * (only asked there: Azahar in Old 3DS mode aborts on a core 2 thread) */
+    bool n3ds = false;
+    APT_CheckNew3DS(&n3ds);
+    Thread t = n3ds ? threadCreate(sampler_entry, NULL, 0x1000, 0x30, 2, true) : NULL;
     if (!t) t = threadCreate(sampler_entry, NULL, 0x1000, 0x30, 1, true);   /* below the audio mixer */
     pm3ds_log(PM3DS_LOG_INFO, "prof: sampler %s", t ? "running" : "failed");
 }
 static void sampler_report(void) {
-    static const char *const names[PH_COUNT] = { "walk", "state", "draw", "tex", "game", "wait", "bottom", "end", "present" };
+    static const char *const names[PH_COUNT] = { "walk", "state", "draw", "tex", "game", "wait", "bottom", "end", "present",
+                                                    "comb", "ctx", "fx", "put", "g_scripts", "g_mode", "g_ent", "g_gfx" };
     uint32_t snap[PH_COUNT + 256], total = 0;
     for (int i = 0; i < PH_COUNT + 256; i++) { snap[i] = g_samples[i]; g_samples[i] = 0; total += snap[i]; }
     if (!total) return;
-    char buf[200];
+    char buf[320];
     int n = snprintf(buf, sizeof buf, "SAMPLE n=%lu", (unsigned long)total);
     for (int i = 0; i < PH_COUNT; i++)
         if (i != PH_WALK && snap[i]) n += snprintf(buf + n, sizeof buf - n, " %s=%lu%%", names[i], (unsigned long)(snap[i] * 100 / total));
@@ -1296,6 +1315,7 @@ static void render_lists(const void *const *lists, int nlists) {
 #ifdef PM3DS_STEP_PROF
     pm3ds_gp_ticks[GP_RENDER] += svcGetSystemTick() - t_busy;
     g_gp_renders++;
+    g_gp_verts += (unsigned)g_vcount;
 #endif
 }
 
@@ -1632,13 +1652,16 @@ drawn:
 #ifdef PM3DS_STEP_PROF
             if (g_gp_renders) {   /* debug: where a render's CPU time goes, ms per render */
                 double k = 1000.0 / SYSCLOCK_ARM11 / g_gp_renders;
-                pm3ds_log(PM3DS_LOG_INFO, "GPROF n=%u applies=%u same=%u render=%.2f walk=%.2f vtx=%.2f tri=%.2f state=%.2f tex=%.2f comb=%.2f draw=%.2f bottom=%.2f end=%.2f",
+                extern unsigned pm3ds_prof_tex_lookups, pm3ds_prof_tex_chain, pm3ds_prof_tex_memo;
+                pm3ds_log(PM3DS_LOG_INFO, "GPROF n=%u applies=%u same=%u render=%.2f walk=%.2f vtx=%.2f tri=%.2f state=%.2f tex=%.2f comb=%.2f draw=%.2f bottom=%.2f end=%.2f texget=%u chain=%u memo=%u verts=%u",
                           g_gp_renders, g_gp_applies / g_gp_renders, g_gp_same / g_gp_renders, pm3ds_gp_ticks[GP_RENDER] * k, pm3ds_gp_ticks[GP_WALK] * k, pm3ds_gp_ticks[GP_VTX] * k,
                           pm3ds_gp_ticks[GP_TRI] * k, pm3ds_gp_ticks[GP_STATE] * k, pm3ds_gp_ticks[GP_TEX] * k,
                           pm3ds_gp_ticks[GP_COMB] * k, pm3ds_gp_ticks[GP_FLUSH] * k,
-                          pm3ds_gp_ticks[GP_BOTTOM] * k, pm3ds_gp_ticks[GP_FRAMEEND] * k);
+                          pm3ds_gp_ticks[GP_BOTTOM] * k, pm3ds_gp_ticks[GP_FRAMEEND] * k,
+                          pm3ds_prof_tex_lookups / g_gp_renders, pm3ds_prof_tex_chain / g_gp_renders, pm3ds_prof_tex_memo / g_gp_renders, g_gp_verts / g_gp_renders);
                 memset(pm3ds_gp_ticks, 0, sizeof pm3ds_gp_ticks);
-                g_gp_applies = g_gp_same = 0;
+                g_gp_applies = g_gp_same = g_gp_verts = 0;
+                pm3ds_prof_tex_lookups = pm3ds_prof_tex_chain = pm3ds_prof_tex_memo = 0;
                 sampler_start();
                 sampler_report();
                 g_gp_renders = 0;

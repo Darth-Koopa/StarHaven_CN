@@ -270,7 +270,10 @@ static size_t cache_cap(void) {
     if (!cap) {
 #ifndef PM3DS_HOST_TEST
         size_t free_now = linearSpaceFree();
-        cap = free_now > GFX_TEX_LINEAR_RESERVE ? free_now - GFX_TEX_LINEAR_RESERVE : 0;
+        /* and the part of the DSP voices' sample cache not filled yet (audio_hwvoice.c) */
+        extern u32 pm3ds_hwv_reserve(void);
+        size_t reserve = GFX_TEX_LINEAR_RESERVE + pm3ds_hwv_reserve();
+        cap = free_now > reserve ? free_now - reserve : 0;
         if (cap > GFX_TEX_CACHE_CAP_BYTES) cap = GFX_TEX_CACHE_CAP_BYTES;
         if (cap < GFX_TEX_CACHE_MIN_BYTES) cap = GFX_TEX_CACHE_MIN_BYTES;
 #else
@@ -571,6 +574,38 @@ static uint32_t tex_sample_hash(uint32_t src, uint32_t stride, uint32_t row_byte
     return hash;
 }
 
+/* Content samples taken this frame. RAM holds still while a frame's lists are
+ * drawn, so a texture drawn again in the same frame reuses its sample instead
+ * of reading six rows again (each one a cache miss on an Old 3DS). Any
+ * invalidation starts the memo over (g_sample_epoch). */
+#define SAMPLE_MEMO 64
+static struct { uint32_t src, stride, size, frame, epoch, sample; } g_sample_memo[SAMPLE_MEMO];
+static uint32_t g_sample_epoch = 1;
+#ifdef PM3DS_STEP_PROF
+unsigned pm3ds_prof_tex_lookups, pm3ds_prof_tex_chain, pm3ds_prof_tex_memo;
+#endif
+
+static uint32_t tex_sample(uint32_t src, uint32_t stride, uint32_t row_bytes, int h) {
+#ifdef PM3DS_HOST_TEST
+    return tex_sample_hash(src, stride, row_bytes, h);
+#else
+    uint32_t size = row_bytes << 16 | (uint32_t)h, frame = pm3ds_gfx_frame_number();
+    __typeof__(g_sample_memo[0]) *m = &g_sample_memo[((src >> 3) ^ (src >> 12)) & (SAMPLE_MEMO - 1)];
+    if (m->src == src && m->stride == stride && m->size == size && m->frame == frame && m->epoch == g_sample_epoch) {
+#ifdef PM3DS_STEP_PROF
+        pm3ds_prof_tex_memo++;
+#endif
+        return m->sample;
+    }
+    m->src = src;
+    m->stride = stride;
+    m->size = size;
+    m->frame = frame;
+    m->epoch = g_sample_epoch;
+    return m->sample = tex_sample_hash(src, stride, row_bytes, h);
+#endif
+}
+
 /* Drop cached textures sourced from [addr, addr+len): called when DMA or a
  * Yay0 decode overwrites memory. Entries the GPU may still read this frame are
  * only re-keyed (unreachable) and left for the LRU to free. */
@@ -586,6 +621,7 @@ void gfx_tex_invalidate_range(const void *addr, size_t len) {
 #endif
     uint32_t a = (uint32_t)(uintptr_t)addr, end = a + (uint32_t)len;
     if (end <= a) return;
+    g_sample_epoch++;
     /* entries starting up to g_max_span before the range can reach into it */
     uint32_t first = (a > g_max_span ? a - g_max_span : 0) >> HASH_PAGE_SHIFT;
     uint32_t last = (end - 1) >> HASH_PAGE_SHIFT;
@@ -762,21 +798,32 @@ gfx_tex_entry_t *gfx_tex_get(const gfx_state_t *st, int tile_idx, unsigned *out_
         }
         tlut_key ^= (st->othermode_h & OMH_TT_MASK);
     }
-    uint32_t sample = tex_src_is_static(src) ? 0 : tex_sample_hash(src, stride, row_bytes, h);
+    uint32_t sample = tex_src_is_static(src) ? 0 : tex_sample(src, stride, row_bytes, h);
     uint8_t key_pal = (uint8_t)(t->palette | ((st->othermode_h & OMH_TT_MASK) >> 10));
     /* an expanded texture differs by its baked-in mirroring */
     tlut_key ^= (uint32_t)((expand_s ? 1 : 0) | (expand_s && (t->cms & 1) ? 2 : 0) |
                            (expand_t ? 4 : 0) | (expand_t && (t->cmt & 1) ? 8 : 0) |
                            (grow_s ? 16 : 0) | (grow_t ? 32 : 0)) << 24;
 
+#ifdef PM3DS_STEP_PROF
+    pm3ds_prof_tex_lookups++;
+#endif
     for (gfx_tex_entry_t *e = *bucket_of(src); e; e = e->hash_next) {
         tex_key_ext_t *x = ext_of(e);
+#ifdef PM3DS_STEP_PROF
+        pm3ds_prof_tex_chain++;
+#endif
         if (e->key_addr == src && e->key_fmt == t->fmt && e->key_siz == t->siz &&
             e->key_w == ow && e->key_h == oh && e->key_palette == key_pal &&
             x->stride == stride && x->tlut == tlut_key && x->sample == sample) {
-            cache_unlink(e);
-            cache_push_mru(e);
-            x->frame = pm3ds_gfx_frame_number();
+            /* the entries this frame has used lead the LRU list already (in
+             * the order of first use), so only the first use moves one */
+            uint32_t frame = pm3ds_gfx_frame_number();
+            if (x->frame != frame) {
+                cache_unlink(e);
+                cache_push_mru(e);
+                x->frame = frame;
+            }
             *out_w = (unsigned)ow; *out_h = (unsigned)oh;
             return e->c3d_tex_inited ? e : NULL;
         }

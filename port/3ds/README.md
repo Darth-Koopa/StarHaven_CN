@@ -4,7 +4,7 @@ A native port of the Paper Mario decompilation (PAL `ver/pal` and US `ver/us`) t
 The game's C code is compiled for the ARM11 and linked with a 3DS platform layer;
 nothing is emulated except the N64 RSP/RDP work, which is translated on the fly.
 
-Status: the whole game plays (v1.0.10), with 60 fps in-between frames, fast-forward, a touch
+Status: the whole game plays (v1.0.11), with 60 fps in-between frames, fast-forward, a touch
 bottom screen and a randomizer. Runs on **New 3DS / New 2DS XL** (124 MB New-3DS mode); the
 original 3DS and 2DS start the CIA in their 80 MB mode (96 MB crashes HOME Menu) at about
 30 fps, with the audio mixer on the second core, frame skip when behind, and no reverb, 3D or
@@ -130,3 +130,11 @@ every `pm3ds_log` line via `svcOutputDebugString`.
 - Display-list words read as `(*(u64*)gfx) >> 32` give `w1` on little-endian.
 - Natively linked entity graphics must not be rebased (`ENTITY_ADDR`, `mdl_project_tex_coords`).
 - Read big files in chunks: a single 64 MB `fread` panics the `fs` process on hardware.
+
+## License
+
+The port (everything under `port/3ds/` and the port's changes to the decompilation) is
+licensed under the [Apache License 2.0](LICENSE), copyright 2026 SecondaryLifer. Forks are
+welcome; keep the [NOTICE](NOTICE) file and credit Star Haven by SecondaryLifer. The
+decompilation is [pmret/papermario](https://github.com/pmret/papermario); Paper Mario and its
+assets belong to Nintendo and are not covered.

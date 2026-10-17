@@ -145,6 +145,29 @@ Acmd* alAudioFrame(Acmd* cmdList, s32* cmdLen, s16* outBuf, s32 outLen) {
         AuSynStereoDirty = false;
     }
 
+#ifdef _3DS
+    // 3DS port, Old 3DS: the DSP's channels play the voices (port audio_hwvoice.c);
+    // the engine only advances them, so there is no command list and no mixed output
+    extern bool pm3ds_au_hwvoices;
+    if (pm3ds_au_hwvoices) {
+        extern void au_pull_voice_hw(AuPVoice* pvoice);
+        while (outLen > 0) {
+            au_update_clients_for_audio_frame();
+            for (busID = 0; busID < gSynDriverPtr->num_pvoice; busID++) {
+                pvoice = &gSynDriverPtr->pvoices[busID];
+                if ((pvoice->busID != 0xFF) && (pvoice->busID < gSynDriverPtr->num_bus)) {
+                    au_pull_voice_hw(pvoice);
+                }
+            }
+            outLen -= AUDIO_SAMPLES;
+            AuDelayCounter++;
+            gSynDriverPtr->curSamples += AUDIO_SAMPLES;
+        }
+        *cmdLen = 0;
+        return cmdListPos;
+    }
+#endif
+
     // process blocks of AUDIO_SAMPLES until outLen is consumed
     while (outLen > 0) {
         au_update_clients_for_audio_frame();
@@ -330,6 +353,9 @@ void au_pvoice_set_bus(u8 voiceIdx, s8 busID) {
 void au_syn_stop_voice(u8 voiceIdx) {
     AuPVoice* pvoice = &gSynDriverPtr->pvoices[voiceIdx];
     AuLoadFilter* decoder = &pvoice->decoder;
+#ifdef _3DS
+    { extern void pm3ds_hwv_note(u8 voiceIdx, s32 start); pm3ds_hwv_note(voiceIdx, false); }
+#endif
 
     pvoice->envMixer.motion = AL_STOPPED;
     pvoice->envMixer.dirty = true;
@@ -369,6 +395,9 @@ void au_syn_start_voice_params(u8 voiceIdx, u8 busID, Instrument* instrument, f3
 
     pvoice->busID = busID;
     decoder->instrument = instrument;
+#ifdef _3DS
+    { extern void pm3ds_hwv_note(u8 voiceIdx, s32 start); pm3ds_hwv_note(voiceIdx, true); }
+#endif
 
     pvoice->decoder.memin = (s32)decoder->instrument->wavData;
     pvoice->decoder.sample = 0;
@@ -431,6 +460,9 @@ void au_syn_set_wavetable(u8 voiceIdx, Instrument* instrument) {
     pvoice->decoder.instrument = instrument;
     pvoice->decoder.memin = (s32)decoder->instrument->wavData;
     pvoice->decoder.sample = 0;
+#ifdef _3DS
+    { extern void pm3ds_hwv_note(u8 voiceIdx, s32 start); pm3ds_hwv_note(voiceIdx, true); }
+#endif
 
     switch (decoder->instrument->type) {
         case AL_ADPCM_WAVE:

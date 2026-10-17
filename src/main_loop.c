@@ -6,6 +6,9 @@
 #include "sprite.h"
 #include "overlay.h"
 #include "game_modes.h"
+#ifdef _3DS
+#include "gfx_prof.h"   // 3DS port: sampling profiler phases (empty unless PM3DS_STEP_PROF)
+#endif
 
 s32 gOverrideFlags;
 s32 gTimeFreezeMode;
@@ -105,15 +108,20 @@ void step_game_loop(void) {
     update_workers();
     update_triggers();
     PM3DS_PH("pre update_scripts");
+    PROF_PHASE(PH_G_SCRIPTS);
     update_scripts();
+    PROF_PHASE(PH_GAME);
     PM3DS_PH("pre update_messages");
     update_messages();
     PM3DS_PH("pre update_hud_elements");
     update_hud_elements();
     PM3DS_PH("pre step_game_mode");
+    PROF_PHASE(PH_G_MODE);
     step_game_mode();
+    PROF_PHASE(PH_G_ENT);
     PM3DS_PH("post step_game_mode");
     update_entities();
+    PROF_PHASE(PH_GAME);
     PM3DS_PH("post update_entities");
     func_80138198();
     PM3DS_PH("post func_80138198");
@@ -206,6 +214,7 @@ void gfx_task_background(void) {
 }
 
 void gfx_draw_frame(void) {
+    PROF_PHASE(PH_G_GFX);   // reset to the game phase by whoever runs next (the renderer sets its own)
     PM3DS_PH("draw: enter gfx_draw_frame");
     gMatrixListPos = 0;
     gMainGfxPos = &gDisplayContext->mainGfx[0];

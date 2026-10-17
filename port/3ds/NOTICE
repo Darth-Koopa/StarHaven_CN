@@ -1,0 +1,13 @@
+Star Haven, a native Nintendo 3DS port of Paper Mario
+Copyright 2026 SecondaryLifer
+https://github.com/SecondaryLifer/StarHaven
+
+This product includes Star Haven by SecondaryLifer. Forks and other works
+based on it must keep this notice and credit Star Haven by SecondaryLifer,
+as required by section 4(d) of the Apache License, Version 2.0.
+
+Scope: the Apache License covers the files under port/3ds/ and the port's
+changes to the decompilation (code under _3DS / PM3DS_ guards and the asset
+tools changed for the port). The decompilation itself comes from
+https://github.com/pmret/papermario under its own terms. Paper Mario and
+its assets belong to Nintendo; none of them are licensed here.

@@ -11,7 +11,11 @@
 enum { GP_VTX, GP_TRI, GP_STATE, GP_TEX, GP_WALK, GP_BOTTOM, GP_FRAMEEND, GP_COMB, GP_FLUSH, GP_RENDER, GP_COUNT };
 
 /* sampling profiler: where the main thread is (gfx_present.c samples it) */
-enum { PH_WALK, PH_STATE, PH_DRAW, PH_TEX, PH_GAME, PH_WAIT, PH_BOTTOM, PH_END, PH_PRESENT, PH_COUNT };
+enum { PH_WALK, PH_STATE, PH_DRAW, PH_TEX, PH_GAME, PH_WAIT, PH_BOTTOM, PH_END, PH_PRESENT,
+       PH_COMB, PH_CTX, PH_FX,   /* combiner setup, citro3d context flush per draw, blend/depth/fog/scissor */
+       PH_PUT,                   /* a triangle's GPU vertices and indices (the rest of a TRI op is walk) */
+       PH_G_SCRIPTS, PH_G_MODE, PH_G_ENT, PH_G_GFX,   /* game step: scripts, game mode (world/battle), entities, building the lists */
+       PH_COUNT };
 
 #ifdef PM3DS_STEP_PROF
 extern volatile uint8_t pm3ds_prof_phase, pm3ds_prof_op;

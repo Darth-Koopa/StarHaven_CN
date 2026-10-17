@@ -58,6 +58,13 @@ devkitARM, libctru and citro3d, and needs your own ROMs in `ver/pal/` and `ver/u
 | `src/`, `include/`, `ver/` | the decompilation, with port changes under `#ifdef _3DS` |
 | `DECOMP_README.md` | the decompilation's own readme |
 
+## License
+
+The port (everything under `port/3ds/` and the port's changes to the decompilation) is
+licensed under the [Apache License 2.0](port/3ds/LICENSE), copyright 2026 SecondaryLifer. Forks
+are welcome; keep the [NOTICE](port/3ds/NOTICE) file and credit Star Haven by SecondaryLifer.
+The decompilation itself is [pmret/papermario](https://github.com/pmret/papermario).
+
 ## Legal
 
 Star Haven is a fan project. It is not affiliated with or endorsed by Nintendo. *Paper Mario*

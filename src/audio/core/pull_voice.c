@@ -315,6 +315,89 @@ Acmd* au_pull_voice(AuPVoice* pvoice, Acmd* cmdBufPos) {
     return ptr;
 }
 
+#ifdef _3DS
+// 3DS port, Old 3DS: the DSP plays the voice (port/3ds/source/n64_shim/audio_hwvoice.c).
+// Advances the same state as au_pull_voice -- sample position, loops, the end of the
+// sample, envelope segments -- without building a command list, and hands the
+// resulting pitch and volume ramp to the port.
+void au_pull_voice_hw(AuPVoice* pvoice) {
+    extern void pm3ds_hwv_frame(AuPVoice* pvoice, s32 restartRamp);
+    AuLoadFilter* decoder = &pvoice->decoder;
+    AuResampler* resampler = &pvoice->resampler;
+    AuEnvMixer* envMixer = &pvoice->envMixer;
+    s32 restartRamp = false;
+    f32 finCount;
+    s32 outCount;
+
+    if (envMixer->motion != AL_PLAYING) {
+        return;
+    }
+
+    if (resampler->ratio > MAX_RATIO) {
+        resampler->ratio = MAX_RATIO;
+    }
+    resampler->ratio = (s32)(resampler->ratio * UNITY_PITCH);
+    resampler->ratio = resampler->ratio / UNITY_PITCH;
+
+    finCount = resampler->delta + resampler->ratio * (f32)AUDIO_SAMPLES;
+    outCount = (s32)finCount;
+    resampler->delta = finCount - (f32)outCount;
+
+    if (outCount != 0) {
+        Instrument* instrument = decoder->instrument;
+        s32 total = instrument->type == AL_ADPCM_WAVE
+            ? (s32)(instrument->wavDataLength / ADPCMFBYTES) * ADPCMFSIZE
+            : (s32)(instrument->wavDataLength >> 1);
+        s32 pos = decoder->sample + outCount;
+        while (decoder->loop.count != 0 && decoder->loop.end > decoder->loop.start && pos > decoder->loop.end) {
+            pos -= decoder->loop.end - decoder->loop.start;
+            if (decoder->loop.count != -1) {
+                decoder->loop.count--;
+            }
+        }
+        decoder->sample = pos;
+        if (pos >= total) {
+            envMixer->motion = AL_STOPPED;
+        }
+    }
+    resampler->first = false;
+
+    if (envMixer->dirty) {
+        envMixer->dirty = false;
+        if (!AuSynUseStereo) {
+            envMixer->ltgt = (envMixer->volume * AuEqPower[AUEQPOWER_LENGTH / 2]) >> 15;
+            envMixer->rtgt = (envMixer->volume * AuEqPower[AUEQPOWER_LENGTH / 2]) >> 15;
+        } else {
+            envMixer->ltgt = (envMixer->volume * AuEqPower[envMixer->pan]) >> 15;
+            envMixer->rtgt = (envMixer->volume * AuEqPower[AUEQPOWER_LENGTH - envMixer->pan - 1]) >> 15;
+        }
+        envMixer->lratm = _getRate(envMixer->cvolL, envMixer->ltgt, envMixer->segEnd, &envMixer->lratl);
+        envMixer->rratm = _getRate(envMixer->cvolR, envMixer->rtgt, envMixer->segEnd, &envMixer->rratl);
+        restartRamp = true;
+    }
+
+    pm3ds_hwv_frame(pvoice, restartRamp);
+
+    envMixer->delta += AUDIO_SAMPLES;
+    if (envMixer->segEnd < envMixer->delta) {
+        envMixer->delta = envMixer->segEnd;
+    }
+
+    if (envMixer->motion == AL_STOPPED) {
+        envMixer->dirty = true;
+        envMixer->volume = 1;
+        resampler->delta = 0.0f;
+        resampler->first = true;
+        decoder->lastsam = 0;
+        decoder->first = 1;
+        decoder->sample = 0;
+        decoder->memin = (s32) decoder->instrument->wavData;
+        decoder->loop.count = decoder->instrument->loopCount;
+        au_release_voice(pvoice->index);
+    }
+}
+#endif
+
 /// loads and decodes a chunk of ADPCM data into RSP memory
 static Acmd* _decodeChunk(Acmd* cmdBufPos, AuLoadFilter* filter, s32 tsam, s32 nbytes, s16 output, s16 input, s32 flags) {
     s32 endAddr;

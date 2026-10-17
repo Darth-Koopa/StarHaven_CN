@@ -303,9 +303,10 @@ static void handle_vtx(gfx_state_t *st, const gfx_cmd_t *g) {
 
         float s = v->tc[0], t = v->tc[1];
         if (lighting) {
-            float nx = (int8_t)v->cn[0] / 127.0f;
-            float ny = (int8_t)v->cn[1] / 127.0f;
-            float nz = (int8_t)v->cn[2] / 127.0f;
+            /* times the reciprocal: three divides per lit vertex add up on an Old 3DS */
+            float nx = (int8_t)v->cn[0] * (1.0f / 127.0f);
+            float ny = (int8_t)v->cn[1] * (1.0f / 127.0f);
+            float nz = (int8_t)v->cn[2] * (1.0f / 127.0f);
             const gfx_light_t *amb = &st->lights[st->num_lights < GFX_MAX_LIGHTS ? st->num_lights : GFX_MAX_LIGHTS - 1];
             float r = amb->col[0], gg = amb->col[1], b = amb->col[2];
             for (int l = 0; l < st->num_lights && l < GFX_MAX_LIGHTS - 1; l++) {
@@ -415,15 +416,19 @@ static void emit_tri(gfx_state_t *st, unsigned ia, unsigned ib, unsigned ic) {
             pm3ds_tstat_culled++;
             return;
         }
-        if (a->cw > 0.0f && b->cw > 0.0f && c->cw > 0.0f) {
-            /* the winding of the projected triangle, without dividing by w:
-             * det |x y w| over the three vertices = wa*wb*wc * the 2D cross */
-            float cross = a->cx * (b->cy * c->cw - b->cw * c->cy) - a->cy * (b->cx * c->cw - b->cw * c->cx) +
-                          a->cw * (b->cx * c->cy - b->cy * c->cx);
-            /* counter-clockwise (cross > 0) is front-facing */
-            if ((cull & GM_CULL_BACK) && cross <= 0.0f) { pm3ds_tstat_culled++; return; }
-            if ((cull & GM_CULL_FRONT) && cross >= 0.0f) { pm3ds_tstat_culled++; return; }
-        }
+        /* the winding of the projected triangle, without dividing by w:
+         * det |x y w| over the three vertices = wa*wb*wc * the 2D cross.
+         * The determinant's sign is also right when vertices lie behind the
+         * camera (it says which side of the triangle's plane the eye is on,
+         * and the part in front of the camera, which the GPU clips out, winds
+         * the same way), so those are culled too: the RSP clips before it
+         * culls. Skipping them drew a camera-facing wall's back over the whole
+         * screen when the camera stood just outside a room (GitHub #11). */
+        float cross = a->cx * (b->cy * c->cw - b->cw * c->cy) - a->cy * (b->cx * c->cw - b->cw * c->cx) +
+                      a->cw * (b->cx * c->cy - b->cy * c->cx);
+        /* counter-clockwise (cross > 0) is front-facing */
+        if ((cull & GM_CULL_BACK) && cross <= 0.0f) { pm3ds_tstat_culled++; return; }
+        if ((cull & GM_CULL_FRONT) && cross >= 0.0f) { pm3ds_tstat_culled++; return; }
     }
     gfx_backend_tri(st, a, b, c);
 }
@@ -840,28 +845,21 @@ int gfx_walk_dl(gfx_state_t *st, const void *dl) {
         n++;
         pm3ds_tstat_ops++;
         switch (op) {
-            case OP_VTX: {
-                GP_BEGIN(t);
+            /* no GP_ tick timers here: two svcGetSystemTick (~1.5 us on an
+             * Old 3DS) per command inflated these; the sampler covers them */
+            case OP_VTX:
                 handle_vtx(st, g);
-                GP_END(t, GP_VTX);
                 break;
-            }
-            case OP_TRI1: {
-                GP_BEGIN(t);
+            case OP_TRI1:
                 emit_tri(st, bf(g->w0, 16, 8) / 2, bf(g->w0, 8, 8) / 2, bf(g->w0, 0, 8) / 2);
-                GP_END(t, GP_TRI);
                 pm3ds_tstat_tris++;
                 break;
-            }
             case OP_TRI2:
-            case OP_QUAD: {
-                GP_BEGIN(t);
+            case OP_QUAD:
                 emit_tri(st, bf(g->w0, 16, 8) / 2, bf(g->w0, 8, 8) / 2, bf(g->w0, 0, 8) / 2);
                 emit_tri(st, bf(g->w1, 16, 8) / 2, bf(g->w1, 8, 8) / 2, bf(g->w1, 0, 8) / 2);
-                GP_END(t, GP_TRI);
                 pm3ds_tstat_tris += 2;
                 break;
-            }
             case OP_MTX:        handle_mtx(st, g); break;
             case OP_POPMTX:     handle_popmtx(st, g); break;
             case OP_GEOMETRYMODE: handle_geometrymode(st, g); break;

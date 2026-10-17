@@ -124,6 +124,7 @@ static struct Thread_tag* sEngineThread;   /* libctru Thread; "Thread" is an EVT
 static LightEvent sEngineRequest, sEngineDone;
 static volatile s32 sEngineThreadRun;
 static Acmd* volatile sEngineEnd;
+static s32 sEngineFrameLen = PM3DS_AU_FRAME;   /* AUDIO_SAMPLES with the DSP's voices */
 u64 pm3ds_t_audio_engine;
 
 static void engine_thread_entry(void* arg) {
@@ -136,7 +137,7 @@ static void engine_thread_entry(void* arg) {
         __dmb();
         u64 t0 = svcGetSystemTick();
         s32 cmdLen = 0;
-        sEngineEnd = alAudioFrame(sCmdList, &cmdLen, sFrameOut, PM3DS_AU_FRAME);
+        sEngineEnd = alAudioFrame(sCmdList, &cmdLen, sFrameOut, sEngineFrameLen);
         pm3ds_t_audio_engine += svcGetSystemTick() - t0;
         __dmb();
         LightEvent_Signal(&sEngineDone);
@@ -268,6 +269,45 @@ static void render_audio_frame(void) {
         }
     }
 #endif
+}
+
+/* Old 3DS: the DSP plays the voices (audio_hwvoice.c), so nothing pulls
+ * mixed audio; run an engine frame (AUDIO_SAMPLES) whenever the clock says
+ * one is due. Called every ~2 ms from the audio thread. */
+void pm3ds_audio_engine_tick_hw(void) {
+    extern u32 pm3ds_hwv_clock;
+    static u64 t0, done;
+    if (!sEngineReady || nuAuTaskStop != NU_AU_TASK_RUN) {
+        return;
+    }
+    u64 now = svcGetSystemTick();
+    if (t0 == 0) {
+        t0 = now;
+    }
+    u64 due = (now - t0) * HARDWARE_OUTPUT_RATE / SYSCLOCK_ARM11 / AUDIO_SAMPLES;
+    if (due > done + 8) {
+        done = due - 8;   /* far behind (the HOME menu, a long stall): no burst */
+    }
+    sEngineFrameLen = AUDIO_SAMPLES;
+    while (done < due) {
+        if (sEngineThread != nullptr) {
+            LightEvent_Signal(&sEngineRequest);
+            LightEvent_Wait(&sEngineDone);
+            __dmb();
+        } else {
+            s32 cmdLen = 0;
+            u64 te = svcGetSystemTick();
+            alAudioFrame(sCmdList, &cmdLen, sFrameOut, AUDIO_SAMPLES);
+            pm3ds_t_audio_engine += svcGetSystemTick() - te;
+        }
+        pm3ds_hwv_clock++;
+        nuAuFrameCounter++;
+        if (nuAuFrameCounter % 1740 == 0) {
+            extern void pm3ds_hwv_stats(void);
+            pm3ds_hwv_stats();
+        }
+        done++;
+    }
 }
 
 /* Called from the NDSP/CSND refill thread (and the frame-loop fallback):

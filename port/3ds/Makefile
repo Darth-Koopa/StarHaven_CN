@@ -253,7 +253,8 @@ LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map) \
 				-Wl,--wrap=decode_yay0 \
 				-Wl,--wrap=state_step_title_screen \
 				-Wl,--wrap=appendGfx_title_screen \
-				-Wl,--wrap=set_background
+				-Wl,--wrap=set_background \
+				-Wl,--wrap=C3D_UpdateUniforms
 
 LIBS	:=	-lcitro3d -lctru -lm
 

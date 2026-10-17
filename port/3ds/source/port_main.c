@@ -94,6 +94,7 @@ static bool platform_init(void) {
      * citro3d answers an overflow with svcBreak. gfx_present.c also stops
      * drawing before it fills up (CMDBUF_STOP). */
     C3D_Init(PM3DS_CMDBUF_BYTES);
+    { extern void pm3ds_c3d_fast_init(size_t); pm3ds_c3d_fast_init(PM3DS_CMDBUF_BYTES); }
     C3D_FrameRate(60.0f);   /* count every vblank: gfx_present.c paces the game steps */
 
     pm3ds_log_init();
