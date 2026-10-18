@@ -311,8 +311,13 @@ int main(void) {
                    * is one game step and one rendered frame, paced at 30 Hz by
                    * C3D_FrameRate: re-rendering the unchanged lists on the off
                    * call doubled the translation cost for nothing. */
-                  pm3ds_gfx_retrace_cb(retrace_task_num);
-                  pm3ds_gfx_retrace_cb(retrace_task_num);
+                  /* a step whose lists would be dropped (fast-forward, Old 3DS
+                   * catch-up) skips building them: the callback leaves out
+                   * gfx_draw_frame at a task count of 3, as the N64 did when
+                   * its RDP fell behind (~2.7 ms a step on an Old 3DS) */
+                  int tasks = s < steps - 1 ? 3 : retrace_task_num;
+                  pm3ds_gfx_retrace_cb(tasks);
+                  pm3ds_gfx_retrace_cb(tasks);
               }
 #ifdef PM3DS_STEP_PROF
               { extern void pm3ds_prof_step_end(int); extern s32 get_game_mode(void); pm3ds_prof_step_end(get_game_mode()); }

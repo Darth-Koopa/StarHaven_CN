@@ -31,6 +31,33 @@ typedef struct {
 
 void pm3ds_hud_query(pm3ds_hud_info_t *out);
 
+/* Tattle log (n64_shim/journal.c): enemies Goombario has tattled, in actor order */
+#define PM3DS_TATTLE_MAX  160
+#define PM3DS_TATTLE_NAME 24
+typedef struct {
+    int known, total;                     /* tattled / enemies with a tattle */
+    short entry[PM3DS_TATTLE_MAX];        /* for pm3ds_tattle_text */
+    char name[PM3DS_TATTLE_MAX][PM3DS_TATTLE_NAME];
+} pm3ds_tattle_list_t;
+int pm3ds_tattle_query(pm3ds_tattle_list_t *out);
+void pm3ds_tattle_text(int entry, char *out, int size);   /* whole tattle as one paragraph */
+
+/* Item tracker (n64_shim/journal.c): collected item spots per area, story order */
+#define PM3DS_TRACKER_AREAS 24
+typedef struct {
+    char name[24];
+    unsigned char found, total;               /* every tracked spot */
+    unsigned char sp_found, sp_total;         /* star pieces */
+    unsigned char badge_found, badge_total;   /* badges */
+    unsigned char hidden_found, hidden_total; /* hidden blocks and panels */
+} pm3ds_tracker_area_t;
+typedef struct {
+    int count, found, total;
+    int rando;                                /* spots hold shuffled items: only the totals mean anything */
+    pm3ds_tracker_area_t area[PM3DS_TRACKER_AREAS];
+} pm3ds_tracker_t;
+int pm3ds_tracker_query(pm3ds_tracker_t *out);
+
 /* N64 images the menu draws, decoded once into the UI atlas */
 enum {
     UI_IMG_HEART, UI_IMG_FLOWER, UI_IMG_COIN, UI_IMG_STAR_POINT, UI_IMG_STAR_PIECE,

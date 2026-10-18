@@ -709,10 +709,18 @@ typedef struct SoundPlayChange {
     union {
         u32 all;
         struct {
+#ifdef _3DS
+            // little-endian: reversed so `all |= 0x10101` still marks volume, pan and reverb
+            u8 reverb;
+            u8 pan;
+            u8 volume;
+            u8 tune;
+#else
             u8 tune;
             u8 volume;
             u8 pan;
             u8 reverb;
+#endif
         };
     };
 } SoundPlayChange;
@@ -1319,10 +1327,19 @@ typedef struct AmbienceSavedVoice {
  */
 typedef union AmbVoiceStateInfo {
     struct {
+#ifdef _3DS
+        // little-endian: the fields in reverse, so that `all` keeps the N64 layout
+        // (player << 24 | track << 16 | tune << 8 | released) the code builds keys and masks with
+        u8 released;
+        u8 tune;
+        u8 trackIndex;
+        u8 playerIndex;
+#else
         u8 playerIndex;     /// Index of the owning ambience player
         u8 trackIndex;      ///< Track index within the player (0–9)
         u8 tune;            ///< Note or drum ID used to differentiate voices on the same track
         u8 released;        ///< Set to true when the voice should be released/stopped
+#endif
     };
     s32 all;
 } AmbVoiceStateInfo;

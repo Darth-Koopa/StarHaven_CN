@@ -3,6 +3,9 @@
 #include "model.h"
 #include "effects.h"
 #include "hud_element.h"
+#ifdef _3DS
+#include "gfx_prof.h"   // 3DS port: sampling profiler phases (empty unless PM3DS_STEP_PROF)
+#endif
 #include "model_clear_render_tasks.h"
 #include "nu/nusys.h"
 
@@ -2741,6 +2744,10 @@ void mdl_update_transform_matrices(void) {
     build_custom_gfx();
 }
 
+#ifdef _3DS
+f32 pm3ds_view_ndc_x(f32 viewportStartX, f32 viewportW);
+#endif
+
 void render_models(void) {
     RenderTask rt;
     RenderTask* rtPtr = &rt;
@@ -2775,7 +2782,7 @@ void render_models(void) {
     xComp = outX * outW; \
     yComp = outY * outW; \
     zComp = outZ * outW; \
-    if (zComp > -1.0f && xComp >= -1.0f && xComp <= 1.0f && yComp >= -1.0f && yComp <= 1.0f) { \
+    if (zComp > -1.0f && xComp >= -cullX && xComp <= cullX && yComp >= -1.0f && yComp <= 1.0f) { \
         break; \
     }
 
@@ -2795,6 +2802,13 @@ void render_models(void) {
     m31 = camera->mtxPerspective[3][1];
     m32 = camera->mtxPerspective[3][2];
     m33 = camera->mtxPerspective[3][3];
+#ifdef _3DS
+    // 3DS port: in widescreen the view reaches past the 4:3 edge (NDC x +-1);
+    // a model is kept while a corner is anywhere on screen (pop-in at the edges)
+    f32 cullX = pm3ds_view_ndc_x(camera->viewportStartX, camera->viewportW);
+#else
+    f32 cullX = 1.0f;
+#endif
 
     // enqueue all visible models not in transform groups
     for (i = 0; i < ARRAY_COUNT(*gCurrentModels); i++) {
@@ -4638,6 +4652,104 @@ void execute_render_tasks(void) {
         sorted[taskCount++] = i;
     }
 
+#ifdef _3DS
+    // 3DS port: the same three exchange passes (equal distances must come out
+    // in the same order), on a copy of the keys: key[k] is the dist of
+    // sorted[k], so a compare no longer goes through the task list twice
+    {
+        s32 key[ARRAY_COUNT(*ClearRenderTaskLists)];
+        s32 ki, kt;
+
+        PROF_PHASE(PH_R_SORT);
+        taskList = RenderTaskLists[RenderTaskListIdx];
+        for (i = 0; i < taskCount; i++) {
+            key[i] = taskList[i].dist;
+        }
+        // ascending
+        for (i = 0; i < taskCount - 1; i++) {
+            ki = key[i];
+            for (j = i + 1; j < taskCount; j++) {
+                if (ki > key[j]) {
+                    key[i] = key[j];
+                    key[j] = ki;
+                    ki = key[i];
+                    kt = sorted[i];
+                    sorted[i] = sorted[j];
+                    sorted[j] = kt;
+                }
+            }
+        }
+        // dist >= 3M descending
+        for (i = 0; i < taskCount - 1; i++) {
+            ki = key[i];
+            if (ki >= 3000000) {
+                for (j = i + 1; j < taskCount; j++) {
+                    if (ki < key[j]) {
+                        key[i] = key[j];
+                        key[j] = ki;
+                        ki = key[i];
+                        kt = sorted[i];
+                        sorted[i] = sorted[j];
+                        sorted[j] = kt;
+                    }
+                }
+            }
+        }
+        // dist <= 800k descending
+        for (i = 0; i < taskCount - 1; i++) {
+            ki = key[i];
+            if (ki > 800000) {
+                break;
+            }
+            for (j = i + 1; j < taskCount; j++) {
+                if (key[j] > 800000) {
+                    break;
+                }
+                if (ki < key[j]) {
+                    key[i] = key[j];
+                    key[j] = ki;
+                    ki = key[i];
+                    kt = sorted[i];
+                    sorted[i] = sorted[j];
+                    sorted[j] = kt;
+                }
+            }
+        }
+#ifdef PM3DS_SORT_VERIFY
+        {   // the original passes on a second copy must give the same order
+            s32 ref[ARRAY_COUNT(*ClearRenderTaskLists)];
+            static s32 checks, bad;
+            for (i = 0; i < taskCount; i++) ref[i] = i;
+            for (i = 0; i < taskCount - 1; i++)
+                for (j = i + 1; j < taskCount; j++)
+                    if (taskList[ref[i]].dist > taskList[ref[j]].dist) { kt = ref[i]; ref[i] = ref[j]; ref[j] = kt; }
+            for (i = 0; i < taskCount - 1; i++)
+                if (taskList[ref[i]].dist >= 3000000)
+                    for (j = i + 1; j < taskCount; j++)
+                        if (taskList[ref[i]].dist < taskList[ref[j]].dist) { kt = ref[i]; ref[i] = ref[j]; ref[j] = kt; }
+            for (i = 0; i < taskCount - 1; i++) {
+                if (taskList[ref[i]].dist > 800000) break;
+                for (j = i + 1; j < taskCount; j++) {
+                    if (taskList[ref[j]].dist > 800000) break;
+                    if (taskList[ref[i]].dist < taskList[ref[j]].dist) { kt = ref[i]; ref[i] = ref[j]; ref[j] = kt; }
+                }
+            }
+            checks++;
+            for (i = 0; i < taskCount && ref[i] == sorted[i]; i++) {}
+            if (i < taskCount && bad++ < 4) {
+                extern void pm3ds_log(int, const char*, ...);
+                pm3ds_log(3, "SORTVERIFY mismatch, %d tasks", taskCount);
+            }
+            if ((checks & 1023) == 0) {
+                extern void pm3ds_log(int, const char*, ...);
+                pm3ds_log(2, "SORTVERIFY checks=%d bad=%d tasks=%d", checks, bad, taskCount);
+            }
+        }
+#endif
+        PROF_PHASE(PH_R_TASKS);
+    }
+    if (false) {
+#endif
     // sort in ascending order
     taskList = RenderTaskLists[RenderTaskListIdx];
     for (i = 0; i < taskCount - 1; i++) {
@@ -4692,6 +4804,9 @@ void execute_render_tasks(void) {
             }
         }
     }
+#ifdef _3DS
+    }
+#endif
 
     gLastRenderTaskCount = taskCount;
     taskList = RenderTaskLists[RenderTaskListIdx];

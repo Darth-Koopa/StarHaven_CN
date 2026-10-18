@@ -85,7 +85,9 @@ static C3D_Tex s_small;      /* libctru's 8x8 console font: crisp small text */
 static bool s_small_ok;
 
 /* ---- state --------------------------------------------------------------- */
-enum { TAB_STATS, TAB_MAP, TAB_PARTY, TAB_DEBUG, TAB_OPTIONS, TAB_CONTROLS };
+enum { TAB_STATS, TAB_MAP, TAB_PARTY, TAB_LOG, TAB_FOUND, TAB_DEBUG, TAB_OPTIONS, TAB_CONTROLS };
+#define TAB_GAME_LAST TAB_FOUND   /* the tabs shown along the top in game */
+#define NUM_GAME_TABS (TAB_GAME_LAST + 1)
 static int s_tab = TAB_STATS;
 static pm3ds_hud_info_t s_info;
 static unsigned s_frame;
@@ -444,13 +446,65 @@ static void bar(float x, float y, float w, float h, int v, int max, u32 col) {
 #define PANEL_Y1 204
 #define BTN_Y0 212
 #define BTN_Y1 234
-static const float s_tab_x[3][2] = { { 10, 100 }, { 115, 205 }, { 220, 310 } };
+static const float s_tab_x[NUM_GAME_TABS][2] = { { 6, 64 }, { 68, 126 }, { 130, 188 }, { 192, 250 }, { 254, 312 } };
 static const float s_btn_opt[2] = { 8, 104 };
 static const float s_btn_items[2] = { 112, 208 };
 static const float s_btn_ff[2] = { 216, 312 };
 
-/* shortcut for the game (src/world/menus.c): 1 = item menu, 0x100 + id = switch partner */
+/* shortcut for the game (src/world/menus.c): 1 = item menu, 2 = quick save, 0x100 + id = switch partner */
 volatile int pm3ds_touch_req;
+
+/* Stats page Save button: a tap arms it, a second one asks the game to save
+ * (src/world/menus.c, which answers here: 1 saved, -1 not possible right now) */
+volatile int pm3ds_quicksave_result;
+enum { QS_IDLE, QS_ARMED, QS_WAIT, QS_DONE };
+static int s_qs, s_qs_timer;
+#define QS_X0 254
+#define QS_X1 310
+#define QS_Y0 (PANEL_Y0 + 5)
+#define QS_Y1 (PANEL_Y0 + 25)
+
+static void qs_tick(void) {
+    s_qs_timer++;
+    if (s_qs == QS_ARMED && s_qs_timer > 150) {
+        s_qs = QS_IDLE;
+    } else if (s_qs == QS_WAIT) {
+        if (pm3ds_quicksave_result == 0 && s_qs_timer > 45) {   /* the world menus didn't run: a cutscene, Peach */
+            if (pm3ds_touch_req == 2) pm3ds_touch_req = 0;
+            pm3ds_quicksave_result = -1;
+        }
+        if (pm3ds_quicksave_result != 0) {
+            s_qs = QS_DONE;
+            s_qs_timer = 0;
+        }
+    } else if (s_qs == QS_DONE && s_qs_timer > 120) {
+        s_qs = QS_IDLE;
+    }
+}
+
+static void qs_tap(void) {
+    if (s_qs == QS_ARMED) {
+        pm3ds_quicksave_result = 0;
+        pm3ds_touch_req = 2;
+        s_qs = QS_WAIT;
+    } else if (s_qs != QS_WAIT) {
+        s_qs = QS_ARMED;
+    }
+    s_qs_timer = 0;
+}
+
+static void draw_qs_button(void) {
+    static const char *const labels[] = { "Save", "Sure?", "...", "" };
+    const char *label = labels[s_qs];
+    u32 face = s_qs == QS_ARMED ? RGBA(255, 196, 64, 255) : RGBA(255, 214, 120, 255);
+    if (s_qs == QS_DONE) {
+        label = pm3ds_quicksave_result > 0 ? "Saved!" : "Not now";
+        face = pm3ds_quicksave_result > 0 ? RGBA(150, 220, 120, 255) : RGBA(240, 150, 120, 255);
+    }
+    round_rect(QS_X0, QS_Y0, QS_X1, QS_Y1, 8, COL_PANEL_EDGE);
+    round_rect(QS_X0 + 2, QS_Y0 + 2, QS_X1 - 2, QS_Y1 - 2, 6, face);
+    text_center((QS_X0 + QS_X1) / 2, QS_Y0 + 2, label, 0.85f, 0, COL_WHITE);
+}
 
 static const char *chapter_label(int ch) {
     static const char *names[] = {
@@ -461,14 +515,20 @@ static const char *chapter_label(int ch) {
 }
 
 static void draw_tabs(void) {
+    /* the pause menu's own labels, then two tabs it doesn't have */
     static const int labels[3] = { UI_IMG_LABEL_STATS, UI_IMG_LABEL_MAP, UI_IMG_LABEL_PARTY };
-    for (int i = 0; i < 3; i++) {
+    static const char *const names[NUM_GAME_TABS] = { NULL, NULL, NULL, "Tattle", "Found" };
+    for (int i = 0; i < NUM_GAME_TABS; i++) {
         bool on = s_tab == i;
         float x0 = s_tab_x[i][0], x1 = s_tab_x[i][1];
         float y0 = on ? TAB_Y0 : TAB_Y0 + 3;
         round_rect(x0 + 2, y0 + 2, x1 + 2, TAB_Y1 + 6, 7, COL_SHADOW);
         round_rect(x0, y0, x1, TAB_Y1 + 6, 7, COL_PANEL_EDGE);
         round_rect(x0 + 2, y0 + 2, x1 - 2, TAB_Y1 + 6, 5, on ? COL_TAB_ON : COL_TAB);
+        if (names[i]) {
+            text_center((x0 + x1) / 2, y0 + 5, names[i], 0.9f, 0, COL_WHITE);
+            continue;
+        }
         rect_t r = s_img[labels[i]];
         image(labels[i], (x0 + x1) / 2 - r.w / 2, y0 + 5, 1.0f, COL_WHITE);
     }
@@ -535,6 +595,7 @@ static void draw_stats(void) {
     float tw = text_width(buf, 1.0f);
     image(UI_IMG_TIME, 306 - tw - 20, sy, 1.0f, COL_WHITE);
     text(306 - tw, sy, buf, 1.0f, 0, COL_WHITE);
+    draw_qs_button();
 }
 
 static void draw_map(void) {
@@ -625,6 +686,192 @@ static void draw_debug(void) {
     text_center(283, 217, "Back", 1.0f, 1, COL_WHITE);
 }
 
+/* ---- Tattle log, item tracker, quick save --------------------------------- */
+static pm3ds_tattle_list_t s_log;
+static int s_log_page, s_log_open = -1, s_log_text_page;   /* s_log_open: s_log index shown in full */
+static char s_log_text[2048];
+static pm3ds_tracker_t s_found;
+static int s_found_page;
+#define LIST_HEAD_Y (PANEL_Y0 + 8)
+#define LIST_Y0 (PANEL_Y0 + 32)
+#define LOG_ROWS 7
+#define LOG_PER_PAGE (LOG_ROWS * 2)
+#define LOG_ROW_H 20
+#define LOG_TEXT_SCALE 0.85f
+#define LOG_LINE_H 15
+#define LOG_LINES 9
+#define FOUND_ROWS 7
+#define FOUND_ROW_H 17
+#define FOUND_Y0 (PANEL_Y0 + 46)
+
+static int pages_of(int n, int per) { return n > 0 ? (n + per - 1) / per : 1; }
+
+/* "<  2/3  >" at the top right of a list; drawn only with more than one page */
+static void page_arrows(int page, int pages) {
+    if (pages <= 1) return;
+    char buf[24];
+    round_rect(214, LIST_HEAD_Y - 3, 238, LIST_HEAD_Y + 17, 7, COL_BTN);
+    text_center(226, LIST_HEAD_Y - 1, "<", 1.0f, 1, COL_WHITE);
+    round_rect(284, LIST_HEAD_Y - 3, 308, LIST_HEAD_Y + 17, 7, COL_BTN);
+    text_center(296, LIST_HEAD_Y - 1, ">", 1.0f, 1, COL_WHITE);
+    snprintf(buf, sizeof buf, "%d/%d", page + 1, pages);
+    text_center(261, LIST_HEAD_Y, buf, 0.9f, 0, COL_WHITE);
+}
+
+/* a tap on page_arrows: the new page, or -1 if the tap missed them */
+static int page_tap(int px, int py, int page, int pages) {
+    if (pages <= 1 || py < LIST_HEAD_Y - 5 || py >= LIST_HEAD_Y + 19) return -1;
+    if (px >= 208 && px < 244) return (page + pages - 1) % pages;
+    if (px >= 278 && px < 314) return (page + 1) % pages;
+    return -1;
+}
+
+/* word wrap: start/length of each line of str at scale within width */
+static int wrap_text(const char *str, float scale, float width, short *start, short *len, int max) {
+    int n = 0, i = 0, end_all = (int)strlen(str);
+    while (i < end_all && n < max) {
+        while (str[i] == ' ') i++;
+        if (!str[i]) break;
+        int j = i, last_space = -1;
+        float w = 0;
+        for (; j < end_all; j++) {
+            int g = glyph_of(str[j]);
+            float cw = (g >= 0 && g < s_glyphs ? s_glyph_w[g] : 5) * scale;
+            if (str[j] == ' ') last_space = j;
+            if (w + cw > width && j > i) break;
+            w += cw;
+        }
+        int end = j < end_all && last_space > i ? last_space : j;
+        start[n] = (short)i;
+        len[n] = (short)(end - i);
+        n++;
+        i = end;
+    }
+    return n;
+}
+
+static void log_entry_rect(int slot, float *x0, float *y0, float *x1, float *y1) {
+    *x0 = slot < LOG_ROWS ? 12 : 162;
+    *y0 = LIST_Y0 + (slot % LOG_ROWS) * LOG_ROW_H;
+    *x1 = *x0 + 146;
+    *y1 = *y0 + LOG_ROW_H - 3;
+}
+
+static void draw_log(void) {
+    char buf[40];
+    if (s_log_open >= 0 && s_log_open < s_log.known) {   /* one tattle in full */
+        static short starts[48], lens[48];
+        int lines = wrap_text(s_log_text, LOG_TEXT_SCALE, 292, starts, lens, 48);
+        int pages = pages_of(lines, LOG_LINES);
+        if (s_log_text_page >= pages) s_log_text_page = 0;
+        round_rect(10, LIST_HEAD_Y - 3, 64, LIST_HEAD_Y + 17, 7, COL_BTN);
+        text_center(37, LIST_HEAD_Y - 1, "Back", 0.9f, 1, COL_WHITE);
+        text_center(176, LIST_HEAD_Y - 1, s_log.name[s_log_open], 1.0f, 0, COL_WHITE);
+        fill(14, LIST_Y0 - 6, 306, LIST_Y0 - 5, RGBA(200, 170, 130, 255));
+        for (int l = 0; l < LOG_LINES; l++) {
+            int k = s_log_text_page * LOG_LINES + l;
+            if (k >= lines) break;
+            char line[96];
+            int n = lens[k] < (int)sizeof line - 1 ? lens[k] : (int)sizeof line - 1;
+            memcpy(line, s_log_text + starts[k], n);
+            line[n] = '\0';
+            text(14, LIST_Y0 + l * LOG_LINE_H, line, LOG_TEXT_SCALE, 0, COL_WHITE);
+        }
+        if (pages > 1) {
+            snprintf(buf, sizeof buf, "tap for more  %d/%d", s_log_text_page + 1, pages);
+            small_text_center(160, PANEL_Y1 - 12, buf, 1.0f, RGBA(150, 100, 60, 255));
+        }
+        return;
+    }
+    s_log_open = -1;
+    int pages = pages_of(s_log.known, LOG_PER_PAGE);
+    if (s_log_page >= pages) s_log_page = 0;
+    snprintf(buf, sizeof buf, "Tattle Log  %d/%d", s_log.known, s_log.total);
+    text(14, LIST_HEAD_Y, buf, 1.0f, 0, COL_WHITE);
+    page_arrows(s_log_page, pages);
+    if (s_log.known == 0) {
+        text_center(160, LIST_Y0 + 50, "No tattles yet", 1.0f, 0, COL_WHITE);
+        small_text_center(160, LIST_Y0 + 76, "Tattle enemies in battle with Goombario", 1.0f, RGBA(150, 100, 60, 255));
+        return;
+    }
+    for (int slot = 0; slot < LOG_PER_PAGE; slot++) {
+        int i = s_log_page * LOG_PER_PAGE + slot;
+        if (i >= s_log.known) break;
+        float x0, y0, x1, y1;
+        log_entry_rect(slot, &x0, &y0, &x1, &y1);
+        round_rect(x0, y0, x1, y1, 7, RGBA(255, 214, 120, 255));
+        float scale = text_width(s_log.name[i], 0.85f) > x1 - x0 - 10 ? 0.7f : 0.85f;
+        text(x0 + 6, y0 + 3, s_log.name[i], scale, 0, COL_WHITE);
+    }
+}
+
+static void log_tap(int px, int py) {
+    if (s_log_open >= 0) {
+        if (in(px, py, 6, LIST_HEAD_Y - 5, 70, LIST_HEAD_Y + 19)) s_log_open = -1;
+        else if (py >= LIST_Y0 - 4) s_log_text_page++;   /* wraps in draw_log */
+        return;
+    }
+    int pages = pages_of(s_log.known, LOG_PER_PAGE);
+    int np = page_tap(px, py, s_log_page, pages);
+    if (np >= 0) { s_log_page = np; return; }
+    for (int slot = 0; slot < LOG_PER_PAGE; slot++) {
+        int i = s_log_page * LOG_PER_PAGE + slot;
+        if (i >= s_log.known) break;
+        float x0, y0, x1, y1;
+        log_entry_rect(slot, &x0, &y0, &x1, &y1);
+        if (in(px, py, x0, y0, x1, y1)) {
+            s_log_open = i;
+            s_log_text_page = 0;
+            pm3ds_tattle_text(s_log.entry[i], s_log_text, sizeof s_log_text);
+            return;
+        }
+    }
+}
+
+#define COL_DONE RGBA(40, 150, 40, 255)
+
+/* "3/5" right-aligned at x, or "-" when the area has none of these; green when all found */
+static void count_cell(float x, float y, int found, int total) {
+    char buf[12];
+    if (total == 0) snprintf(buf, sizeof buf, "-");
+    else snprintf(buf, sizeof buf, "%d/%d", found, total);
+    text(x - text_width(buf, 0.8f), y, buf, 0.8f, 0, total > 0 && found == total ? COL_DONE : COL_WHITE);
+}
+
+static void draw_found(void) {
+    const pm3ds_tracker_t *f = &s_found;
+    char buf[48];
+    int pages = pages_of(f->count, FOUND_ROWS);
+    if (s_found_page >= pages) s_found_page = 0;
+    snprintf(buf, sizeof buf, "Found  %d/%d", f->found, f->total);
+    text(14, LIST_HEAD_Y, buf, 1.0f, 0, COL_WHITE);
+    page_arrows(s_found_page, pages);
+    /* column heads: star pieces, badges, hidden blocks and panels, every spot.
+     * A randomizer seed puts other items in the spots: only the totals hold. */
+    float hy = LIST_Y0 - 4;
+    if (!f->rando) {
+        image(UI_IMG_STAR_PIECE, 152, hy - 2, 1.0f, COL_WHITE);
+        image(UI_IMG_BP, 196, hy - 2, 1.0f, COL_WHITE);
+        text_center(238, hy, "?", 0.9f, 0, COL_WHITE);
+    }
+    text_center(286, hy, f->rando ? "Checked" : "All", 0.8f, 0, COL_WHITE);
+    fill(14, FOUND_Y0 - 3, 306, FOUND_Y0 - 2, RGBA(200, 170, 130, 255));
+    for (int r = 0; r < FOUND_ROWS; r++) {
+        int i = s_found_page * FOUND_ROWS + r;
+        if (i >= f->count) break;
+        const pm3ds_tracker_area_t *a = &f->area[i];
+        float y = FOUND_Y0 + r * FOUND_ROW_H;
+        float scale = text_width(a->name, 0.8f) > 128 ? 0.68f : 0.8f;
+        text(14, y, a->name, scale, 0, a->found == a->total ? COL_DONE : COL_WHITE);
+        if (!f->rando) {
+            count_cell(176, y, a->sp_found, a->sp_total);
+            count_cell(220, y, a->badge_found, a->badge_total);
+            count_cell(256, y, a->hidden_found, a->hidden_total);
+        }
+        count_cell(306, y, a->found, a->total);
+    }
+}
+
 /* ---- battle page and touch menus ------------------------------------------ */
 /* the game's list menu as buttons: two columns, TM_ROWS rows per page */
 #define TM_Y0 58
@@ -641,7 +888,7 @@ static void draw_debug(void) {
 static const float s_pad_stick[4] = { 18, 62, 120, 104 };   /* x0 y0 x1 y1: hold the stick left */
 
 static bool tm_open(void) { return s_tm.kind != PM3DS_TM_NONE && s_info.in_game; }
-static bool battle_page(void) { return s_info.in_battle && s_tab <= TAB_PARTY; }
+static bool battle_page(void) { return s_info.in_battle && s_tab <= TAB_GAME_LAST; }
 
 static int tm_pages(void) { return (s_tm.count + TM_PER_PAGE - 1) / TM_PER_PAGE; }
 
@@ -1211,7 +1458,7 @@ static void draw_menu_page(void) {
         draw_buttons();
         return;
     }
-    if (tm_open() && s_tab <= TAB_PARTY) {   /* an item or partner list in the world */
+    if (tm_open() && s_tab <= TAB_GAME_LAST) {   /* an item or partner list in the world */
         draw_tabs();
         draw_tmenu(PANEL_Y0);
         draw_buttons();
@@ -1223,6 +1470,8 @@ static void draw_menu_page(void) {
         case TAB_STATS: draw_stats(); break;
         case TAB_MAP:   draw_map();   break;
         case TAB_PARTY: draw_party(); break;
+        case TAB_LOG:   draw_log();   break;
+        case TAB_FOUND: draw_found(); break;
     }
     draw_buttons();
 }
@@ -1269,7 +1518,7 @@ static void handle_touch(void) {
     /* held buttons: the battle pad and Back/Swap */
     pm3ds_touch_pad = 0;
     pm3ds_touch_stick_x = 0;
-    if (down && s_tab <= TAB_PARTY && s_info.in_game) {
+    if (down && s_tab <= TAB_GAME_LAST && s_info.in_game) {
         uint16_t mid_pad;
         pad_held(tp.px, tp.py);
         if (mid_button(&mid_pad) && mid_pad && in(tp.px, tp.py, s_btn_items[0], BTN_Y0, s_btn_items[1], BTN_Y1))
@@ -1338,14 +1587,23 @@ static void handle_touch(void) {
         if (mid && !mid_pad) pm3ds_touch_req = 1;   /* Items; Back/Swap are held above */
     } else if (battle_page()) {
         tmenu_tap(tp.px, tp.py, 34);
-    } else if (s_info.in_game && s_tab <= TAB_PARTY && tm_open() && tp.py >= PANEL_Y0) {
+    } else if (s_info.in_game && s_tab <= TAB_GAME_LAST && tm_open() && tp.py >= PANEL_Y0) {
         tmenu_tap(tp.px, tp.py, PANEL_Y0);
+    } else if (s_info.in_game && s_tab == TAB_STATS && in(tp.px, tp.py, QS_X0 - 4, TAB_Y1 + 2, QS_X1 + 4, QS_Y1 + 3)) {
+        qs_tap();
+    } else if (s_info.in_game && s_tab == TAB_LOG && tp.py >= TAB_Y1 + 2) {
+        log_tap(tp.px, tp.py);
+    } else if (s_info.in_game && s_tab == TAB_FOUND && tp.py >= TAB_Y1 + 2) {
+        int np = page_tap(tp.px, tp.py, s_found_page, pages_of(s_found.count, FOUND_ROWS));
+        if (np >= 0) s_found_page = np;
     } else if (s_info.in_game && s_tab == TAB_PARTY && partner_at(tp.px, tp.py)) {
         int id = partner_at(tp.px, tp.py);
         if ((s_info.partners_owned >> id) & 1) pm3ds_touch_req = 0x100 + id;
     } else if (s_info.in_game && tp.py < TAB_Y1 + 2) {
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < NUM_GAME_TABS; i++)
             if (in(tp.px, tp.py, s_tab_x[i][0], 0, s_tab_x[i][1], TAB_Y1 + 2)) s_tab = i;
+        if (s_tab == TAB_LOG) { s_log_open = -1; pm3ds_tattle_query(&s_log); }
+        if (s_tab == TAB_FOUND) pm3ds_tracker_query(&s_found);
         if (s_tab == TAB_MAP) s_map_follow = true;
     } else if (s_tab == TAB_MAP && in(tp.px, tp.py, 10, PANEL_Y0 + 8, 160, PANEL_Y0 + 22)) {
         s_map_follow = true;
@@ -1399,6 +1657,12 @@ void pm3ds_bottom_screen_tick(unsigned frame) {
     pm3ds_console_debug = s_tab == TAB_DEBUG;
     if (!s_font_ok && (frame % 30) == 0) build_font();
     if (frame % 5 == 0) pm3ds_hud_query(&s_info);
+    qs_tick();
+    /* the log and tracker read a few hundred flags: only while shown, twice a second */
+    if (s_info.in_game && frame % 30 == 0) {
+        if (s_tab == TAB_LOG && s_log_open < 0) pm3ds_tattle_query(&s_log);
+        if (s_tab == TAB_FOUND) pm3ds_tracker_query(&s_found);
+    }
     pm3ds_tm_get(&s_tm);
 }
 

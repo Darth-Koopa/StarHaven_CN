@@ -8,6 +8,9 @@
 #include "pause/pause_common.h"
 #include "world/partners.h"
 #include "world/partner/lakilester.h"
+#ifdef _3DS
+#include "fio.h"
+#endif
 
 enum WorldMenuStates {
     WORLD_MENU_STATE_NONE       = 0,
@@ -238,10 +241,14 @@ void check_input_open_menus(void) {
         // (a second tap during a partner switch restarted it and disabled input twice:
         // Mario never moved again)
         extern volatile s32 pm3ds_touch_req;
+        extern volatile s32 pm3ds_quicksave_result;
         extern s32 NextPartnerCommand;
         s32 req = pm3ds_touch_req;
         if (req != 0) {
             pm3ds_touch_req = 0;
+            if (req == 2) {
+                pm3ds_quicksave_result = -1;   // unless it gets through below
+            }
             // riding Lakilester/Sushie or hiding with Bow, the partner's input drives the menus
             s32 partnerDrives = partnerStatus->partnerActionState != PARTNER_ACTION_NONE &&
                 (partnerStatus->actingPartner == PARTNER_SUSHIE || partnerStatus->actingPartner == PARTNER_LAKILESTER ||
@@ -252,6 +259,21 @@ void check_input_open_menus(void) {
             } else if (WorldMenuState == WORLD_MENU_STATE_NONE && evt_get_variable(nullptr, GB_StoryProgress) < STORY_EPILOGUE) {
                 if (req == 1) {
                     pressedButtons |= BUTTON_C_LEFT;    // the item menu, as its button opens it
+                } else if (req == 2) {                  // quick save: whenever the pause menu could open
+                    if (partnerStatus->partnerActionState == PARTNER_ACTION_NONE &&
+                        can_open_world_menu(currentButtons, BUTTON_START)) {
+                        // as a save block does: maps with one put Mario back here (EnterSavePoint),
+                        // the rest replay the entrance he came in by
+                        gGameStatusPtr->savedPos.x = playerStatus->pos.x;
+                        gGameStatusPtr->savedPos.y = playerStatus->pos.y;
+                        gGameStatusPtr->savedPos.z = playerStatus->pos.z;
+                        fio_save_game(gGameStatusPtr->saveSlot);
+                        sfx_play_sound(SOUND_SAVE_CONFIRM);
+                        pm3ds_quicksave_result = 1;
+                    } else {
+                        sfx_play_sound(SOUND_MENU_ERROR);
+                    }
+                    return;
                 } else if (req >= 0x100) {              // switch straight to partner req - 0x100
                     s32 partner = req - 0x100;
                     if (partner > 0 && partner < ARRAY_COUNT(playerData->partners) && partner != playerData->curPartner &&

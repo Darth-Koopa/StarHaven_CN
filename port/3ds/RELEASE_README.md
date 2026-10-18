@@ -59,6 +59,13 @@ original 3DS and 2DS).
 ## Bottom screen
 
 - **Stats, Map, Party** tabs. Tap a partner on the Party tab to switch to them.
+- **Tattle**: every enemy Goombario has tattled so far. Tap one to read the whole tattle.
+- **Found**: for each area, how many star pieces, badges, hidden blocks and panels, and item
+  spots you have collected (gifts from characters are not counted; a randomizer file shows
+  only the totals).
+- **Save** on the Stats tab, tapped twice, saves the game wherever the pause menu could open.
+  Loading puts you back on the spot on a map with a save block, and at the entrance you came
+  in by anywhere else.
 - **Items** opens the item menu.
 - In battle: your HP, FP and Star Power, the battle menus as buttons to tap, and an A/B pad
   for action commands.

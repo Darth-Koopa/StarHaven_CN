@@ -92,6 +92,18 @@ static int   g_view_mode;   /* PM3DS_VIEW_* */
 
 int pm3ds_view_mode(void) { return g_view_mode; }
 
+/* How far past +-1 a camera's NDC x reaches on screen: Wide shows N64 x from
+ * -ox/s to (400-ox)/s, beyond the viewport. 1 in the 4:3 modes (the scissor
+ * stops at the viewport there). For the game's model culling (model.c). */
+float pm3ds_view_ndc_x(float vp_x, float vp_w) {
+    if (g_view_mode != PM3DS_VIEW_WIDE || vp_w <= 0.0f) return 1.0f;
+    float xl = -g_view_ox / g_view_s, xr = (400.0f - g_view_ox) / g_view_s;
+    float h = vp_w * 0.5f, c = vp_x + h;
+    float m = (c - xl) / h, r = (xr - c) / h;
+    if (r > m) m = r;
+    return m > 1.0f ? m : 1.0f;
+}
+
 /* Wide = Fill's 1.2 scale, plus the 3D world shown past the 4:3 edge: the
  * full-width scissor is opened up and full-width rectangles (clears,
  * backgrounds, fades) are stretched to the screen edges with matching
@@ -675,6 +687,8 @@ void gfx_backend_flush(gfx_state_t *st) {
 #ifdef PM3DS_STEP_PROF
         {   /* the context flush C3D_DrawElements would do, timed on its own */
             extern void C3Di_UpdateContext(void);
+            extern void pm3ds_c3d_count_flags(void);
+            pm3ds_c3d_count_flags();
             PROF_PHASE(PH_CTX);
             C3Di_UpdateContext();
         }
@@ -732,6 +746,8 @@ static float g_cmdbuf_peak;   /* highest use in a frame, for the PERF line */
 /* debug: how many state changes leave the draw state as it was */
 static unsigned g_gp_applies, g_gp_same, g_gp_verts;
 static void gp_count_apply(const gfx_state_t *st, bool rect) {
+    g_gp_applies++;
+#ifdef PM3DS_GP_SAME   /* compare each state change with the last one: costs as much as the change (palette hash) */
     static uint8_t last[512 + 256];
     uint8_t cur[sizeof last];
     size_t n = 0;
@@ -755,9 +771,11 @@ static void gp_count_apply(const gfx_state_t *st, bool rect) {
     for (int i = 0; i < 512; i++) th = (th ^ st->tlut[i]) * 16777619u;
     GP_PUT(&th, 4);
 #undef GP_PUT
-    g_gp_applies++;
     if (!memcmp(cur, last, n)) g_gp_same++;
     memcpy(last, cur, n);
+#else
+    (void)st; (void)rect;
+#endif
 }
 #endif
 
@@ -1101,15 +1119,33 @@ static void sampler_start(void) {
 }
 static void sampler_report(void) {
     static const char *const names[PH_COUNT] = { "walk", "state", "draw", "tex", "game", "wait", "bottom", "end", "present",
-                                                    "comb", "ctx", "fx", "put", "g_scripts", "g_mode", "g_ent", "g_gfx" };
+                                                    "comb", "ctx", "fx", "put", "g_scripts", "g_mode", "g_ent", "g_gfx",
+                                                    "w_enc", "w_npcs", "w_player", "w_items", "w_fx", "w_models", "w_cam",
+                                                    "r_ent", "r_models", "r_player", "r_npcs", "r_workers", "r_fx", "r_tasks", "r_sort" };
     uint32_t snap[PH_COUNT + 256], total = 0;
     for (int i = 0; i < PH_COUNT + 256; i++) { snap[i] = g_samples[i]; g_samples[i] = 0; total += snap[i]; }
     if (!total) return;
     char buf[320];
     int n = snprintf(buf, sizeof buf, "SAMPLE n=%lu", (unsigned long)total);
-    for (int i = 0; i < PH_COUNT; i++)
+    for (int i = 0; i < PH_SUB; i++)
         if (i != PH_WALK && snap[i]) n += snprintf(buf + n, sizeof buf - n, " %s=%lu%%", names[i], (unsigned long)(snap[i] * 100 / total));
     pm3ds_log(PM3DS_LOG_INFO, "%s", buf);
+    /* per mille: the log line is at most 256 bytes, so the finer phases get their own */
+    n = snprintf(buf, sizeof buf, "SAMPLE sub");
+    for (int i = PH_SUB; i < PH_COUNT; i++)
+        if (snap[i]) n += snprintf(buf + n, sizeof buf - n, " %s=%lu", names[i], (unsigned long)(snap[i] * 1000 / total));
+    pm3ds_log(PM3DS_LOG_INFO, "%s", buf);
+    {   /* which citro3d state groups each draw re-sent (C3Di_UpdateContext), per draw x100 */
+        extern unsigned pm3ds_c3d_flag_draws, pm3ds_c3d_flag_cnt[32];
+        if (pm3ds_c3d_flag_draws) {
+            n = snprintf(buf, sizeof buf, "C3DFLAGS draws=%u", pm3ds_c3d_flag_draws);
+            for (int b = 0; b < 32; b++)
+                if (pm3ds_c3d_flag_cnt[b]) n += snprintf(buf + n, sizeof buf - n, " %d=%u", b, pm3ds_c3d_flag_cnt[b] * 100 / pm3ds_c3d_flag_draws);
+            pm3ds_log(PM3DS_LOG_INFO, "%s", buf);
+            memset(pm3ds_c3d_flag_cnt, 0, sizeof pm3ds_c3d_flag_cnt);
+            pm3ds_c3d_flag_draws = 0;
+        }
+    }
     n = snprintf(buf, sizeof buf, "SAMPLE ops");
     for (int k = 0; k < 10 && n < (int)sizeof buf - 16; k++) {   /* the busiest display list commands */
         int best = -1;
@@ -1179,6 +1215,8 @@ static uint64_t g_step_render_ticks;
 static float g_step_gpu_ms;
 static u32 g_frame_vbl;   /* vblank count when the last frame began (C3D_FrameRate 60: every vblank) */
 static int g_step_renders;
+/* Old 3DS: this frame is late, start it now instead of at the next vblank */
+static bool g_late_start;
 
 /* Translate and draw the frame's display lists (once per eye in stereo). */
 static void render_lists(const void *const *lists, int nlists) {
@@ -1190,10 +1228,18 @@ static void render_lists(const void *const *lists, int nlists) {
      * vblank from a GPU that never finished the previous frame */
     pm3ds_bc_main = "vblank wait";
     PROF_PHASE(PH_WAIT);
-    C3D_FrameSync();
+    /* A frame that is already late starts right away: waiting for the next
+     * vblank turned a 34 ms frame into a 50 ms one (a steady 20 fps on an Old
+     * 3DS where most frames missed 33 ms by a millisecond). */
+    bool late = g_late_start;
+    g_late_start = false;
+    if (!late) C3D_FrameSync();
     g_frame_vbl = C3D_FrameCounter(0);
     pm3ds_bc_main = "gpu wait";
     C3D_FrameBegin(0);
+    /* the last frame asked for its buffer swap when the GPU finished it
+     * (C3D_FrameBegin waited for that); see the wait before C3D_FrameEnd */
+    u32 swap_vbl = C3D_FrameCounter(0);
     pm3ds_t_wait += svcGetSystemTick() - t0;
     g_step_gpu_ms += C3D_GetDrawingTime();
     uint64_t t_busy = svcGetSystemTick();
@@ -1284,11 +1330,14 @@ static void render_lists(const void *const *lists, int nlists) {
     pm3ds_bc_main = "bottom screen";
     {
         extern void pm3ds_bottom_screen_render(C3D_RenderTarget *, C3D_RenderTarget *);
-        /* Old 3DS: every other frame (it holds its image in between, and
-         * touches are read in pm3ds_bottom_screen_tick either way) */
-        static unsigned bottom_n;
+        /* Old 3DS: every 4th frame, every other one for half a second after
+         * a touch (it holds its image in between, and touches are read in
+         * pm3ds_bottom_screen_tick either way); ~1.3 ms a draw */
+        static unsigned bottom_n, touch_frames;
         extern bool pm3ds_new_game_picker_blocks_input(void);   /* the picker draws on the top screen too */
-        if (!g_skip_auto || (bottom_n++ & 1) == 0 || pm3ds_new_game_picker_blocks_input()) {
+        if (hidKeysHeld() & KEY_TOUCH) touch_frames = 15;
+        else if (touch_frames) touch_frames--;
+        if (!g_skip_auto || (bottom_n++ & (touch_frames ? 1 : 3)) == 0 || pm3ds_new_game_picker_blocks_input()) {
             GP_BEGIN(tb);
             PROF_PHASE(PH_BOTTOM);
             pm3ds_bottom_screen_render(g_target, stereo ? g_target_right : NULL);
@@ -1307,6 +1356,19 @@ static void render_lists(const void *const *lists, int nlists) {
      * (flushed on upload) and the command list (GX_CMDLIST_FLUSH). */
     svcFlushProcessDataCache(CUR_PROCESS_HANDLE, (u32)g_vbuf, (u32)(sizeof(gpu_vtx_t) * g_vcount));
     svcFlushProcessDataCache(CUR_PROCESS_HANDLE, (u32)g_ibuf, (u32)(sizeof(uint16_t) * g_icount));
+    if (late) {
+        /* not started on a vblank: let one pass since the last frame's swap
+         * request, so this frame's copy goes to the buffer that is really in
+         * the back (gfxScreenSwapBuffers flips libctru's index at once, the
+         * screen at the next vblank). A Toad Town frame takes ~28 ms, so
+         * this rarely waits. */
+        uint64_t tw = svcGetSystemTick();
+        PROF_PHASE(PH_WAIT);
+        while (C3D_FrameCounter(0) == swap_vbl) C3D_FrameSync();
+        pm3ds_t_wait += svcGetSystemTick() - tw;
+        t_busy += svcGetSystemTick() - tw;   /* not render time */
+        PROF_PHASE(PH_END);
+    }
     C3D_FrameEnd(GX_CMDLIST_FLUSH);
     GP_END(te, GP_FRAMEEND);
     pm3ds_bc_main = "frame done";
@@ -1537,6 +1599,9 @@ void pm3ds_gfx_present_frame(void) {
     }
     u32 step_vbl = C3D_FrameCounter(0) + (render ? 1u : 0u);
     bool interp_on = false;
+    /* Old 3DS, frame due already: start it now (render_lists) */
+    g_late_start = render && g_skip_auto && due_valid && !pm3ds_fast_forward() &&
+                   (s32)(C3D_FrameCounter(0) - due) >= 0;
     if (render) {
         bool interp = fps60 && n > 0 && (slider_now() <= 0.02f || g_stereo_interp) && !pm3ds_fast_forward() &&
                       !g_skipped_steps;

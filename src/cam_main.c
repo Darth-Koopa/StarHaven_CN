@@ -2,6 +2,9 @@
 #include "camera.h"
 #include "nu/nusys.h"
 #include "hud_element.h"
+#ifdef _3DS
+#include "gfx_prof.h"   // 3DS port: sampling profiler phases (empty unless PM3DS_STEP_PROF)
+#endif
 #include "camera.h"
 
 void render_models(void);
@@ -212,17 +215,41 @@ void render_frame(s32 isSecondPass) {
 
         if (!(camera->flags & CAMERA_FLAG_ORTHO)) {
             if (gCurrentCamID != CAM_HUD) {
+#ifdef _3DS
+                PROF_PHASE(PH_R_ENT);
+#endif
                 if (!(camera->flags & CAMERA_FLAG_RENDER_ENTITIES)) {
                     render_entities();
                 }
+#ifdef _3DS
+                PROF_PHASE(PH_R_MODELS);
+#endif
                 if (!(camera->flags & CAMERA_FLAG_RENDER_MODELS)) {
                     render_models();
                 }
+#ifdef _3DS
+                PROF_PHASE(PH_R_PLAYER);
+#endif
                 render_player();
+#ifdef _3DS
+                PROF_PHASE(PH_R_NPCS);
+#endif
                 render_npcs();
+#ifdef _3DS
+                PROF_PHASE(PH_R_WORKERS);
+#endif
                 render_workers_scene();
+#ifdef _3DS
+                PROF_PHASE(PH_R_FX);
+#endif
                 render_effects_scene();
+#ifdef _3DS
+                PROF_PHASE(PH_R_TASKS);
+#endif
                 execute_render_tasks();
+#ifdef _3DS
+                PROF_PHASE(PH_G_GFX);
+#endif
                 render_transformed_hud_elements();
             } else {
                 guOrthoF(camera->mtxPerspective, 0.0f, SCREEN_WIDTH, -SCREEN_HEIGHT, 0.0f, -1000.0f, 1000.0f,

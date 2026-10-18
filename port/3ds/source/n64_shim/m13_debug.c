@@ -26,7 +26,8 @@ void set_battle_formation(Battle* battle);
     defined(PM3DS_TELEPORT_X) || defined(PM3DS_COLLIDER_CHECK) || defined(PM3DS_START_BARE) || \
     defined(PM3DS_FX_TEST) || defined(PM3DS_TEST_LEVELUP) || defined(PM3DS_BATTLE_SWEEP) || \
     defined(PM3DS_STORY_SWEEP) || defined(PM3DS_FX_SWEEP) || defined(PM3DS_NO_BATTLES) || \
-    defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST)
+    defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST) || defined(PM3DS_ENC_TEST) || \
+    defined(PM3DS_JOURNAL_TEST)
 /* make_cia.sh refuses to publish a binary containing this string */
 __attribute__((used)) const char pm3ds_debug_build_marker[] = "PM3DS-DEBUG-BUILD";
 #endif
@@ -423,7 +424,8 @@ void pm3ds_game_debug_tick(u32 frame) {
     defined(PM3DS_TELEPORT_X) || defined(PM3DS_COLLIDER_CHECK) || defined(PM3DS_START_BARE) || \
     defined(PM3DS_FX_TEST) || defined(PM3DS_TEST_LEVELUP) || defined(PM3DS_BATTLE_SWEEP) || \
     defined(PM3DS_STORY_SWEEP) || defined(PM3DS_FX_SWEEP) || defined(PM3DS_NO_BATTLES) || \
-    defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST)
+    defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST) || defined(PM3DS_ENC_TEST) || \
+    defined(PM3DS_JOURNAL_TEST)
     if (frame == 1) {
         pm3ds_log(2, "%s", pm3ds_debug_build_marker);   /* keeps the marker linked */
     }
@@ -580,6 +582,64 @@ void pm3ds_game_debug_tick(u32 frame) {
             gPlayerStatus.pos.y = PM3DS_TELEPORT_Y;
             gPlayerStatus.pos.z = PM3DS_TELEPORT_Z;
             pm3ds_log(2, "TELEPORT player -> (%d,%d,%d)", PM3DS_TELEPORT_X, PM3DS_TELEPORT_Y, PM3DS_TELEPORT_Z);
+        }
+    }
+#endif
+#ifdef PM3DS_JOURNAL_TEST
+    {   /* debug: something for the Tattle and Found tabs: the first 40 actor types tattled, a few pickups */
+        static s32 done;
+        if (!done && gGameStatusPtr != nullptr && get_game_mode() == GAME_MODE_WORLD) {
+            done = 1;
+            for (s32 i = 0; i < 5; i++) {
+                set_global_byte(EVT_INDEX_OF_GAME_BYTE(GB_Tattles_00) + i, 0xFF);
+            }
+            evt_set_variable(nullptr, GF_ARN04_Item_StarPiece, true);
+            evt_set_variable(nullptr, GF_ARN02_Item_DizzyDial, true);
+            evt_set_variable(nullptr, GF_ARN02_ItemBlock_CoinA, true);
+            evt_set_variable(nullptr, GF_ARN03_ItemBlock_Coin, true);
+            evt_set_variable(nullptr, GF_ARN04_ItemBlock_Coin, true);
+            evt_set_variable(nullptr, GF_ARN04_ItemBlock_SuperShroom, true);
+            evt_set_variable(nullptr, GF_DRO02_HiddenPanel, true);
+            pm3ds_log(2, "JOURNAL test flags set");
+        }
+    }
+#endif
+#ifdef PM3DS_ENC_TEST
+    {   /* debug: real world encounters in turn (encounter PM3DS_ENC_TEST onwards): walk the enemy into
+         * the player, then give every enemy actor 1 HP at the first player menu so a jump wins */
+        static s32 worldFrames, enc = PM3DS_ENC_TEST, lowered;
+        if (gGameStatusPtr != nullptr && get_game_mode() == GAME_MODE_WORLD) {
+            lowered = 0;
+            if (++worldFrames > 150 && enc < gCurrentEncounter.numEncounters) {
+                Encounter* e = gCurrentEncounter.encounterList[enc];
+                Enemy* en = e != nullptr && e->count > 0 ? e->enemy[0] : nullptr;
+                Npc* npc = en != nullptr ? get_npc_safe(en->npcID) : nullptr;
+                if (npc == nullptr || (en->flags & ENEMY_FLAG_DISABLE_AI)) {
+                    enc++;
+                    worldFrames = 0;
+                } else {
+                    if (worldFrames == 151) {
+                        pm3ds_log(2, "ENCTEST encounter %d battle %04X npc %d", (int)enc, (int)e->battle, (int)en->npcID);
+                    }
+                    npc->pos.x = gPlayerStatus.pos.x + 10.0f;
+                    npc->pos.y = gPlayerStatus.pos.y;
+                    npc->pos.z = gPlayerStatus.pos.z;
+                }
+            }
+        } else if (gGameStatusPtr != nullptr && get_game_mode() == GAME_MODE_BATTLE) {
+            if (worldFrames > 150) {
+                enc++;
+            }
+            worldFrames = 0;
+            if (!lowered && gBattleState == BATTLE_STATE_PLAYER_MENU) {
+                lowered = 1;
+                for (s32 i = 0; i < MAX_ENEMY_ACTORS; i++) {
+                    if (gBattleStatus.enemyActors[i] != nullptr) {
+                        gBattleStatus.enemyActors[i]->curHP = 1;
+                    }
+                }
+                pm3ds_log(2, "ENCTEST enemies at 1 HP, frame %u", (unsigned)frame);
+            }
         }
     }
 #endif

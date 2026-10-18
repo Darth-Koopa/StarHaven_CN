@@ -62,6 +62,255 @@ void load_hit_data(s32 idx, HitFile* hit);
 void _add_hit_vert_to_buffer(Vec3f** buf, Vec3f* vert, s32* bufSize);
 s32 _get_hit_vert_index_from_buffer(Vec3f** buffer, Vec3f* vert, s32* bufferSize);
 
+#if defined(_3DS) && !defined(PM3DS_COLLIDER_CHECK)
+/* 3DS port: a broadphase for test_ray_colliders. Every ray used to read each
+ * collider and follow its AABB pointer: two cache misses per collider, a few
+ * hundred colliders, dozens of rays a step (player and NPCs), ~3 ms a step on
+ * an Old 3DS. A coarse XZ grid lists the colliders whose box touches each
+ * cell; a short ray tests only the colliders of its cells, in the original
+ * order, so the result is the same. Colliders that move (parented to a model:
+ * update_collider_transform rewrites their box) and very large ones are tested
+ * by every ray. Rebuilt lazily after a collision load or when a collider first
+ * moves. -DPM3DS_COLGRID_VERIFY checks every ray against the full scan. */
+#include <stdlib.h>
+#include <string.h>
+#define COLGRID 1
+#define CG_MAX_DIM 64       /* cells per axis */
+#define CG_MAX_SPAN 1024    /* a collider over more cells is always tested */
+#define CG_MAX_QUERY 16     /* a ray over more cells scans everything */
+static struct {
+    Collider* list;
+    s32 num;
+    u32 builtGen;
+    s32 valid;
+    f32 x0, z0, inv;
+    s32 nx, nz;
+    u32* start;             /* nx * nz + 1 */
+    u16* items;
+    u16* always;
+    s32 numAlways;
+    u32* bits;              /* candidate set, one bit per collider */
+    u16* cand;              /* the same in ascending order */
+    u8* moving;             /* per collider: parented to a model */
+    s32 cap;
+} sColGrid;
+static u32 sColGridGen = 1;
+
+static void colgrid_reset(void) {
+    sColGridGen++;
+    if (sColGrid.moving != nullptr) {
+        memset(sColGrid.moving, 0, sColGrid.cap);
+    }
+}
+
+static void colgrid_reserve(s32 num) {
+    if (num <= sColGrid.cap) {
+        return;
+    }
+    free(sColGrid.moving);
+    free(sColGrid.bits);
+    free(sColGrid.cand);
+    sColGrid.cap = (num + 63) & ~63;
+    sColGrid.moving = calloc(sColGrid.cap, 1);
+    sColGrid.bits = malloc(sColGrid.cap / 8);
+    sColGrid.cand = malloc(sColGrid.cap * sizeof(u16));
+    if (sColGrid.moving == nullptr || sColGrid.bits == nullptr || sColGrid.cand == nullptr) {
+        free(sColGrid.moving);
+        free(sColGrid.bits);
+        free(sColGrid.cand);
+        sColGrid.moving = nullptr;
+        sColGrid.bits = nullptr;
+        sColGrid.cand = nullptr;
+        sColGrid.cap = 0;
+    }
+}
+
+static void colgrid_mark_moving(s32 id) {
+    colgrid_reserve(gCollisionData.numColliders);
+    if (id >= 0 && id < sColGrid.cap && !sColGrid.moving[id]) {
+        sColGrid.moving[id] = true;
+        sColGridGen++;
+    }
+}
+
+static s32 colgrid_cell(f32 v, f32 origin, s32 dim) {
+    s32 c;
+    if (!(v > origin)) {
+        return 0;
+    }
+    c = (s32)((v - origin) * sColGrid.inv);
+    return c >= dim ? dim - 1 : c;
+}
+
+static void colgrid_build(void) {
+    CollisionData* cd = &gCollisionData;
+    s32 num = cd->numColliders;
+    f32 minX = 1e30f, maxX = -1e30f, minZ = 1e30f, maxZ = -1e30f;
+    s32 i, x, z, total, cells;
+    u32* fill;
+
+    sColGrid.list = cd->colliderList;
+    sColGrid.num = num;
+    sColGrid.builtGen = sColGridGen;
+    sColGrid.valid = false;
+    free(sColGrid.start);
+    free(sColGrid.items);
+    free(sColGrid.always);
+    sColGrid.start = nullptr;
+    sColGrid.items = nullptr;
+    sColGrid.always = nullptr;
+    if (num <= 0 || cd->colliderList == nullptr) {
+        return;
+    }
+    colgrid_reserve(num);
+    if (sColGrid.cap < num) {
+        return;
+    }
+    for (i = 0; i < num; i++) {
+        Collider* c = &cd->colliderList[i];
+        if (c->numTriangles == 0 || c->aabb == nullptr || sColGrid.moving[i]) {
+            continue;
+        }
+        if (c->aabb->min.x < minX) minX = c->aabb->min.x;
+        if (c->aabb->max.x > maxX) maxX = c->aabb->max.x;
+        if (c->aabb->min.z < minZ) minZ = c->aabb->min.z;
+        if (c->aabb->max.z > maxZ) maxZ = c->aabb->max.z;
+    }
+    if (!(maxX - minX >= 0.0f && maxX - minX < 1e7f && maxZ - minZ >= 0.0f && maxZ - minZ < 1e7f)) {
+        return;
+    }
+    {
+        f32 extent = maxX - minX > maxZ - minZ ? maxX - minX : maxZ - minZ;
+        f32 cell = extent / CG_MAX_DIM;
+        if (cell < 16.0f) {
+            cell = 16.0f;
+        }
+        sColGrid.inv = 1.0f / cell;
+    }
+    sColGrid.x0 = minX;
+    sColGrid.z0 = minZ;
+    sColGrid.nx = (s32)((maxX - minX) * sColGrid.inv) + 1;
+    sColGrid.nz = (s32)((maxZ - minZ) * sColGrid.inv) + 1;
+    if (sColGrid.nx > CG_MAX_DIM) sColGrid.nx = CG_MAX_DIM;
+    if (sColGrid.nz > CG_MAX_DIM) sColGrid.nz = CG_MAX_DIM;
+    cells = sColGrid.nx * sColGrid.nz;
+    sColGrid.start = calloc(cells + 1, sizeof(u32));
+    sColGrid.always = malloc(num * sizeof(u16));
+    if (sColGrid.start == nullptr || sColGrid.always == nullptr) {
+        return;
+    }
+
+    // count, then fill (two passes over the same cell ranges)
+    sColGrid.numAlways = 0;
+    total = 0;
+    for (i = 0; i < num; i++) {
+        Collider* c = &cd->colliderList[i];
+        s32 x0, x1, z0, z1;
+        if (c->numTriangles == 0) {
+            continue;
+        }
+        if (c->aabb == nullptr || sColGrid.moving[i]) {
+            sColGrid.always[sColGrid.numAlways++] = i;
+            continue;
+        }
+        x0 = colgrid_cell(c->aabb->min.x, sColGrid.x0, sColGrid.nx);
+        x1 = colgrid_cell(c->aabb->max.x, sColGrid.x0, sColGrid.nx);
+        z0 = colgrid_cell(c->aabb->min.z, sColGrid.z0, sColGrid.nz);
+        z1 = colgrid_cell(c->aabb->max.z, sColGrid.z0, sColGrid.nz);
+        if ((x1 - x0 + 1) * (z1 - z0 + 1) > CG_MAX_SPAN) {
+            sColGrid.always[sColGrid.numAlways++] = i;
+            continue;
+        }
+        for (z = z0; z <= z1; z++) {
+            for (x = x0; x <= x1; x++) {
+                sColGrid.start[z * sColGrid.nx + x + 1]++;
+                total++;
+            }
+        }
+    }
+    for (i = 0; i < cells; i++) {
+        sColGrid.start[i + 1] += sColGrid.start[i];
+    }
+    sColGrid.items = malloc((total > 0 ? total : 1) * sizeof(u16));
+    fill = malloc(cells * sizeof(u32));
+    if (sColGrid.items == nullptr || fill == nullptr) {
+        free(fill);
+        return;
+    }
+    memcpy(fill, sColGrid.start, cells * sizeof(u32));
+    for (i = 0; i < num; i++) {
+        Collider* c = &cd->colliderList[i];
+        s32 x0, x1, z0, z1;
+        if (c->numTriangles == 0 || c->aabb == nullptr || sColGrid.moving[i]) {
+            continue;
+        }
+        x0 = colgrid_cell(c->aabb->min.x, sColGrid.x0, sColGrid.nx);
+        x1 = colgrid_cell(c->aabb->max.x, sColGrid.x0, sColGrid.nx);
+        z0 = colgrid_cell(c->aabb->min.z, sColGrid.z0, sColGrid.nz);
+        z1 = colgrid_cell(c->aabb->max.z, sColGrid.z0, sColGrid.nz);
+        if ((x1 - x0 + 1) * (z1 - z0 + 1) > CG_MAX_SPAN) {
+            continue;
+        }
+        for (z = z0; z <= z1; z++) {
+            for (x = x0; x <= x1; x++) {
+                sColGrid.items[fill[z * sColGrid.nx + x]++] = i;
+            }
+        }
+    }
+    free(fill);
+    sColGrid.valid = true;
+}
+
+/* The colliders a ray with this XZ box can touch, ascending in sColGrid.cand;
+ * returns how many, or -1: test them all. */
+static s32 colgrid_candidates(f32 min_x, f32 max_x, f32 min_z, f32 max_z) {
+    s32 x0, x1, z0, z1, x, z, words, n;
+    if (sColGrid.builtGen != sColGridGen || sColGrid.list != gCollisionData.colliderList ||
+        sColGrid.num != gCollisionData.numColliders) {
+        colgrid_build();
+    }
+    if (!sColGrid.valid) {
+        return -1;
+    }
+    // NaN fails every compare here (and passes the original AABB test)
+    if (!(min_x >= -1e30f && max_x <= 1e30f && min_z >= -1e30f && max_z <= 1e30f)) {
+        return -1;
+    }
+    x0 = colgrid_cell(min_x, sColGrid.x0, sColGrid.nx);
+    x1 = colgrid_cell(max_x, sColGrid.x0, sColGrid.nx);
+    z0 = colgrid_cell(min_z, sColGrid.z0, sColGrid.nz);
+    z1 = colgrid_cell(max_z, sColGrid.z0, sColGrid.nz);
+    if ((x1 - x0 + 1) * (z1 - z0 + 1) > CG_MAX_QUERY) {
+        return -1;
+    }
+    words = (sColGrid.num + 31) >> 5;
+    memset(sColGrid.bits, 0, words * sizeof(u32));
+    for (z = z0; z <= z1; z++) {
+        for (x = x0; x <= x1; x++) {
+            s32 cellIdx = z * sColGrid.nx + x;
+            u32 k;
+            for (k = sColGrid.start[cellIdx]; k < sColGrid.start[cellIdx + 1]; k++) {
+                u32 id = sColGrid.items[k];
+                sColGrid.bits[id >> 5] |= 1u << (id & 31);
+            }
+        }
+    }
+    for (x = 0; x < sColGrid.numAlways; x++) {
+        u32 id = sColGrid.always[x];
+        sColGrid.bits[id >> 5] |= 1u << (id & 31);
+    }
+    n = 0;
+    for (x = 0; x < words; x++) {
+        u32 m = sColGrid.bits[x];
+        while (m != 0) {
+            sColGrid.cand[n++] = (x << 5) + __builtin_ctz(m);
+            m &= m - 1;
+        }
+    }
+    return n;
+}
+#endif
+
 void backup_map_collision_data(void) {
     CollisionData* collisionData;
     Collider* collider;
@@ -94,6 +343,9 @@ void func_8005AF8C(void) {
 }
 
 void initialize_collision(void) {
+#ifdef COLGRID
+    colgrid_reset();
+#endif
     gCollisionData.numColliders = 0;
     gZoneCollisionData.numColliders = 0;
     collision_heap_create();
@@ -249,6 +501,9 @@ void restore_map_collision_data(void) {
 }
 
 void load_battle_hit_asset(const char* hitName) {
+#ifdef COLGRID
+    colgrid_reset();
+#endif
     if (hitName == nullptr) {
         gCollisionData.numColliders = 0;
     } else {
@@ -303,6 +558,9 @@ void load_hit_data(s32 idx, HitFile* hit) {
 
             assetCollisionData = (HitFileHeader*)((void*)hit + collisionOffset);
             collisionData = &gCollisionData;
+#ifdef COLGRID
+            colgrid_reset();
+#endif
             break;
         case 1: // Zones
             collisionOffset = map->hitAssetZoneOffset;
@@ -435,6 +693,9 @@ void parent_collider_to_model(s16 colliderID, s16 modelIndex) {
     collider = &gCollisionData.colliderList[colliderID];
     collider->parentModelIndex = modelIndex;
     collider->flags |= COLLIDER_FLAG_HAS_MODEL_PARENT;
+#ifdef COLGRID
+    colgrid_mark_moving(colliderID);
+#endif
 
     vertexBuffer = collision_heap_malloc(collider->numTriangles * sizeof(Vec3f));
     vertexBufferSize = 0;
@@ -513,6 +774,9 @@ void update_collider_transform(s16 colliderID) {
 
     collider = &gCollisionData.colliderList[colliderID];
     model = get_model_from_list_index(collider->parentModelIndex);
+#ifdef COLGRID
+    colgrid_mark_moving(colliderID);
+#endif
 
     if (model->bakedMtx == nullptr) {
         copy_matrix(model->userTransformMtx, matrix);
@@ -931,7 +1195,44 @@ s32 test_ray_colliders(s32 ignoreFlags, f32 startX, f32 startY, f32 startZ, f32 
         max_z = startZ + dirZ * gCollisionRayLength;
     }
 
+#ifdef COLGRID
+    s32 numCand = colgrid_candidates(min_x, max_x, min_z, max_z), ci;
+    const u16* order = numCand < 0 ? nullptr : sColGrid.cand;
+#ifdef PM3DS_COLGRID_VERIFY
+    if (order != nullptr) {   // every collider the full scan would test must be a candidate
+        static s32 rays, bad;
+        rays++;
+        for (i = 0; i < collisionData->numColliders; i++) {
+            collider = &collisionData->colliderList[i];
+            if ((collider->flags & ignoreFlags) || collider->numTriangles == 0 ||
+                max_x < collider->aabb->min.x || min_x > collider->aabb->max.x ||
+                max_z < collider->aabb->min.z || min_z > collider->aabb->max.z ||
+                max_y < collider->aabb->min.y || min_y > collider->aabb->max.y) {
+                continue;
+            }
+            if (!(sColGrid.bits[i >> 5] & (1u << (i & 31))) && bad++ < 8) {
+                extern void pm3ds_log(int, const char*, ...);
+                pm3ds_log(3, "COLGRID miss: collider %d of %d, ray x %d..%d z %d..%d", i, collisionData->numColliders,
+                          (s32)min_x, (s32)max_x, (s32)min_z, (s32)max_z);
+            }
+        }
+        if ((rays & 4095) == 0) {
+            extern void pm3ds_log(int, const char*, ...);
+            s32 nmov = 0;
+            for (i = 0; i < collisionData->numColliders; i++) nmov += sColGrid.moving[i];
+            pm3ds_log(2, "COLGRID rays=%d misses=%d colliders=%d candidates=%d always=%d moving=%d grid=%dx%d", rays, bad,
+                      collisionData->numColliders, numCand, sColGrid.numAlways, nmov, sColGrid.nx, sColGrid.nz);
+        }
+    }
+#endif
+    if (order == nullptr) {
+        numCand = collisionData->numColliders;
+    }
+    for (ci = 0; ci < numCand; ci++) {
+        i = order != nullptr ? order[ci] : ci;
+#else
     for (i = 0; i < collisionData->numColliders; i++) {
+#endif
         collider = &collisionData->colliderList[i];
 
 #ifdef PM3DS_COLLIDER_CHECK

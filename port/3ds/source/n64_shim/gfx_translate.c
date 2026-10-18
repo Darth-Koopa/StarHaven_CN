@@ -284,6 +284,11 @@ static void handle_vtx(gfx_state_t *st, const gfx_cmd_t *g) {
     const float (*m)[4] = st->mvp;
     const float vsx = st->vp_scale[0] * 0.25f, vtx_ = st->vp_trans[0] * 0.25f;
     const float vsy = st->vp_scale[1] * 0.25f, vty = st->vp_trans[1] * 0.25f;
+    /* loop invariants the compiler can't hoist (the stores below may alias them);
+     * x * scale / 65536 == x * (scale / 65536) exactly: a power-of-two step */
+    const uint32_t gm = st->geometry_mode;
+    const float tss = st->tex_scale_s * (1.0f / 65536.0f), tst = st->tex_scale_t * (1.0f / 65536.0f);
+    const float stereo = pm3ds_stereo_shift;
 
     for (int i = 0; i < n; i++) {
         const n64_vtx_t *v = &src[i];
@@ -297,8 +302,8 @@ static void handle_vtx(gfx_state_t *st, const gfx_cmd_t *g) {
         /* N64 viewport: screen y is flipped by the RSP. */
         d->px =  d->cx * vsx + d->cw * vtx_;
         d->py = -d->cy * vsy + d->cw * vty;
-        if (pm3ds_stereo_shift != 0.0f && d->cw != 1.0f) {
-            d->px += pm3ds_stereo_shift * (d->cw - PM3DS_STEREO_CONV);   /* homogeneous */
+        if (stereo != 0.0f && d->cw != 1.0f) {
+            d->px += stereo * (d->cw - PM3DS_STEREO_CONV);   /* homogeneous */
         }
 
         float s = v->tc[0], t = v->tc[1];
@@ -320,10 +325,10 @@ static void handle_vtx(gfx_state_t *st, const gfx_cmd_t *g) {
             d->r = (uint8_t)(r  > 255.0f ? 255 : r);
             d->g = (uint8_t)(gg > 255.0f ? 255 : gg);
             d->b = (uint8_t)(b  > 255.0f ? 255 : b);
-            if (st->geometry_mode & GM_TEXGEN) {
+            if (gm & GM_TEXGEN) {
                 float dx = nx * st->lookat_model[0][0] + ny * st->lookat_model[0][1] + nz * st->lookat_model[0][2];
                 float dy = nx * st->lookat_model[1][0] + ny * st->lookat_model[1][1] + nz * st->lookat_model[1][2];
-                if (st->geometry_mode & GM_TEXGEN_LINEAR) {
+                if (gm & GM_TEXGEN_LINEAR) {
                     dx = acosf(-dx) / 4.0f;
                     dy = acosf(-dy) / 4.0f;
                 } else {
@@ -333,15 +338,15 @@ static void handle_vtx(gfx_state_t *st, const gfx_cmd_t *g) {
                 s = dx * st->tex_scale_s;
                 t = dy * st->tex_scale_t;
             } else {
-                s = s * st->tex_scale_s / 65536.0f;
-                t = t * st->tex_scale_t / 65536.0f;
+                s = s * tss;
+                t = t * tst;
             }
         } else {
             d->r = v->cn[0];
             d->g = v->cn[1];
             d->b = v->cn[2];
-            s = s * st->tex_scale_s / 65536.0f;
-            t = t * st->tex_scale_t / 65536.0f;
+            s = s * tss;
+            t = t * tst;
         }
         d->a = v->cn[3];
         d->s = s;
@@ -354,7 +359,7 @@ static void handle_vtx(gfx_state_t *st, const gfx_cmd_t *g) {
                       d->r, d->g, d->b, d->a, (unsigned)st->geometry_mode);
         }
 
-        if (st->geometry_mode & GM_FOG) {
+        if (gm & GM_FOG) {
             /* F3DEX2: shade alpha becomes the fog factor. */
             float winv = d->cw > 0.0f ? 1.0f / d->cw : 32767.0f;
             float f = d->cz * winv * st->fog_mul + st->fog_offset;

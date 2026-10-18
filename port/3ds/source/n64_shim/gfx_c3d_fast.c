@@ -61,6 +61,17 @@ static bool unif_dirty(GPU_SHADER_TYPE type) {
     return any || C3D_BoolUnifsDirty[type];
 }
 
+#ifdef PM3DS_STEP_PROF
+/* profiling: which dirty flags C3Di_UpdateContext finds at each draw */
+unsigned pm3ds_c3d_flag_draws, pm3ds_c3d_flag_cnt[32];
+void pm3ds_c3d_count_flags(void) {
+    u32 f = __C3D_Context.flags;
+    pm3ds_c3d_flag_draws++;
+    for (int b = 0; b < 32; b++)
+        if (f & (1u << b)) pm3ds_c3d_flag_cnt[b]++;
+}
+#endif
+
 #ifdef PM3DS_C3D_VERIFY
 static unsigned s_ver_draws, s_ver_bad, s_ver_skips, s_ver_skip_bad;
 #endif

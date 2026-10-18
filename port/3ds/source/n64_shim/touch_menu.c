@@ -59,8 +59,10 @@ static const s8 sFuncArgs[0x30] = {
     1, 1, 0, 0, 0, 0, -1, 1, 1, 1, 1, 0, 4, -1, 1, 1,   /* 20 set cancel .. 2F voice */
 };
 
-static void decode_msg(s32 msgID, char* out, s32 size) {
-    static u8 buf[1024];
+/* dialogue: a whole text box (tattles), whose style codes are skipped instead of
+ * ending the text and whose pages run on as one paragraph */
+static void decode_msg_as(s32 msgID, char* out, s32 size, bool dialogue) {
+    static u8 buf[2048];
     const u8* m;
     s32 n = 0;
     s32 i;
@@ -85,6 +87,8 @@ static void decode_msg(s32 msgID, char* out, s32 size) {
             if (n > 0 && out[n - 1] != ' ') {
                 out[n++] = ' ';
             }
+        } else if (c == MSG_CHAR_READ_PAUSE) {
+            i++;   // its length in frames
         } else if (c == MSG_CHAR_READ_FUNCTION) {
             u8 f = m[++i];
             if (f >= ARRAY_COUNT(sFuncArgs) || sFuncArgs[f] < 0) {
@@ -92,7 +96,11 @@ static void decode_msg(s32 msgID, char* out, s32 size) {
             }
             i += sFuncArgs[f];
         } else if (c == MSG_CHAR_READ_STYLE) {
-            break;   // only dialogue boxes use styles
+            if (!dialogue) {
+                break;   // only dialogue boxes use styles
+            }
+            u8 style = m[++i];   // arguments as msg.c reads them
+            i += style == MSG_STYLE_CHOICE ? 4 : style == MSG_STYLE_POSTCARD ? 1 : 0;
         } else if (c < 0xF0 && c + 0x20 < 0x100) {
             out[n++] = (char)(c + 0x20);
         }
@@ -101,6 +109,15 @@ static void decode_msg(s32 msgID, char* out, s32 size) {
         n--;
     }
     out[n] = '\0';
+}
+
+static void decode_msg(s32 msgID, char* out, s32 size) {
+    decode_msg_as(msgID, out, size, false);
+}
+
+/* for n64_shim/journal.c */
+void pm3ds_decode_msg(s32 msgID, char* out, s32 size, bool dialogue) {
+    decode_msg_as(msgID, out, size, dialogue);
 }
 
 /* decode only when the message changed: these run every frame */
