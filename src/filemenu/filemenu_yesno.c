@@ -398,6 +398,10 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
                         gPlayerData.partners[PARTNER_GOOMBARIO].enabled = true;
                         gPlayerData.curPartner = PARTNER_GOOMBARIO;
 #endif
+#ifdef PM3DS_START_PARTNER   /* e.g. -DPM3DS_START_PARTNER=PARTNER_BOW for scenes that need one */
+                        gPlayerData.partners[PM3DS_START_PARTNER].enabled = true;
+                        gPlayerData.curPartner = PM3DS_START_PARTNER;
+#endif
 #ifdef PM3DS_START_INVENTORY
                         {   // debug builds only: something in every menu (items, badges, partners, coins)
                             static const s16 items[] = { ITEM_MUSHROOM, ITEM_SUPER_SHROOM, ITEM_FIRE_FLOWER,

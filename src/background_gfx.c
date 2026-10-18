@@ -335,7 +335,10 @@ void gfx_draw_background(void) {
                 extern void pm3ds_request_frame_capture(u16* dst);
                 pm3ds_request_frame_capture(nuGfxZBuffer);
             }
-#endif
+            // no coverage pass: nothing reads it here (gfx_transfer_frame_to_depth), and the
+            // renderer draws any 320-wide color image to the screen, so its fill flashed
+            // the screen white for a frame on every pause
+#else
             // Save coverage to nunGfxCfb[1] using the VISCVG render mode
             gDPPipeSync(gMainGfxPos++);
             gDPSetColorImage(gMainGfxPos++, G_IM_FMT_RGBA, G_IM_SIZ_16b, SCREEN_WIDTH, nuGfxCfb[1]);
@@ -347,9 +350,16 @@ void gfx_draw_background(void) {
             gDPFillRectangle(gMainGfxPos++, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
             gDPPipeSync(gMainGfxPos++);
             gDPSetDepthSource(gMainGfxPos++, G_ZS_PIXEL);
+#endif
             gGameStatusPtr->backgroundFlags &= ~BACKGROUND_RENDER_STATE_MASK;
             gGameStatusPtr->backgroundFlags |= BACKGROUND_RENDER_STATE_FILTER_PAUSED;
+#ifdef _3DS
+            // the capture is taken before this frame is drawn, so show it already: the N64
+            // kept the old picture on screen for this frame, an empty frame here is black
+            // fallthrough
+#else
             break;
+#endif
         case BACKGROUND_RENDER_STATE_FILTER_PAUSED:
             // Save the framebuffer into the depth buffer and run a filter on it based on the saved coverage values
             gfx_transfer_frame_to_depth(nuGfxCfb[0], nuGfxCfb[1], nuGfxZBuffer); // applies filters to the framebuffer

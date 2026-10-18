@@ -660,14 +660,10 @@ void pm3ds_game_debug_tick(u32 frame) {
         return;
     }
     MapConfig* mc = get_current_map_config();
-    s32 npcs = 0;
-    {
-        for (s32 i = 0; i < MAX_NPCS; i++) {
-            if (get_npc_by_index(i) != nullptr) {
-                npcs++;
-            }
-        }
-    }
+    /* gNpcCount, not get_npc_by_index: the NPC list pointer is null until the game first
+     * sets up its NPCs, and an Old 3DS can still be loading at frame 300 (crash, 1.0.13) */
+    extern s16 gNpcCount;
+    s32 npcs = gNpcCount;
     pm3ds_log(2, "GAMESTAT mode=%d ctx=%d f=%u area=%d map=%d (%s) entry=%d player=(%.0f,%.0f,%.0f) scripts=%d npcs=%d story=%d",
               get_game_mode(), gGameStatusPtr->context, (unsigned)frame, gGameStatusPtr->areaID, gGameStatusPtr->mapID,
               mc != nullptr ? mc->id : "-", gGameStatusPtr->entryID,

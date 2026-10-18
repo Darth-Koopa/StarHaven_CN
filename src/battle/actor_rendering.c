@@ -2065,7 +2065,13 @@ void make_flash_palettes(ActorPart* part) {
             dest = decorations->copiedPalettes[1][i];
 
             for (j = 0; j < SPR_PAL_SIZE; j++) {
+#ifdef _3DS
+                // big-endian in memory: the alpha bit is the low bit of the second byte.
+                // 0xFFFE read natively set alpha on every entry (a pink box around the sprite)
+                *dest = *src | __builtin_bswap16(0xFFFE);
+#else
                 *dest = *src | 0xFFFE; // pure white, not affecting alpha bit
+#endif
                 src++;
                 dest++;
 
