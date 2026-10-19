@@ -72,6 +72,15 @@ void nuPiReadRom(uint32_t rom_addr, void *buf_ptr, uint32_t size) {
         return;
     }
 
+    /* The buffer may hold an image the renderer has cached (dma_copy does the
+     * same). The player raster cache reloads its slots here: an open-eye and a
+     * closed-eye frame differ only in rows the cache's content sample skips, so
+     * without this Mario kept the previous eyes (blinks reversed, GitHub #16). */
+    {
+        extern void gfx_tex_invalidate_range(const void *addr, size_t len);
+        gfx_tex_invalidate_range(buf_ptr, size);
+    }
+
     /* One-shot confirmation that real bytes are moving. */
     {
         static int logged = 0;

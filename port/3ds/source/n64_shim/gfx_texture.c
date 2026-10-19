@@ -254,6 +254,9 @@ typedef struct gfx_tex_entry {
     int      in_hash;
     uint32_t ext_stride, ext_tlut, ext_frame;   /* M12 key extension */
     uint32_t ext_sample;                        /* M14.6: texel content sample */
+#ifdef PM3DS_STALE_DBG
+    uint32_t dbg_full;                          /* hash of every row, to catch stale hits */
+#endif
 } gfx_tex_entry_t;
 
 /* GPU texture bytes (linear heap, shared with framebuffers, vertex buffers,
@@ -733,6 +736,19 @@ static inline int tex_wrap_coord(int x, int mask, int mirror) {
     return (mirror && ((x >> mask) & 1)) ? m - v : v;
 }
 
+#ifdef PM3DS_STALE_DBG
+/* debug builds only: a hash of every source row; a cache hit whose source no
+ * longer matches what was uploaded draws stale texels */
+static uint32_t dbg_full_hash(uint32_t src, uint32_t stride, uint32_t row_bytes, int h) {
+    uint32_t f = 2166136261u;
+    for (int y = 0; y < h; y++) {
+        const uint8_t *r = (const uint8_t *)(uintptr_t)(src + (uint32_t)y * stride);
+        for (uint32_t i = 0; i < row_bytes; i++) f = (f ^ r[i]) * 16777619u;
+    }
+    return f;
+}
+#endif
+
 gfx_tex_entry_t *gfx_tex_get(const gfx_state_t *st, int tile_idx, unsigned *out_w, unsigned *out_h) {
     gfx_tex_miss_reason = 0;
     const gfx_tile_t *t = &st->tiles[tile_idx & 7];
@@ -819,6 +835,17 @@ gfx_tex_entry_t *gfx_tex_get(const gfx_state_t *st, int tile_idx, unsigned *out_
             /* the entries this frame has used lead the LRU list already (in
              * the order of first use), so only the first use moves one */
             uint32_t frame = pm3ds_gfx_frame_number();
+#ifdef PM3DS_STALE_DBG
+            if (!tex_src_is_static(src) && dbg_full_hash(src, stride, row_bytes, h) != e->dbg_full) {
+                static uint32_t nstale, last_report;
+                nstale++;
+                if (frame - last_report >= 30) {
+                    last_report = frame;
+                    pm3ds_log(PM3DS_LOG_INFO, "STALE hit src=%08X %dx%d fmt=%d/%d frame %u (total %u)",
+                              (unsigned)src, ow, oh, t->fmt, t->siz, (unsigned)frame, (unsigned)nstale);
+                }
+            }
+#endif
             if (x->frame != frame) {
                 cache_unlink(e);
                 cache_push_mru(e);
@@ -830,6 +857,9 @@ gfx_tex_entry_t *gfx_tex_get(const gfx_state_t *st, int tile_idx, unsigned *out_
     }
 
     /* miss: read rows, decode, swizzle, upload */
+#ifdef PM3DS_STALE_DBG
+    uint32_t dbg_full = tex_src_is_static(src) ? 0 : dbg_full_hash(src, stride, row_bytes, h);
+#endif
     uint8_t *row = (uint8_t *)malloc(stride);
     uint8_t *rgba = (uint8_t *)malloc((size_t)w * h * 4);
     if (!row || !rgba) { free(row); free(rgba); return NULL; }
@@ -873,6 +903,9 @@ gfx_tex_entry_t *gfx_tex_get(const gfx_state_t *st, int tile_idx, unsigned *out_
     x->stride = stride;
     x->tlut = tlut_key;
     x->sample = sample;
+#ifdef PM3DS_STALE_DBG
+    e->dbg_full = dbg_full;
+#endif
     if (stride * e->key_h > g_max_span) g_max_span = stride * e->key_h;
     x->frame = pm3ds_gfx_frame_number();
     *out_w = (unsigned)w; *out_h = (unsigned)h;

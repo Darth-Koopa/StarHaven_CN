@@ -165,3 +165,27 @@ int pm3ds_tracker_query(pm3ds_tracker_t* out) {
     }
     return out->count;
 }
+
+#ifdef PM3DS_SHOT_JOURNAL
+/* debug builds only (README screenshots): a chapter-2 file's worth of tattles and
+ * found item spots, so the Tattle and Found tabs have something to show */
+void pm3ds_journal_debug_fill(void) {
+    static const s32 types[] = { ACTOR_TYPE_GOOMBA, ACTOR_TYPE_PARAGOOMBA, ACTOR_TYPE_SPIKED_GOOMBA,
+        ACTOR_TYPE_RED_GOOMBA, ACTOR_TYPE_FUZZY, ACTOR_TYPE_KOOPA_TROOPA, ACTOR_TYPE_PARATROOPA,
+        ACTOR_TYPE_BOB_OMB, ACTOR_TYPE_BULLET_BILL, ACTOR_TYPE_BILL_BLASTER, ACTOR_TYPE_CLEFT,
+        ACTOR_TYPE_MONTY_MOLE, ACTOR_TYPE_BANDIT, ACTOR_TYPE_POKEY, ACTOR_TYPE_SWOOPER,
+        ACTOR_TYPE_BUZZY_BEETLE };
+    static const char* areas[] = { "kmr", "mac", "nok", "trd", "iwa", "dro", "sbk" };
+    for (u32 k = 0; k < ARRAY_COUNT(types); k++) {
+        s32 i = EVT_INDEX_OF_GAME_BYTE(GB_Tattles_00) + types[k] / 8;
+        set_global_byte(i, get_global_byte(i) | (1 << (types[k] % 8)));
+    }
+    for (u32 i = 0, n = 0; i < ARRAY_COUNT(sSpots); i++) {
+        for (u32 a = 0; a < ARRAY_COUNT(areas); a++) {
+            if (sSpots[i].flag != 0 && strncmp(sSpots[i].map, areas[a], 3) == 0 && (n++ % 4) != 3) {
+                evt_set_variable(nullptr, sSpots[i].flag, true);
+            }
+        }
+    }
+}
+#endif

@@ -116,6 +116,14 @@ EvtScript N(EVS_SetupSpinyTromp) = {
                 Call(ModifyColliderFlags, MODIFY_COLLIDER_FLAGS_SET_BITS, COLLIDER_gogo, COLLIDER_FLAGS_UPPER_MASK)
                 Call(PlaySoundAtCollider, COLLIDER_gogo, SOUND_TROMP_CRASH, SOUND_SPACE_DEFAULT)
                 PlayEffect(EFFECT_BOMBETTE_BREAKING, 2, 32, 32, 1, 10, 45)
+#ifdef _3DS
+                // PlayEffect leaves the effect pointer in LVarF, which is also this lerp's duration.
+                // On the N64 that pointer (0x80......) is negative, so the next UpdateLerp ends the
+                // roll; a 3DS heap pointer is positive and the roll never ended, leaving Mario unable
+                // to move. End it the same way (elapsed 0 of -1 gives the start position, as there).
+                Set(LVarE, 0)
+                Set(LVarF, -1)
+#endif
                 Call(EnableModel, MODEL_mae, false)
                 Call(EnableModel, MODEL_ato, true)
                 Thread

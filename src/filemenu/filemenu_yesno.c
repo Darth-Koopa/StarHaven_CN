@@ -431,6 +431,12 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
 #ifdef PM3DS_START_EQUIP   // e.g. -DPM3DS_START_EQUIP=ITEM_QUAKE_HAMMER
                             gPlayerData.equippedBadges[0] = PM3DS_START_EQUIP;
 #endif
+#ifdef PM3DS_SHOT_JOURNAL
+                            {
+                                void pm3ds_journal_debug_fill(void);
+                                pm3ds_journal_debug_fill();
+                            }
+#endif
                         }
 #endif
 #endif
