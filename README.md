@@ -31,8 +31,13 @@ Full instructions: [the player readme](port/3ds/RELEASE_README.md).
 - 60 fps (in-between frames are added), or the original 30
 - Fast-forward and faster text
 - Original, Fill or Wide screen, the 3D slider with a depth setting, remappable buttons
-- A touch bottom screen: stats, world map, party, items, the battle menus as buttons, a tattle
-  log, a collectibles tracker and quick save
+- A touch bottom screen with tabs:
+  - **Stats**, with a quick-save button
+  - **Map**: the world map, showing where you are
+  - **Party**: tap a partner to switch to them
+  - **Tattle**: every enemy Goombario has tattled so far; tap one to read the whole tattle
+  - **Found**: star pieces, badges, hidden blocks and panels and item spots collected in each area
+  - plus Items, and the battle menus as buttons in battle
 - A randomizer, chosen when you start a new file, with a seed you can share
 - 60 fps on the New 3DS family; about 30 fps on the original 3DS and 2DS, with a few extras
   off there (CIA only)
@@ -43,6 +48,8 @@ Full instructions: [the player readme](port/3ds/RELEASE_README.md).
 |:---:|:---:|:---:|
 | <img src="port/3ds/docs/screenshots/map.png" width="260"> | <img src="port/3ds/docs/screenshots/party.png" width="260"> | <img src="port/3ds/docs/screenshots/options.png" width="260"> |
 | World map | Party: tap a partner to switch | Options |
+| <img src="port/3ds/docs/screenshots/tattle.png" width="260"> | <img src="port/3ds/docs/screenshots/tattle-text.png" width="260"> | <img src="port/3ds/docs/screenshots/found.png" width="260"> |
+| Tattle log | Tap an enemy to read its tattle | Found: what you collected in each area |
 | <img src="port/3ds/docs/screenshots/new-game.png" width="260"> | <img src="port/3ds/docs/screenshots/randomizer.png" width="260"> | |
 | New file: Classic or Randomizer | What the randomizer shuffles | |
 
