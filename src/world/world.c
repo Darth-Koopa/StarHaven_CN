@@ -99,6 +99,12 @@ void load_map_by_IDs(s16 areaID, s16 mapID, s16 loadType) {
     gOverrideFlags &= ~GLOBAL_OVERRIDES_ENABLE_FLOOR_REFLECTION;
 
     gGameStatusPtr->playerSpriteSet = PLAYER_SPRITES_MARIO_WORLD;
+#ifdef _3DS
+    {
+        extern s32 pm3ds_player_in_room;
+        pm3ds_player_in_room = false;
+    }
+#endif
 
 #if !VERSION_IQUE
     load_obfuscation_shims();

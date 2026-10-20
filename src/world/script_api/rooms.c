@@ -190,6 +190,11 @@ API_CALLABLE(CreateMapRoom) {
     room->bgColor[1] = gCameras[CAM_DEFAULT].bgColor[1];
     room->bgColor[2] = gCameras[CAM_DEFAULT].bgColor[2];
 
+#ifdef PM3DS_ROOM_DBG
+    { extern void pm3ds_log(int, const char*, ...);
+      pm3ds_log(2, "ROOMDBG create col=%d enterA=(%.0f,%.0f) enterB=(%.0f,%.0f) cy=%.0f", colliderID,
+                room->posEnterA.x, room->posEnterA.z, room->posEnterB.x, room->posEnterB.z, tempY); }
+#endif
     bind_trigger_1(&EVS_EnterRoomDoor, TRIGGER_WALL_PRESS_A, colliderID, 0, (s32) room, 3);
     if (roomFlags & ROOM_FLAG_EXIT_DOOR_DROPS) {
         bind_trigger_1(&EVS_ExitRoomDoor, TRIGGER_WALL_PUSH, triggerColliderID, 1, (s32) room, 3);
@@ -199,6 +204,28 @@ API_CALLABLE(CreateMapRoom) {
     return ApiStatus_DONE2;
 }
 
+#ifdef _3DS
+// 3DS port: the quick save (src/world/menus.c) is refused while the player is inside a room.
+// A map with a save block puts him back at the saved position, but its rooms always load closed,
+// so he stood inside a house drawn shut around him (GitHub #19). Cleared by load_map_by_IDs.
+s32 pm3ds_player_in_room;
+
+API_CALLABLE(SetPlayerInRoom) {
+    pm3ds_player_in_room = evt_get_variable(script, *script->ptrReadPos);
+#ifdef PM3DS_ROOM_DBG
+    { extern void pm3ds_log(int, const char*, ...);
+      extern EvtScript EVS_DbgExitRoom;
+      pm3ds_log(2, "ROOMDBG in_room=%d pos=(%.0f,%.0f,%.0f)", pm3ds_player_in_room,
+                gPlayerStatus.pos.x, gPlayerStatus.pos.y, gPlayerStatus.pos.z);
+      if (pm3ds_player_in_room) {   // walk back out by the door's own script after 4 s
+          Evt* e = start_script(&EVS_DbgExitRoom, EVT_PRIORITY_1, 0);
+          e->varTable[1] = (s32) script->functionTempPtr[1];
+      } }
+#endif
+    return ApiStatus_DONE2;
+}
+
+#endif
 API_CALLABLE(PlayRoomDoorSound) {
     Bytecode* args = script->ptrReadPos;
     MapRoom* door = script->functionTempPtr[1];
@@ -637,6 +664,9 @@ EvtScript EVS_EnterRoomDoor = {
     EndSwitch
 
     // reveal room interior and hide world
+#ifdef _3DS
+    Call(SetPlayerInRoom, true)
+#endif
     Call(GetDoorData)
     Set(LVar0, ROOM_VISIBILITY_SHOW)
     Call(GetDoorPtr)
@@ -861,6 +891,9 @@ EvtScript EVS_ExitRoomDoor = {
     Call(SetEntityHideMode0)
 
     // hide room interior and reveal world
+#ifdef _3DS
+    Call(SetPlayerInRoom, false)
+#endif
     Set(LVar0, ROOM_VISIBILITY_HIDE)
     IfNe(ROOM_DATA_MODEL_ID, 0)
         ExecGetTID(EVS_RoomContentVisiblityToggle, LVar5)
@@ -911,3 +944,12 @@ EvtScript EVS_ExitRoomDoor = {
     Return
     End
 };
+
+#ifdef PM3DS_ROOM_DBG
+EvtScript EVS_DbgExitRoom = {
+    Wait(240)
+    ExecWait(EVS_ExitRoomDoor)
+    Return
+    End
+};
+#endif

@@ -243,6 +243,7 @@ void check_input_open_menus(void) {
         extern volatile s32 pm3ds_touch_req;
         extern volatile s32 pm3ds_quicksave_result;
         extern s32 NextPartnerCommand;
+        extern s32 pm3ds_player_in_room;
         s32 req = pm3ds_touch_req;
         if (req != 0) {
             pm3ds_touch_req = 0;
@@ -260,7 +261,8 @@ void check_input_open_menus(void) {
                 if (req == 1) {
                     pressedButtons |= BUTTON_C_LEFT;    // the item menu, as its button opens it
                 } else if (req == 2) {                  // quick save: whenever the pause menu could open
-                    if (partnerStatus->partnerActionState == PARTNER_ACTION_NONE &&
+                    // and not inside a house: rooms load closed, a save block map would put Mario back in one
+                    if (partnerStatus->partnerActionState == PARTNER_ACTION_NONE && !pm3ds_player_in_room &&
                         can_open_world_menu(currentButtons, BUTTON_START)) {
                         // as a save block does: maps with one put Mario back here (EnterSavePoint),
                         // the rest replay the entrance he came in by
@@ -270,7 +272,13 @@ void check_input_open_menus(void) {
                         fio_save_game(gGameStatusPtr->saveSlot);
                         sfx_play_sound(SOUND_SAVE_CONFIRM);
                         pm3ds_quicksave_result = 1;
+#ifdef PM3DS_ROOM_DBG
+                        { extern void pm3ds_log(int, const char*, ...); pm3ds_log(2, "ROOMDBG quicksave ok"); }
+#endif
                     } else {
+#ifdef PM3DS_ROOM_DBG
+                        { extern void pm3ds_log(int, const char*, ...); pm3ds_log(2, "ROOMDBG quicksave refused in_room=%d", pm3ds_player_in_room); }
+#endif
                         sfx_play_sound(SOUND_MENU_ERROR);
                     }
                     return;
