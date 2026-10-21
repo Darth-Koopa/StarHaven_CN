@@ -31,6 +31,7 @@
 #include "pm3ds_rando.h"
 #include "pm3ds_settings.h"
 #include "pm3ds_touch_menu.h"
+#include "pm3ds_save_import.h"
 #include "pm3ds_update.h"
 
 extern void pm3ds_set_view_mode(int mode);   /* 0 Original, 1 Fill, 2 Wide */
@@ -1421,10 +1422,42 @@ static void draw_update_notice(void) {
     ng_button(UPD_OK_X0, UPD_BTN_Y0, UPD_OK_X1, UPD_BTN_Y1, "OK", false);
 }
 
+/* ---- save import notice --------------------------------------------------- */
+/* os_flash.c converted an import.fla / import.srm at boot (or found no save in it) */
+static bool import_notice_up(void) {
+    return pm3ds_save_import_result() != 0 && !s_info.in_battle && s_ng_page == NG_CLOSED;
+}
+
+static void draw_import_notice(void) {
+    int n = pm3ds_save_import_result();
+    char line[48];
+    fill(0, 0, 320, 240, RGBA(40, 20, 0, 150));
+    panel(10, 28, 310, 200, COL_PANEL);
+    if (n > 0) {
+        text_center(160, 38, "Save imported", 1.2f, 0, COL_WHITE);
+        snprintf(line, sizeof line, "%d save file%s converted from your", n, n == 1 ? "" : "s");
+        small_text_center(160, 74, line, 1.0f, COL_PANEL_EDGE);
+        small_text_center(160, 86, "N64 save (now named import.*.done).", 1.0f, COL_PANEL_EDGE);
+        if (pm3ds_save_import_backup()[0]) {
+            small_text_center(160, 110, "Your previous saves were kept as", 1.0f, COL_PANEL_EDGE);
+            snprintf(line, sizeof line, PM3DS_SD_DIR_SHOWN "/%s", pm3ds_save_import_backup());
+            small_text_center(160, 122, line, 1.0f, COL_PANEL_EDGE);
+        }
+    } else {
+        text_center(160, 38, "Save not imported", 1.2f, 0, COL_WHITE);
+        small_text_center(160, 74, "The import file holds no Paper Mario", 1.0f, COL_PANEL_EDGE);
+        small_text_center(160, 86, "save this version can read. It was", 1.0f, COL_PANEL_EDGE);
+        small_text_center(160, 98, "renamed to import.*.bad.", 1.0f, COL_PANEL_EDGE);
+        small_text_center(160, 122, "Your saves were not changed.", 1.0f, COL_PANEL_EDGE);
+    }
+    ng_button(UPD_OK_X0, UPD_BTN_Y0, UPD_OK_X1, UPD_BTN_Y1, "OK", false);
+}
+
 static void draw_menu_page(void);
 static void draw_menu(void) {
     draw_menu_page();
-    if (update_notice_up()) draw_update_notice();
+    if (import_notice_up()) draw_import_notice();
+    else if (update_notice_up()) draw_update_notice();
 }
 
 static void draw_menu_page(void) {
@@ -1507,7 +1540,13 @@ static void handle_touch(void) {
     }
     if (down) { last_x = tp.px; last_y = tp.py; }
 
-    if (update_notice_up()) {   /* the notice takes every tap until it is closed */
+    if (import_notice_up()) {   /* the notices take every tap until they are closed */
+        pm3ds_touch_pad = 0;
+        pm3ds_touch_stick_x = 0;
+        if (pressed && in(tp.px, tp.py, UPD_OK_X0, UPD_BTN_Y0, UPD_OK_X1, UPD_BTN_Y1)) pm3ds_save_import_dismiss();
+        return;
+    }
+    if (update_notice_up()) {
         pm3ds_touch_pad = 0;
         pm3ds_touch_stick_x = 0;
         if (pressed && in(tp.px, tp.py, UPD_OK_X0, UPD_BTN_Y0, UPD_OK_X1, UPD_BTN_Y1)) pm3ds_update_dismiss(false);

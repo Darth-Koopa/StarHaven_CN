@@ -25,6 +25,18 @@ on the 3DS; nothing is emulated.
 
 Full instructions: [the player readme](port/3ds/RELEASE_README.md).
 
+## Bring your N64 save
+
+Got a Paper Mario save from Project64, RetroArch, ares, a flashcart or the Wii U Virtual
+Console? Keep playing it on the 3DS:
+
+- **In the game:** put the save in `/3ds/StarHaven/` as `import.fla` (a RetroArch `.srm` as
+  `import.srm`) and start Star Haven. It converts the save and keeps your old one as
+  `save.fla.bak`.
+- **In a browser:** the [save converter](https://secondarylifer.github.io/StarHaven/converter/)
+  turns an N64 save into a Star Haven `save.fla` / `save_us.fla`, and a Star Haven save back
+  into an N64 one. Nothing is uploaded.
+
 ## Features
 
 - EU and US versions in one package
@@ -39,6 +51,8 @@ Full instructions: [the player readme](port/3ds/RELEASE_README.md).
   - **Found**: star pieces, badges, hidden blocks and panels and item spots collected in each area
   - plus Items, and the battle menus as buttons in battle
 - A randomizer, chosen when you start a new file, with a seed you can share
+- Imports N64 saves (Project64, RetroArch, Wii U Virtual Console and others), and a
+  [web converter](https://secondarylifer.github.io/StarHaven/converter/) for both directions
 - 60 fps on the New 3DS family; about 30 fps on the original 3DS and 2DS, with a few extras
   off there (CIA only)
 - Tells you on the bottom screen when a newer version is out (one check at start, nothing is

@@ -104,12 +104,30 @@ When you pick an empty file, Star Haven asks how you want to play:
 Each randomized game writes a spoiler log to `/3ds/StarHaven/spoiler_<seed>.txt` listing
 where everything went. The seed is shown on the Stats tab.
 
+## Bringing an N64 save
+
+Saves from an N64 emulator (Project64, RetroArch/mupen64plus, ares), a flashcart or a
+Wii U Virtual Console extraction carry over:
+
+1. Put the save in `/3ds/StarHaven/` as `import.fla` (a RetroArch `.srm` as `import.srm`).
+2. Start Star Haven. It converts the save and says on the bottom screen how many save files
+   it brought in. It goes into the version you play (`save.fla` for the EU ROM,
+   `save_us.fla` for the US ROM), and replaces every save file there; the old save is kept
+   as `save.fla.bak` (or `save_us.fla.bak`).
+3. The import file is renamed `import.fla.done`, so it is only imported once. If it holds
+   no Paper Mario save, it is renamed `import.fla.bad` and your saves are not changed.
+
+The [save converter](https://secondarylifer.github.io/StarHaven/converter/) does the same in
+a browser, and also turns a Star Haven save back into an N64 one.
+
 ## Files on the SD card (`/3ds/StarHaven/`)
 
 | File | |
 |---|---|
 | `baserom.z64` | your ROM |
 | `save.fla` | your save files (`save_us.fla` with the US version) |
+| `save.fla.bak` | your saves from before an N64 save import |
+| `import.fla`, `import.srm` | an N64 save to import at the next start (see above) |
 | `port.cfg` | settings |
 | `spoiler_<seed>.txt` | randomizer spoiler logs |
 | `log.txt` | warnings, useful in bug reports |
