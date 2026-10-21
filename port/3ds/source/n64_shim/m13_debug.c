@@ -183,7 +183,7 @@ static void pm3ds_battle_sweep_tick(u32 frame) {
     }
     switch (phase) {
         case 0:   /* in the world: wait, then start the next formation */
-            if (get_game_mode() != GAME_MODE_WORLD) {
+            if (get_game_mode() != GAME_MODE_WORLD || gGameStatusPtr->demoState != DEMO_STATE_NONE) {
                 timer = 0;
                 return;
             }

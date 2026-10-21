@@ -189,6 +189,42 @@ void initialize_battle(void) {
 
     battleStatus->playerActor = nullptr;
     battleStatus->partnerActor = nullptr;
+#ifdef _3DS
+    // The N64 reloads battle_code, and with it the initial values of its globals, before every battle
+    // (DMA_COPY_SEGMENT in state_battle.c); the port does not, so the ones the code changes are put
+    // back here. A title demo battle skipped with a button left EndDemoWhiteOut at 255, and every
+    // later battle went straight to END_DEMO_BATTLE before the player actor existed (GitHub #22);
+    // a damage number still showing then was counted down into its freed effect in the next battle.
+    {
+        extern s8 BattleCam_IsFrozen;
+        extern s32 BattleCam_CurrentPresetID;
+        extern PopupMessage* bPopupMessage;
+        extern u8* gBattleDmaDest;
+        extern s32 bFadeToBlackAmt;
+        extern s16 D_802938A8;
+        extern EffectInstance* gDamageCountEffects[24];
+        extern s32 gDamageCountTimers[24];
+        extern s32 bCurRumbleScript;
+
+        StarPointsIncrementInterp = 0.0f;
+        BtlStarPointsBlinking = false;
+        StarPointsBlinkTimer = 0;
+        EndDemoWhiteOut = -1;
+        DemoBattleBeginDelay = 0;
+        BattleScreenFadeAmt = 255;
+        BattleCam_IsFrozen = false;
+        BattleCam_CurrentPresetID = -1;
+        bPopupMessage = nullptr;
+        gBattleDmaDest = nullptr;
+        bFadeToBlackAmt = 255;
+        D_802938A8 = 4;
+        for (i = 0; i < 24; i++) {
+            gDamageCountEffects[i] = nullptr;
+            gDamageCountTimers[i] = 0;
+        }
+        bCurRumbleScript = 0;
+    }
+#endif
 
     for (i = 0; i < ARRAY_COUNT(battleStatus->lastPlayerMenuSelection); i++) {
         battleStatus->lastPlayerMenuSelection[i] = -1;

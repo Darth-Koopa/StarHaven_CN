@@ -120,6 +120,10 @@ Wii U Virtual Console extraction carry over:
 The [save converter](https://secondarylifer.github.io/StarHaven/converter/) does the same in
 a browser, and also turns a Star Haven save back into an N64 one.
 
+Saves from **Paperboat** (the PC port) carry over with the same page, both ways: drop its
+`file0.json` to `file3.json` there to get a `save_us.fla`, or your `save_us.fla` to get them
+back. Paperboat is the US version, so this goes with the US ROM.
+
 ## Files on the SD card (`/3ds/StarHaven/`)
 
 | File | |
