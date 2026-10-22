@@ -41,7 +41,16 @@ EvtScript N(EVS_RoomListener_ToadHouse) = {
     End
 };
 
+#ifdef _3DS
+// 3DS port: the prologue revival (kmr_00) wakes Mario up inside the Toad House through this script,
+// not through the room door, so the quick save must be told he is inside (GitHub #19/#20).
+API_CALLABLE(SetPlayerInRoom);
+#endif
+
 EvtScript N(EVS_SetWallsDown_ToadHouse) = {
+#ifdef _3DS
+    Call(SetPlayerInRoom, true)
+#endif
     Call(SetGroupVisibility, MODEL_kino_in, MODEL_GROUP_VISIBLE)
     Call(RotateModel, MODEL_k_k_1, 180, 0, 1, 0)
     Call(RotateModel, MODEL_k_k_2, 180, 0, 1, 0)

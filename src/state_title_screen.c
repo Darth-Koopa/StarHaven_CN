@@ -312,6 +312,11 @@ void state_step_title_screen(void) {
                 }
             }
 #endif
+#ifdef PM3DS_NO_TITLE_DEMO   /* debug: the title waits for Start, so harness key timings don't race a demo */
+            if (TitleScreen_TimeLeft < 2) {
+                TitleScreen_TimeLeft = 2;
+            }
+#endif
             if (PlayIntroNext && TitleScreen_TimeLeft == 120) {
                 bgm_set_song(0, AU_SONG_NONE, 0, 3900, VOL_LEVEL_FULL);
             }

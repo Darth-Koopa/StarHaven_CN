@@ -16,4 +16,11 @@
  * texture instead, and texture loads from that image sample it. */
 #define PM3DS_GFX_TAG_SCREEN_COPY 0x50335343u   /* 'P3SC' */
 
+/* Between these two, decal surfaces are a map model's (model.c): they draw
+ * only where they lie on what is already drawn, as the RDP's decal depth mode
+ * does, instead of anywhere in front of it. A crack decal around a hole a bomb
+ * opened then stops at the hole's edge (gfx_present.c, draw_decal_banded). */
+#define PM3DS_GFX_TAG_DECAL_BAND 0x50334442u       /* 'P3DB' */
+#define PM3DS_GFX_TAG_DECAL_BAND_END 0x50336462u   /* 'P3db' */
+
 #endif

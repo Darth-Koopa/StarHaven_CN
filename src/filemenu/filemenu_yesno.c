@@ -393,6 +393,12 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
 #ifdef PM3DS_START_FLAG   /* e.g. -DPM3DS_START_FLAG=GF_KMR10_KnockedSpringOutOfTree */
                         evt_set_variable(nullptr, PM3DS_START_FLAG, true);
 #endif
+#ifdef PM3DS_START_FLAG2
+                        evt_set_variable(nullptr, PM3DS_START_FLAG2, true);
+#endif
+#ifdef PM3DS_START_FLAG3
+                        evt_set_variable(nullptr, PM3DS_START_FLAG3, true);
+#endif
 #ifndef PM3DS_START_BARE   /* bare: keep the New Game state (no hammer/partner), e.g. for the prologue */
                         gPlayerData.hammerLevel = 0;
                         gPlayerData.partners[PARTNER_GOOMBARIO].enabled = true;
@@ -401,6 +407,17 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
 #ifdef PM3DS_START_PARTNER   /* e.g. -DPM3DS_START_PARTNER=PARTNER_BOW for scenes that need one */
                         gPlayerData.partners[PM3DS_START_PARTNER].enabled = true;
                         gPlayerData.curPartner = PM3DS_START_PARTNER;
+#endif
+#ifdef PM3DS_START_ITEM   /* e.g. -DPM3DS_START_ITEM=ITEM_WHACKAS_BUMP -DPM3DS_START_ITEM_N=3 */
+                        {
+#ifndef PM3DS_START_ITEM_N
+#define PM3DS_START_ITEM_N 3
+#endif
+                            s32 k;
+                            for (k = 0; k < PM3DS_START_ITEM_N; k++) {
+                                gPlayerData.invItems[k] = PM3DS_START_ITEM;
+                            }
+                        }
 #endif
 #ifdef PM3DS_START_INVENTORY
                         {   // debug builds only: something in every menu (items, badges, partners, coins)
@@ -428,6 +445,10 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
                             gPlayerData.maxBP = 10;
                             gPlayerData.hammerLevel = 0;
                             gPlayerData.bootsLevel = 0;
+#ifdef PM3DS_START_STAR_POWER   // e.g. -DPM3DS_START_STAR_POWER=2: two star spirits, gauge full
+                            gPlayerData.maxStarPower = PM3DS_START_STAR_POWER;
+                            gPlayerData.starPower = PM3DS_START_STAR_POWER * 256;
+#endif
 #ifdef PM3DS_START_EQUIP   // e.g. -DPM3DS_START_EQUIP=ITEM_QUAKE_HAMMER
                             gPlayerData.equippedBadges[0] = PM3DS_START_EQUIP;
 #endif

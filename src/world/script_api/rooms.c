@@ -217,10 +217,13 @@ API_CALLABLE(SetPlayerInRoom) {
       extern EvtScript EVS_DbgExitRoom;
       pm3ds_log(2, "ROOMDBG in_room=%d pos=(%.0f,%.0f,%.0f)", pm3ds_player_in_room,
                 gPlayerStatus.pos.x, gPlayerStatus.pos.y, gPlayerStatus.pos.z);
+#ifndef PM3DS_ROOM_DBG_STAY   // keep Mario inside (and safe for callers that are not door scripts)
       if (pm3ds_player_in_room) {   // walk back out by the door's own script after 4 s
           Evt* e = start_script(&EVS_DbgExitRoom, EVT_PRIORITY_1, 0);
           e->varTable[1] = (s32) script->functionTempPtr[1];
-      } }
+      }
+#endif
+      }
 #endif
     return ApiStatus_DONE2;
 }

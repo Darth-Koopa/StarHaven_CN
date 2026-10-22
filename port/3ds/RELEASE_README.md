@@ -67,8 +67,9 @@ original 3DS and 2DS).
   Loading puts you back on the spot on a map with a save block, and at the entrance you came
   in by anywhere else.
 - **Items** opens the item menu.
-- In battle: your HP, FP and Star Power, the battle menus as buttons to tap, and an A/B pad
-  for action commands.
+- In battle: your HP, FP and Star Power, the battle menus to tap, and an A/B pad for action
+  commands. Mario's commands are big tiles with the game's icons: Jump and Hammer along the
+  bottom, Strategies, Items and Star Spirits above them. Every list shows each entry's icon.
 - **Fast >>** turns fast-forward on and off.
 - **Options**:
   - **Screen**: *Original* (4:3), *Fill* or *Wide*.

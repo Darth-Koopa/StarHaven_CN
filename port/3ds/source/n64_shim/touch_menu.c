@@ -11,6 +11,8 @@
 #include "common.h"
 #include "battle/battle.h"
 #include "hud_element.h"
+#include "nu/nusys.h"
+#include "ld_addrs.h"
 
 #include <string.h>
 
@@ -37,6 +39,17 @@ extern s32 StratsOptionNames[5];
 extern s32 StratsOptionEnabled[];
 extern s8 StratsCursorPos;
 extern s32 PartnerNameMessages[];
+extern HudScript* WheelOptionHudScript[6];
+extern s32 WheelOptionSubmenu[6];
+extern HudScript* MovesOptionHudScripts[24];
+extern HudScript* StratsOptionHudScripts[];
+/* src/hud_element.c (its type is local there) */
+typedef struct {
+    s16 width;
+    s16 height;
+    s16 size;
+} TmHudElementSize;
+extern TmHudElementSize HudElemSizes[];
 /* src/8a860_len_3f30.c */
 extern PopupMenu* gPopupMenu;
 extern s32 PopupMenu_SelectedIndex;
@@ -136,6 +149,8 @@ static void set_entry(s32 i, s32 msgID, bool enabled, s32 cost, s32 costKind) {
     sMenu.e[i].cost = cost;
     sMenu.e[i].max_hp = 0;
     sMenu.e[i].cost_kind = costKind;
+    sMenu.e[i].attack = false;
+    sMenu.e[i].icon = nullptr;
 }
 
 /* the battle's current wheel option names the open submenu */
@@ -159,6 +174,9 @@ static void publish(s32 kind) {
             n = WheelOptionCount;
             for (i = 0; i < n && i < PM3DS_TM_MAX; i++) {
                 set_entry(i, WheelOptionName[i], WheelOptionEnabled[i] == true, 0, PM3DS_TM_COST_NONE);
+                sMenu.e[i].icon = WheelOptionHudScript[i];
+                sMenu.e[i].attack = WheelOptionSubmenu[i] == BTL_MENU_TYPE_JUMP ||
+                                    WheelOptionSubmenu[i] == BTL_MENU_TYPE_SMASH;
             }
             sMenu.cursor = BattleMenu_CurPos + BattleMenu_HomePos;
             set_name(PM3DS_TM_MAX, sMenu.partner ? PartnerNameMessages[gPlayerData.curPartner] : MSG_NONE);
@@ -182,6 +200,7 @@ static void publish(s32 kind) {
                 set_entry(i, MovesOptionNames[o], MovesOptionEnabled[o] > 0, cost,
                           shown == 0 ? PM3DS_TM_COST_NONE
                                      : (UsingSpiritsSubmenu ? PM3DS_TM_COST_SP : PM3DS_TM_COST_FP));
+                sMenu.e[i].icon = MovesOptionHudScripts[o];
             }
             sMenu.cursor = MovesCursorPos;
             wheel_title();
@@ -190,6 +209,7 @@ static void publish(s32 kind) {
             n = StratsOptionCount;
             for (i = 0; i < n && i < PM3DS_TM_MAX; i++) {
                 set_entry(i, StratsOptionNames[i], StratsOptionEnabled[i] != 0, 0, PM3DS_TM_COST_NONE);
+                sMenu.e[i].icon = StratsOptionHudScripts[i];
             }
             sMenu.cursor = StratsCursorPos;
             wheel_title();
@@ -209,6 +229,7 @@ static void publish(s32 kind) {
             n = p->numEntries;
             for (i = 0; i < n && i < PM3DS_TM_MAX; i++) {
                 set_entry(i, p->nameMsg[i], p->enabled[i], costKind ? p->value[i] : 0, costKind);
+                sMenu.e[i].icon = p->ptrIcon[i];
             }
             sMenu.cursor = PopupMenu_SelectedIndex;
             if (gGameStatusPtr->context == CONTEXT_BATTLE) {
@@ -258,6 +279,110 @@ static void publish(s32 kind) {
     }
     sMenu.count = n < PM3DS_TM_MAX ? n : PM3DS_TM_MAX;
     sStamp = gGameStatusPtr->frameCounter;
+}
+
+/* ---- icons ------------------------------------------------------------------ */
+/* The first image a HudScript shows: a CI4 raster and its 16-colour palette,
+ * either in memory (hs_SetCI: the battle menu icons) or in the ROM's icon block
+ * (hs_SetIcon: items and badges). Palettes stay big-endian RGBA5551 in memory,
+ * as the N64 loads them. IA8 and RGBA images are left out (no menu uses them). */
+int pm3ds_tm_icon_rgba(const void* script, uint8_t* out, int* w, int* h) {
+    static u8 rom[2048];
+    static u8 romPal[32];
+    const s32* pos = script;
+    const u8* raster = nullptr;
+    const u8* pal = nullptr;
+    s32 preset = 0, cw = 0, ch = 0;
+    s32 sw, sh, x, y, i;
+
+    if (pos == nullptr) {
+        return 0;
+    }
+    for (i = 0; i < 64 && raster == nullptr; i++) {
+        switch (*pos++) {
+            case HUD_ELEMENT_OP_SetCI:
+                raster = (const u8*)pos[1];
+                pal = (const u8*)pos[2];
+                break;
+            case HUD_ELEMENT_OP_SetImage: {
+                s32 size = cw ? cw * ch / 2 : HudElemSizes[preset].size;
+                if (size <= 0 || size > (s32)sizeof(rom)) {
+                    return 0;
+                }
+                nuPiReadRom((s32)icon_ROM_START + pos[1], rom, size);
+                nuPiReadRom((s32)icon_ROM_START + pos[2], romPal, sizeof(romPal));
+                raster = rom;
+                pal = romPal;
+                break;
+            }
+            case HUD_ELEMENT_OP_SetTileSize:
+                preset = *pos++;
+                break;
+            case HUD_ELEMENT_OP_SetSizesAutoScale:
+            case HUD_ELEMENT_OP_SetSizesFixedScale:
+                preset = pos[0];
+                pos += 2;
+                break;
+            case HUD_ELEMENT_OP_SetCustomSize:
+                cw = pos[0];
+                ch = pos[1];
+                pos += 2;
+                break;
+            case HUD_ELEMENT_OP_SetFlags:
+                if (*pos++ & HUD_ELEMENT_FLAG_FMT_IA8) {
+                    return 0;
+                }
+                break;
+            case HUD_ELEMENT_OP_AddTexelOffsetX:
+            case HUD_ELEMENT_OP_AddTexelOffsetY:
+            case HUD_ELEMENT_OP_SetScale:
+            case HUD_ELEMENT_OP_SetAlpha:
+            case HUD_ELEMENT_OP_SetVariable:
+            case HUD_ELEMENT_OP_ClearFlags:
+            case HUD_ELEMENT_OP_PlaySound:
+                pos++;
+                break;
+            case HUD_ELEMENT_OP_SetTexelOffset:
+            case HUD_ELEMENT_OP_RandomDelay:
+            case HUD_ELEMENT_OP_RandomRestart:
+            case HUD_ELEMENT_OP_SetPivot:
+                pos += 2;
+                break;
+            case HUD_ELEMENT_OP_RandomBranch:
+                pos += 1 + pos[0];
+                break;
+            case HUD_ELEMENT_OP_SetVisible:
+            case HUD_ELEMENT_OP_SetHidden:
+            case HUD_ELEMENT_OP_Loop:   // only marks where Restart jumps back to
+                break;
+            default:   // End, Restart, Delete, an RGBA or IA8 image: nothing to show
+                return 0;
+        }
+    }
+    if (raster == nullptr || pal == nullptr) {
+        return 0;
+    }
+    sw = cw ? cw : HudElemSizes[preset].width;
+    sh = ch ? ch : HudElemSizes[preset].height;
+    if (sw <= 0 || sh <= 0) {
+        return 0;
+    }
+    *w = sw > 32 ? 32 : sw;
+    *h = sh > 32 ? 32 : sh;
+    for (y = 0; y < *h; y++) {
+        for (x = 0; x < *w; x++) {
+            s32 sx = x * sw / *w, sy = y * sh / *h;
+            s32 n = sy * sw + sx;
+            s32 ci = (raster[n / 2] >> ((n & 1) ? 0 : 4)) & 15;
+            u16 c = (pal[ci * 2] << 8) | pal[ci * 2 + 1];
+            u8* d = out + (y * *w + x) * 4;
+            d[0] = ((c >> 11) & 31) * 255 / 31;
+            d[1] = ((c >> 6) & 31) * 255 / 31;
+            d[2] = ((c >> 1) & 31) * 255 / 31;
+            d[3] = (c & 1) ? 255 : 0;
+        }
+    }
+    return 1;
 }
 
 /* ---- game hooks ------------------------------------------------------------ */

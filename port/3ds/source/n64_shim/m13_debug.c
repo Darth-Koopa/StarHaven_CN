@@ -7,6 +7,7 @@
  */
 #include "common.h"
 #include "map.h"
+#include "model.h"
 #include "game_modes.h"
 #include "effects.h"
 #include <malloc.h>
@@ -27,7 +28,8 @@ void set_battle_formation(Battle* battle);
     defined(PM3DS_FX_TEST) || defined(PM3DS_TEST_LEVELUP) || defined(PM3DS_BATTLE_SWEEP) || \
     defined(PM3DS_STORY_SWEEP) || defined(PM3DS_FX_SWEEP) || defined(PM3DS_NO_BATTLES) || \
     defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST) || defined(PM3DS_ENC_TEST) || \
-    defined(PM3DS_JOURNAL_TEST)
+    defined(PM3DS_JOURNAL_TEST) || defined(PM3DS_NO_TITLE_DEMO) || defined(PM3DS_QUICKSAVE_EVERY) || \
+    defined(PM3DS_SHOP_DIALOG) || defined(PM3DS_MODEL_DUMP)
 /* make_cia.sh refuses to publish a binary containing this string */
 __attribute__((used)) const char pm3ds_debug_build_marker[] = "PM3DS-DEBUG-BUILD";
 #endif
@@ -425,7 +427,8 @@ void pm3ds_game_debug_tick(u32 frame) {
     defined(PM3DS_FX_TEST) || defined(PM3DS_TEST_LEVELUP) || defined(PM3DS_BATTLE_SWEEP) || \
     defined(PM3DS_STORY_SWEEP) || defined(PM3DS_FX_SWEEP) || defined(PM3DS_NO_BATTLES) || \
     defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST) || defined(PM3DS_ENC_TEST) || \
-    defined(PM3DS_JOURNAL_TEST)
+    defined(PM3DS_JOURNAL_TEST) || defined(PM3DS_NO_TITLE_DEMO) || defined(PM3DS_QUICKSAVE_EVERY) || \
+    defined(PM3DS_SHOP_DIALOG) || defined(PM3DS_MODEL_DUMP)
     if (frame == 1) {
         pm3ds_log(2, "%s", pm3ds_debug_build_marker);   /* keeps the marker linked */
     }
@@ -640,6 +643,51 @@ void pm3ds_game_debug_tick(u32 frame) {
                 }
                 pm3ds_log(2, "ENCTEST enemies at 1 HP, frame %u", (unsigned)frame);
             }
+        }
+    }
+#endif
+#ifdef PM3DS_QUICKSAVE_EVERY
+    {   /* debug: press the Stats tab quick save every N frames in the world (result: -DPM3DS_ROOM_DBG log) */
+        extern volatile s32 pm3ds_touch_req;
+        extern volatile s32 pm3ds_quicksave_result;
+        extern s32 pm3ds_player_in_room;
+        if (gGameStatusPtr != nullptr && get_game_mode() == GAME_MODE_WORLD && frame % PM3DS_QUICKSAVE_EVERY == 0) {
+            pm3ds_quicksave_result = 0;
+            pm3ds_touch_req = 2;
+        }
+        if (frame % PM3DS_QUICKSAVE_EVERY == 10 && pm3ds_quicksave_result != 0) {
+            pm3ds_log(2, "QSDBG result=%d in_room=%d input_off=%d pos=(%.0f,%.0f,%.0f)", (int)pm3ds_quicksave_result,
+                      (int)pm3ds_player_in_room, (int)gPlayerStatus.inputDisabledCount,
+                      gPlayerStatus.pos.x, gPlayerStatus.pos.y, gPlayerStatus.pos.z);
+        }
+    }
+#endif
+#ifdef PM3DS_MODEL_DUMP
+    {   /* debug: list the map's models once (tree id, flags, center, render mode, texture) */
+        static s32 worldFrames, done;
+        if (!done && gGameStatusPtr != nullptr && get_game_mode() == GAME_MODE_WORLD && ++worldFrames > 300) {
+            done = 1;
+            for (s32 i = 0; i < MAX_MODELS; i++) {
+                Model* m = get_model_from_list_index(i);
+                if (m == nullptr || m->flags == 0) {
+                    continue;
+                }
+                pm3ds_log(2, "MODEL list=%d id=0x%X flags=%04X center=(%.0f,%.0f,%.0f) rm=%d tex=%d", (int)i,
+                          (unsigned)m->modelID, (unsigned)m->flags, m->center.x, m->center.y, m->center.z,
+                          (int)m->renderMode, (int)m->textureID);
+            }
+        }
+    }
+#endif
+#ifdef PM3DS_SHOP_DIALOG
+    {   /* debug: open the map's shop owner dialog ~4 s after first reaching the world */
+        static s32 worldFrames, done;
+        if (!done && gGameStatusPtr != nullptr && gGameStatusPtr->mapShop != nullptr &&
+            get_game_mode() == GAME_MODE_WORLD && ++worldFrames > 240) {
+            extern EvtScript EVS_ShopOwnerDialog;
+            done = 1;
+            start_script(&EVS_ShopOwnerDialog, EVT_PRIORITY_1, 0);
+            pm3ds_log(2, "SHOPDLG started, coins=%d", (int)gPlayerData.coins);
         }
     }
 #endif

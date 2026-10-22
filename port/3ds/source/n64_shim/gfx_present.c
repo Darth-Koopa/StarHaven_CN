@@ -275,6 +275,16 @@ void pm3ds_gfx_present_init(void) {
 static uint32_t g_fx_epoch = 1;
 typedef struct { uint32_t ep; int32_t a[4]; } fx_cache_t;
 static fx_cache_t g_fxc_scissor, g_fxc_depth, g_fxc_depthmap, g_fxc_blend, g_fxc_atest, g_fxc_fogmode, g_fxc_fogcolor;
+
+/* decal depth: the nudge toward the viewer that lets co-planar decals win,
+ * and how far behind a decal the surface below may lie before a map model's
+ * decal is cut off there (window depth; about 15 units at 500 from the camera) */
+#define DECAL_NUDGE 0.0002f
+#define DECAL_BAND 0.001f
+static bool g_batch_band;                 /* the open batch is a map model's decal */
+static bool g_band_den;                   /* ...and its depth test, for draw_decal_banded */
+static GPU_TESTFUNC g_band_dfn;
+static GPU_WRITEMASK g_band_dm;
 /* one cache per setter (several call sites set the same state) */
 #define FX_CACHED(cache, call, n, ...) \
     do { \
@@ -602,11 +612,17 @@ static void apply_state(gfx_state_t *st, bool rect) {
         GPU_TESTFUNC dfn = g_in_rtt ? GPU_ALWAYS : zcmp ? GPU_GEQUAL : GPU_ALWAYS;
         GPU_WRITEMASK dm = g_in_rtt ? (keep_color ? (GPU_WRITEMASK)0 : GPU_WRITE_COLOR) : wmask;
         FX_CACHED(g_fxc_depth, C3D_DepthTest(den, dfn, dm), 3, den, dfn, dm);
+        g_band_den = den;
+        g_band_dfn = dfn;
+        g_band_dm = dm;
     }
     /* decal: nudge toward the viewer so co-planar decals win */
     {
         int decal = (l & RM_ZMODE_DEC) == RM_ZMODE_DEC;
-        FX_CACHED(g_fxc_depthmap, C3D_DepthMap(true, -1.0f, decal ? 0.0002f : 0.0f), 1, decal);
+        FX_CACHED(g_fxc_depthmap, C3D_DepthMap(true, -1.0f, decal ? DECAL_NUDGE : 0.0f), 1, decal);
+        /* a map model's decal also may not draw where the surface below is
+         * farther away: see draw_decal_banded */
+        g_batch_band = decal && st->decal_band && !g_in_rtt && !rect && zcmp && !keep_color;
     }
 
     /* --- blend (the blender word that applies, see bsh) --- */
@@ -677,6 +693,43 @@ static void apply_state(gfx_state_t *st, bool rect) {
     g_state_valid = true;
 }
 
+static void draw_tris(const u16 *idx, int n) {
+    extern bool pm3ds_c3d_draw_tris(const u16 *idx, int count);
+    if (!pm3ds_c3d_draw_tris(idx, n))
+        C3D_DrawElements(GPU_TRIANGLES, n, C3D_UNSIGNED_SHORT, idx);
+}
+
+/* The RDP's decal depth mode passes a pixel only when it is about as deep as
+ * what is already there; a depth test passes everything in front, so a crack
+ * decal around a bombed hole was drawn over the hole too (GitHub #24: the
+ * Koopa Bros. Fortress walls). One depth test can't check a band, so with a
+ * stencil bit: mark where the surface below lies more than DECAL_BAND behind
+ * the decal, draw the decal where nothing is marked, then clear the marks.
+ * Only for map models (PM3DS_GFX_TAG_DECAL_BAND): entity shadows are decals
+ * too, there are many, and they stay one draw each. */
+static void draw_decal_banded(const u16 *idx, int n) {
+    C3D_DepthMap(true, -1.0f, -DECAL_BAND);
+    C3D_DepthTest(true, GPU_GEQUAL, 0);
+    C3D_StencilTest(true, GPU_ALWAYS, 1, 0xFF, 0x01);
+    C3D_StencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP, GPU_STENCIL_REPLACE);
+    draw_tris(idx, n);
+
+    C3D_DepthMap(true, -1.0f, DECAL_NUDGE);
+    C3D_DepthTest(g_band_den, g_band_dfn, g_band_dm);
+    C3D_StencilTest(true, GPU_EQUAL, 0, 0x01, 0x00);
+    C3D_StencilOp(GPU_STENCIL_KEEP, GPU_STENCIL_KEEP, GPU_STENCIL_KEEP);
+    draw_tris(idx, n);
+
+    C3D_DepthTest(true, GPU_ALWAYS, 0);
+    C3D_StencilTest(true, GPU_ALWAYS, 0, 0xFF, 0x01);
+    C3D_StencilOp(GPU_STENCIL_REPLACE, GPU_STENCIL_REPLACE, GPU_STENCIL_REPLACE);
+    draw_tris(idx, n);
+
+    /* back to what the state caches hold */
+    C3D_StencilTest(false, GPU_ALWAYS, 0, 0, 0);
+    C3D_DepthTest(g_band_den, g_band_dfn, g_band_dm);
+}
+
 /* Close the open batch: one draw call for everything since g_batch_start. */
 void gfx_backend_flush(gfx_state_t *st) {
     (void)st;
@@ -694,9 +747,10 @@ void gfx_backend_flush(gfx_state_t *st) {
         }
 #endif
         PROF_PHASE(PH_DRAW);
-        extern bool pm3ds_c3d_draw_tris(const u16 *idx, int count);
-        if (!pm3ds_c3d_draw_tris(g_ibuf + g_batch_start, n))
-            C3D_DrawElements(GPU_TRIANGLES, n, C3D_UNSIGNED_SHORT, g_ibuf + g_batch_start);
+        if (g_batch_band)
+            draw_decal_banded(g_ibuf + g_batch_start, n);
+        else
+            draw_tris(g_ibuf + g_batch_start, n);
         PROF_RESTORE(ph);
         GP_END(tf, GP_FLUSH);
         g_stat_draws++;
@@ -1527,6 +1581,7 @@ void pm3ds_gfx_present_frame(void) {
     g_frame_no++;
     pm3ds_bc_frames = g_frame_no;
     if (!g_st_inited) { gfx_state_init(&g_st); g_st_inited = true; }
+    g_st.decal_band = false;   /* a frame cut short can't leave it on */
 
 #ifdef PM3DS_CAPTURE_TEST
     if (g_frame_no % 600 == 0) {

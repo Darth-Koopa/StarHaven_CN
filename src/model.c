@@ -7,6 +7,9 @@
 #include "gfx_prof.h"   // 3DS port: sampling profiler phases (empty unless PM3DS_STEP_PROF)
 #endif
 #include "model_clear_render_tasks.h"
+#ifdef _3DS
+#include "pm3ds_gfx_tags.h"
+#endif
 #include "nu/nusys.h"
 
 // models are rendered in two stages by the RDP:
@@ -1989,9 +1992,23 @@ void appendGfx_model(void* data) {
     }
 
     // render the model
+#ifdef _3DS
+    // 3DS port: a map decal draws only where it lies on the surface below, as on the N64
+    // (the cracks around a bombed hole stop at its edge, GitHub #24; gfx_present.c)
+    bool decalBand = renderMode == RENDER_MODE_DECAL_OPA || renderMode == RENDER_MODE_DECAL_OPA_NO_AA
+        || renderMode == RENDER_MODE_DECAL_XLU || renderMode == RENDER_MODE_DECAL_XLU_NO_AA;
+    if (decalBand) {
+        gDPNoOpTag((*gfxPos)++, PM3DS_GFX_TAG_DECAL_BAND);
+    }
+#endif
     if (!(flags & MODEL_FLAG_HAS_LOCAL_VERTEX_COPY)) {
         gSPDisplayList((*gfxPos)++, modelNode->displayData->displayList);
     }
+#ifdef _3DS
+    if (decalBand) {
+        gDPNoOpTag((*gfxPos)++, PM3DS_GFX_TAG_DECAL_BAND_END);
+    }
+#endif
 
     // custom gfx 'post'
     if (flags & MODEL_FLAG_USES_CUSTOM_GFX) {

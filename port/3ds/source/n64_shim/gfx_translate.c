@@ -896,6 +896,13 @@ int gfx_walk_dl(gfx_state_t *st, const void *dl) {
             case OP_NOOP:
                 if (g->w1 == PM3DS_GFX_TAG_BOX_RTT) st->box_rtt_tag = true;
                 if (g->w1 == PM3DS_GFX_TAG_SCREEN_COPY) st->screen_copy_tag = true;
+                if (g->w1 == PM3DS_GFX_TAG_DECAL_BAND || g->w1 == PM3DS_GFX_TAG_DECAL_BAND_END) {
+                    bool band = g->w1 == PM3DS_GFX_TAG_DECAL_BAND;
+                    if (st->decal_band != band) {
+                        st->decal_band = band;
+                        st->dirty |= GFX_DIRTY_MODE;
+                    }
+                }
                 break;
             case OP_MODIFYVTX:
                 handle_modifyvtx(st, g);

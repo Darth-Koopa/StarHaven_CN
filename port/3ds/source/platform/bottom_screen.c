@@ -904,6 +904,107 @@ static void tm_entry_rect(int slot, float *x0, float *y0, float *x1, float *y1) 
 
 static void disc(float cx, float cy, float r, u32 c) { round_rect(cx - r, cy - r, cx + r, cy + r, r, c); }
 
+/* The menus' icons (boots, hammer, items, ...) decoded from the game's own
+ * HudScripts (pm3ds_tm_icon_rgba), so no art ships with the port: 64 cells of
+ * 32x32 in one texture, filled as menus show icons they haven't shown before. */
+#define ICON_CELLS 64
+#define ICON_TEX 256
+static C3D_Tex s_icons;
+static bool s_icons_ok, s_icons_dirty;
+static u8 *s_icon_canvas;
+static const void *s_icon_key[ICON_CELLS];
+static u8 s_icon_w[ICON_CELLS], s_icon_h[ICON_CELLS];   /* 0: the script has no image */
+static int s_icon_used;
+
+/* the cell holding script's icon (decoding it on first use), -1 if none */
+static int icon_cell(const void *script) {
+    if (!script) return -1;
+    for (int i = 0; i < s_icon_used; i++)
+        if (s_icon_key[i] == script) return s_icon_w[i] ? i : -1;
+    if (!s_icon_canvas && !(s_icon_canvas = (u8 *)calloc(ICON_TEX * ICON_TEX, 4))) return -1;
+    int i = s_icon_used < ICON_CELLS ? s_icon_used++ : (int)((uintptr_t)script >> 2) % ICON_CELLS;
+    u8 px[32 * 32 * 4];
+    int w = 0, h = 0;
+    s_icon_key[i] = script;
+    s_icon_w[i] = s_icon_h[i] = 0;
+    if (!pm3ds_tm_icon_rgba(script, px, &w, &h)) return -1;
+    int cx = (i % 8) * 32, cy = (i / 8) * 32;
+    for (int y = 0; y < 32; y++) memset(s_icon_canvas + ((size_t)(cy + y) * ICON_TEX + cx) * 4, 0, 32 * 4);
+    for (int y = 0; y < h; y++)
+        memcpy(s_icon_canvas + ((size_t)(cy + y) * ICON_TEX + cx) * 4, px + (size_t)y * w * 4, (size_t)w * 4);
+    s_icon_w[i] = (u8)w;
+    s_icon_h[i] = (u8)h;
+    s_icons_dirty = true;
+    return i;
+}
+
+/* decode what the open menu needs and upload once (from the tick) */
+static void icons_update(void) {
+    for (int i = 0; i < s_tm.count && s_tm.kind != PM3DS_TM_NONE; i++) icon_cell(s_tm.e[i].icon);
+    if (!s_icons_dirty) return;
+    s_icons_dirty = false;
+    if (s_icons_ok || C3D_TexInit(&s_icons, ICON_TEX, ICON_TEX, GPU_RGBA8)) {
+        upload_rgba8(&s_icons, s_icon_canvas, ICON_TEX, ICON_TEX);
+        C3D_TexSetFilter(&s_icons, GPU_LINEAR, GPU_LINEAR);
+        C3D_TexSetWrap(&s_icons, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+        s_icons_ok = true;
+    }
+}
+
+/* an entry's icon fitted into a size x size box at (x, y); false if it has none */
+static bool draw_icon(const void *script, float x, float y, float size, u32 c) {
+    int i = s_icons_ok ? icon_cell(script) : -1;
+    if (i < 0) return false;
+    float w = s_icon_w[i], h = s_icon_h[i], s = size / (w > h ? w : h);
+    float x0 = x + (size - w * s) / 2, y0 = y + (size - h * s) / 2;
+    float u0 = (float)((i % 8) * 32) / ICON_TEX, v0 = (float)((i / 8) * 32) / ICON_TEX;
+    quad2(&s_icons, x0, y0, x0 + w * s, y0 + h * s, u0, v0, u0 + w / ICON_TEX, v0 + h / ICON_TEX, c, c);
+    return true;
+}
+
+/* The command reel as big tiles: what opens Jump or Hammer on a bottom row,
+ * the rest (Strategies, Items, Star Spirits; a partner's whole reel) above it.
+ * Same order as the game's reel inside a row. False (use the list) if a row
+ * would need more than three tiles. */
+#define TILE_Y1 (PANEL_Y1 - 8)
+static bool wheel_tile_rect(int idx, float *x0, float *y0, float *x1, float *y1) {
+    if (s_tm.kind != PM3DS_TM_WHEEL || s_tm.count < 1) return false;
+    int n[2] = { 0, 0 }, pos = -1, row = 0;
+    for (int i = 0; i < s_tm.count; i++) {
+        int r = s_tm.e[i].attack ? 1 : 0;
+        if (i == idx) { pos = n[r]; row = r; }
+        n[r]++;
+    }
+    if (n[0] > 3 || n[1] > 3 || pos < 0) return false;
+    int rows = (n[0] > 0) + (n[1] > 0);
+    float gap = 6, h = (TILE_Y1 - TM_Y0 - (rows - 1) * gap) / rows;
+    float top = TM_Y0 + (rows == 2 && row == 1 ? h + gap : 0);
+    float w = (292 - (n[row] - 1) * 4.0f) / n[row];
+    *x0 = 14 + pos * (w + 4);
+    *x1 = *x0 + w;
+    *y0 = top;
+    *y1 = top + h;
+    return true;
+}
+
+static void draw_wheel_tiles(void) {
+    for (int i = 0; i < s_tm.count; i++) {
+        const pm3ds_tm_entry_t *e = &s_tm.e[i];
+        float x0, y0, x1, y1;
+        wheel_tile_rect(i, &x0, &y0, &x1, &y1);
+        bool sel = i == s_tm.cursor;
+        round_rect(x0 + 2, y0 + 2, x1 + 2, y1 + 2, 10, COL_SHADOW);
+        round_rect(x0, y0, x1, y1, 10, COL_PANEL_EDGE);
+        round_rect(x0 + 2, y0 + 2, x1 - 2, y1 - 2, 8,
+                   !e->enabled ? RGBA(200, 185, 165, 255) : sel ? RGBA(255, 214, 120, 255) : COL_TAB_ON);
+        float cy = (y0 + y1) / 2 - 26;   /* icon 32 + gap 4 + label 16 */
+        draw_icon(e->icon, (x0 + x1) / 2 - 16, cy, 32, e->enabled ? COL_WHITE : RGBA(255, 255, 255, 160));
+        float avail = x1 - x0 - 8, w = text_width(e->name, 1.0f), sc = w > avail ? avail / w : 1.0f;
+        text_center((x0 + x1) / 2, cy + 36 + (1.0f - sc) * 8, e->name, sc, 0,
+                    e->enabled ? COL_WHITE : RGBA(255, 255, 255, 120));
+    }
+}
+
 static void draw_battle_header(void) {
     const pm3ds_hud_info_t *h = &s_info;
     char buf[24];
@@ -936,6 +1037,11 @@ static void draw_tmenu(float y_top) {
     if (s_tm_page >= tm_pages()) s_tm_page = 0;
     const char *title = s_tm.kind == PM3DS_TM_TARGET && s_tm.all_targets ? "Targets: all" : s_tm.title;
     text_center(160, y_top + 6, title, 1.0f, 0, RGBA(170, 120, 80, 255));
+    float tx, ty, tx1, ty1;
+    if (wheel_tile_rect(0, &tx, &ty, &tx1, &ty1)) {
+        draw_wheel_tiles();
+        return;
+    }
     if (tm_pages() > 1) {
         round_rect(12, y_top + 5, 48, y_top + 23, 7, COL_BTN);
         text_center(30, y_top + 6, "<", 1.0f, 1, COL_WHITE);
@@ -972,10 +1078,12 @@ static void draw_tmenu(float y_top) {
                                                                                        : RGBA(90, 60, 30, 255));
             right -= cw + 4;
         }
-        float avail = right - (x0 + 6), w = text_width(e->name, 1.0f), sc = 1.0f;
+        float left = x0 + 6;
+        if (draw_icon(e->icon, x0 + 4, y0 + 2, 20, e->enabled ? COL_WHITE : RGBA(255, 255, 255, 160))) left += 22;
+        float avail = right - left, w = text_width(e->name, 1.0f), sc = 1.0f;
         if (w > avail) sc = avail / w;
         if (sc < 0.6f) sc = 0.6f;
-        text(x0 + 6, y0 + 3 + (1.0f - sc) * 8, e->name, sc, 0, tc);
+        text(left, y0 + 3 + (1.0f - sc) * 8, e->name, sc, 0, tc);
     }
 }
 
@@ -1023,6 +1131,17 @@ static bool tmenu_tap(int px, int py, float y_top) {
     if (tm_pages() > 1 && py >= y_top + 2 && py < y_top + 26) {
         if (px < 56) { s_tm_page = (s_tm_page + tm_pages() - 1) % tm_pages(); return true; }
         if (px >= 264) { s_tm_page = (s_tm_page + 1) % tm_pages(); return true; }
+    }
+    float tx0, ty0, tx1, ty1;
+    if (wheel_tile_rect(0, &tx0, &ty0, &tx1, &ty1)) {
+        for (int i = 0; i < s_tm.count; i++) {
+            wheel_tile_rect(i, &tx0, &ty0, &tx1, &ty1);
+            if (in(px, py, tx0, ty0, tx1, ty1)) {
+                pm3ds_tm_pick(s_tm.kind, i);
+                return true;
+            }
+        }
+        return false;
     }
     for (int slot = 0; slot < TM_PER_PAGE; slot++) {
         int i = s_tm_page * TM_PER_PAGE + slot;
@@ -1703,6 +1822,7 @@ void pm3ds_bottom_screen_tick(unsigned frame) {
         if (s_tab == TAB_FOUND) pm3ds_tracker_query(&s_found);
     }
     pm3ds_tm_get(&s_tm);
+    icons_update();
 }
 
 /* GPU state for a UI pass on target t with pixel matrix m; false if the

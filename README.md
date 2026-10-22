@@ -6,7 +6,7 @@ on the 3DS; nothing is emulated.
 
 <p align="center">
   <img src="port/3ds/docs/screenshots/field.png" width="380" alt="Koopa Village on the top screen, the Stats tab on the bottom screen">
-  <img src="port/3ds/docs/screenshots/battle.png" width="380" alt="A battle, with Mario's commands as buttons on the bottom screen">
+  <img src="port/3ds/docs/screenshots/battle.png" width="380" alt="A battle, with Mario's commands as big icon tiles on the bottom screen">
 </p>
 
 **Star Haven contains no game data.** You need your own Paper Mario ROM (EU or US).
@@ -51,7 +51,7 @@ Console? Keep playing it on the 3DS:
   - **Party**: tap a partner to switch to them
   - **Tattle**: every enemy Goombario has tattled so far; tap one to read the whole tattle
   - **Found**: star pieces, badges, hidden blocks and panels and item spots collected in each area
-  - plus Items, and the battle menus as buttons in battle
+  - plus Items, and in battle the menus to tap: Mario's commands as big tiles with the game's icons
 - A randomizer, chosen when you start a new file, with a seed you can share
 - Imports N64 saves (Project64, RetroArch, Wii U Virtual Console and others), and a
   [web converter](https://secondarylifer.github.io/StarHaven/converter/) for both directions,

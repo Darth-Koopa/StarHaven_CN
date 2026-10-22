@@ -27,6 +27,8 @@ typedef struct {
     int16_t max_hp;     /* targets */
     uint8_t cost_kind;  /* PM3DS_TM_COST_* */
     uint8_t enabled;
+    uint8_t attack;     /* WHEEL: opens Jump or Hammer (the bottom row of the tiles) */
+    const void *icon;   /* the game's HudScript for the entry's icon, or NULL */
 } pm3ds_tm_entry_t;
 
 typedef struct {
@@ -42,6 +44,9 @@ typedef struct {
 /* the bottom screen's side */
 int pm3ds_tm_get(pm3ds_touch_menu_t *out);   /* the menu waiting for a choice now, or PM3DS_TM_NONE */
 void pm3ds_tm_pick(int kind, int index);     /* choose entry index (as if moved there and A pressed) */
+/* the first image of an entry's icon as RGBA8, row 0 on top, into out (32x32
+ * at most, larger ones are shrunk): 1 with its size, 0 if it has none */
+int pm3ds_tm_icon_rgba(const void *script, uint8_t *out, int *w, int *h);
 
 /* N64 buttons and stick held from the bottom screen's pad, OR'd into the
  * controller (n64_shim/os_cont.c) */
