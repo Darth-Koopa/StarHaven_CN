@@ -187,6 +187,17 @@ static C3D_Tex  g_scr_tex;
 static bool     g_scr_ok;
 static uint32_t g_scr_addr, g_scr_stride, g_scr_bytes;   /* the N64 image it stands for */
 
+/* Previous frame (pm3ds_request_prev_frame): the same kind of copy, made at
+ * the start of a frame while the render target still holds the last one. The
+ * battle-start blur, Dizzy Dial and fireworks draw it every frame; a copy on
+ * the CPU each time (wait for the GPU, convert 76800 pixels, re-upload them as
+ * textures) slowed battle starts down on hardware. */
+static C3D_Tex  g_prev_tex;
+static bool     g_prev_ok;
+static uint16_t *g_prev_req;                 /* asked for by this game step */
+static uint32_t g_prev_addr, g_prev_bytes;   /* the N64 image it stands for */
+static int      g_prev_ttl;                  /* presents it stays mapped (60 fps in-between frames) */
+
 /* per-frame stats */
 static unsigned g_stat_draws, g_stat_verts;
 extern unsigned pm3ds_tstat_ops, pm3ds_tstat_tris, pm3ds_tstat_rects, pm3ds_tstat_culled;
@@ -253,6 +264,8 @@ void pm3ds_gfx_present_init(void) {
     if (!g_rtt_target) pm3ds_log(PM3DS_LOG_WARN, "gfx: no window texture; rotating windows draw without contents");
     g_scr_ok = C3D_TexInitVRAM(&g_scr_tex, SCR_W, SCR_H, GPU_RGBA8);
     if (!g_scr_ok) pm3ds_log(PM3DS_LOG_WARN, "gfx: no screen-copy texture; the underwater ripple is left out");
+    g_prev_ok = C3D_TexInitVRAM(&g_prev_tex, SCR_W, SCR_H, GPU_RGBA8);
+    if (!g_prev_ok) pm3ds_log(PM3DS_LOG_WARN, "gfx: no previous-frame texture; the CPU copies it instead");
     /* pixel space -> texture target: x' = 2x/W - 1, y' = 2y/H - 1 (texture
      * row 0, which v = 0 samples, is at the bottom of a render target) */
     Mtx_Zeros(&g_rtt_mtx);
@@ -474,19 +487,28 @@ static void apply_state(gfx_state_t *st, bool rect) {
         {   /* a load from the window texture's image: sample the GPU texture */
             uint32_t src;
             int col, row;
-            if (g_scr_bytes && gfx_tex_load_source(st, tile, &src, &col, &row) && src - g_scr_addr < g_scr_bytes) {
-                uint32_t off = src - g_scr_addr;
+            /* a copy of the screen (this frame's so far, or the last frame's) */
+            C3D_Tex *scr = NULL;
+            uint32_t off = 0, stride = 0;
+            if ((g_scr_bytes || g_prev_bytes) && gfx_tex_load_source(st, tile, &src, &col, &row)) {
+                if (g_scr_bytes && src - g_scr_addr < g_scr_bytes) {
+                    scr = &g_scr_tex; off = src - g_scr_addr; stride = g_scr_stride;
+                } else if (g_prev_bytes && src - g_prev_addr < g_prev_bytes) {
+                    scr = &g_prev_tex; off = src - g_prev_addr; stride = 320 * 2;
+                }
+            }
+            if (scr) {
                 GPU_TEXTURE_FILTER_PARAM f = linear ? GPU_LINEAR : GPU_NEAREST;
-                C3D_TexSetFilter(&g_scr_tex, f, f);
-                C3D_TexSetWrap(&g_scr_tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
-                pm3ds_tex_bind(u, &g_scr_tex);
+                C3D_TexSetFilter(scr, f, f);
+                C3D_TexSetWrap(scr, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+                pm3ds_tex_bind(u, scr);
                 g_tex[u].on = true;
                 g_tex[u].screen = true;
                 g_tex[u].tile = &st->tiles[tile];
                 g_tex[u].w = SCR_W;
                 g_tex[u].h = SCR_H;
-                g_tex[u].off_s = (float)(col + (int)(off % g_scr_stride) / 2);
-                g_tex[u].off_t = (float)(row + (int)(off / g_scr_stride));
+                g_tex[u].off_s = (float)(col + (int)(off % stride) / 2);
+                g_tex[u].off_t = (float)(row + (int)(off / stride));
                 continue;
             }
             if (g_rtt_bytes && gfx_tex_load_source(st, tile, &src, &col, &row) && src - g_rtt_addr < g_rtt_bytes) {
@@ -700,9 +722,11 @@ static void draw_tris(const u16 *idx, int n) {
 }
 
 /* The RDP's decal depth mode passes a pixel only when it is about as deep as
- * what is already there; a depth test passes everything in front, so a crack
- * decal around a bombed hole was drawn over the hole too (GitHub #24: the
- * Koopa Bros. Fortress walls). One depth test can't check a band, so with a
+ * what is already there; a depth test passes everything in front. The RDP's
+ * band grows with the surface's depth slope, so seen edge-on (the Koopa Bros.
+ * Fortress cell, GitHub #24) the N64 itself draws a bombed wall's cracks over
+ * the hole; a fixed band here stops them at its edge. One depth test can't
+ * check a band, so with a
  * stencil bit: mark where the surface below lies more than DECAL_BAND behind
  * the decal, draw the decal where nothing is marked, then clear the marks.
  * Only for map models (PM3DS_GFX_TAG_DECAL_BAND): entity shadows are decals
@@ -1076,6 +1100,16 @@ unsigned pm3ds_tstat_uploads;
 static uint16_t *g_capture_dst;
 void pm3ds_request_frame_capture(uint16_t *dst) { g_capture_dst = dst; }
 
+/* The game draws the previous frame from dst (320x240 RGBA5551) as textures:
+ * copy it on the GPU (g_prev_tex), or on the CPU without a texture. */
+void pm3ds_request_prev_frame(uint16_t *dst) {
+#ifndef PM3DS_PREV_CPU   /* debug: the old CPU copy, to compare */
+    if (g_prev_ok) g_prev_req = dst;
+    else
+#endif
+        g_capture_dst = dst;
+}
+
 static void capture_frame(uint16_t *dst) {
     uint32_t *tmp = (uint32_t *)linearAlloc(240 * 400 * 4);
     if (!tmp) { pm3ds_log(PM3DS_LOG_WARN, "capture: no linear memory for the frame copy (free %u)", (unsigned)linearSpaceFree()); return; }
@@ -1102,6 +1136,7 @@ static void capture_frame(uint16_t *dst) {
      * strips captured frames ago came back (torn, blocky battle-start wipe) */
     extern void gfx_tex_invalidate_range(const void *addr, size_t len);
     gfx_tex_invalidate_range(dst, 320 * 240 * sizeof(uint16_t));
+#ifdef PM3DS_CAPTURE_LOG   /* debug: what the copy looked like (pause backdrop reports) */
     {
         uint64_t sum = 0;
         for (int i = 0; i < 240 * 400; i += 97) sum += (tmp[i] >> 8) & 0xFF;
@@ -1127,6 +1162,7 @@ static void capture_frame(uint16_t *dst) {
         }
         pm3ds_log(PM3DS_LOG_INFO, "CAPTURE grid %s", grid);
     }
+#endif
     linearFree(tmp);
 }
 
@@ -1302,6 +1338,17 @@ static void render_lists(const void *const *lists, int nlists) {
                   (unsigned long long)((svcGetSystemTick() - t0) / (SYSCLOCK_ARM11 / 1000)));
     pm3ds_bc_main = "draw lists";
     PROF_PHASE(PH_PRESENT);
+    if (g_prev_req) {   /* queued before the clear below: the target still shows the last frame */
+        GX_TextureCopy((u32 *)g_target->frameBuf.colorBuf, GX_BUFFER_DIM(30 * 256 / 16, 0),
+                       (u32 *)g_prev_tex.data, GX_BUFFER_DIM(30 * 256 / 16, 2 * 256 / 16),
+                       30 * 256 * 50, GX_TRANSFER_RAW_COPY(1));
+        g_prev_addr = (uint32_t)(uintptr_t)g_prev_req;
+        g_prev_bytes = 320 * 2 * 240;
+        g_prev_ttl = 3;
+        g_prev_req = NULL;
+    } else if (g_prev_ttl > 0 && --g_prev_ttl == 0) {
+        g_prev_bytes = 0;
+    }
     C3D_RenderTargetClear(g_target, C3D_CLEAR_ALL, 0x000000FFu, 0);
     C3D_FrameDrawOn(g_target); g_fx_epoch++;
     gfx_combiner_invalidate();   /* the bottom screen set its own stages last frame */

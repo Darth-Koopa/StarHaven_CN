@@ -1993,8 +1993,8 @@ void appendGfx_model(void* data) {
 
     // render the model
 #ifdef _3DS
-    // 3DS port: a map decal draws only where it lies on the surface below, as on the N64
-    // (the cracks around a bombed hole stop at its edge, GitHub #24; gfx_present.c)
+    // 3DS port: a map decal draws only where it lies on the surface below (gfx_present.c), so the
+    // cracks around a bombed hole stop at its edge (GitHub #24; the N64 shows them over the hole)
     bool decalBand = renderMode == RENDER_MODE_DECAL_OPA || renderMode == RENDER_MODE_DECAL_OPA_NO_AA
         || renderMode == RENDER_MODE_DECAL_XLU || renderMode == RENDER_MODE_DECAL_XLU_NO_AA;
     if (decalBand) {

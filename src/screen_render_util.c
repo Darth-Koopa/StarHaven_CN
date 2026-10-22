@@ -45,12 +45,13 @@ void appendGfx_draw_prev_frame_buffer(s32 x1, s32 y1, s32 x2, s32 y2, f32 alpha)
         }
     }
 #if defined(_3DS) && !defined(PM3DS_NO_PREVCAP)
-    // The port renders on the GPU, so the N64 colour buffers stay empty: copy
-    // the frame now on screen (the previous one) into this buffer before the
-    // list that samples it is drawn (battle-start blur, Dizzy Dial, fireworks).
+    // The port renders on the GPU, so the N64 colour buffers stay empty: the
+    // frame now on screen (the previous one) is copied into a GPU texture that
+    // texture loads from this buffer sample (battle-start blur, Dizzy Dial,
+    // fireworks; gfx_present.c).
     if (prevGfxCfb != nullptr) {
-        extern void pm3ds_request_frame_capture(u16* dst);
-        pm3ds_request_frame_capture(prevGfxCfb);
+        extern void pm3ds_request_prev_frame(u16* dst);
+        pm3ds_request_prev_frame(prevGfxCfb);
     }
 #endif
 
