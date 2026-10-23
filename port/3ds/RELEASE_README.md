@@ -161,6 +161,12 @@ back. Paperboat is the US version, so this goes with the US ROM.
 
 - A few N64 graphics effects are approximations.
 
+## Credits
+
+- The 3D HOME Menu banner is by [Velvii](https://github.com/Velvii): their model and animation,
+  with Star Haven's star and jingle. Its title uses the Hey Gorgeous font, free for personal use.
+- Star Haven itself is by SecondaryLifer.
+
 ## Legal
 
 Star Haven is a fan project. It is not affiliated with or endorsed by Nintendo. *Paper Mario*

@@ -859,7 +859,7 @@ static void draw_map(void) {
     }
     if (!s_map_follow) {
         chip(MAP_CENTRE_X0, MAP_CENTRE_Y0, vx1 - 4, vy1 - 4, "Centre", COL_SEL, 0.75f);
-    } else {
+    } else if (!pm3ds_cfg.map_dragged) {   /* until the first drag */
         round_rect(vx0 + 4, vy1 - 24, vx0 + 112, vy1 - 4, 7, COL_DARK_CHIP);
         text(vx0 + 10, vy1 - 22, "Drag to look", 0.7f, 1, COL_WHITE);
     }
@@ -2297,6 +2297,10 @@ static void handle_touch(void) {
         if (in(last_x, last_y, MAP_X0, MAP_Y0, MAP_X1, MAP_Y1) && (dx || dy)) {
             drag_dist += abs(dx) + abs(dy);
             if (drag_dist > 4) {
+                if (!pm3ds_cfg.map_dragged) {
+                    pm3ds_cfg.map_dragged = true;
+                    pm3ds_settings_save();
+                }
                 s_map_follow = false;
                 s_map_cx -= dx;
                 s_map_cy -= dy;

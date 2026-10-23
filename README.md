@@ -86,6 +86,11 @@ devkitARM, libctru and citro3d, and needs your own ROMs in `ver/pal/` and `ver/u
 | `src/`, `include/`, `ver/` | the decompilation, with port changes under `#ifdef _3DS` |
 | `DECOMP_README.md` | the decompilation's own readme |
 
+## Credits
+
+- 3D HOME Menu banner by [Velvii](https://github.com/Velvii) (model and animation; the star
+  and the jingle are Star Haven's own). The title is in the Hey Gorgeous font, free for personal use.
+
 ## License
 
 The port (everything under `port/3ds/` and the port's changes to the decompilation) is

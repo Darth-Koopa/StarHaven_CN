@@ -11,3 +11,9 @@ changes to the decompilation (code under _3DS / PM3DS_ guards and the asset
 tools changed for the port). The decompilation itself comes from
 https://github.com/pmret/papermario under its own terms. Paper Mario and
 its assets belong to Nintendo; none of them are licensed here.
+
+Third-party parts:
+- cia/banner.cgfx, the 3D HOME Menu banner: model and animation by Velvii
+  (https://github.com/Velvii), used with permission; the star texture and the
+  banner jingle are Star Haven's own. Its title texture uses the Hey Gorgeous
+  font (ffonts.net), which is free for personal, non-commercial use.
