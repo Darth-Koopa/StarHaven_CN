@@ -7,6 +7,7 @@
 #include "common.h"
 #include "map.h"
 #include "game_modes.h"
+#include "hud_element.h"
 #include "pm3ds_hud_info.h"
 
 extern AreaConfig gAreas[];
@@ -185,6 +186,30 @@ int pm3ds_ui_get_image(int id, pm3ds_ui_image_t* out) {
     }
 #undef SET
     return 1;
+}
+
+/* ---- icons as HudScripts (bottom_screen.c decodes them like menu icons) --- */
+extern HudScript HES_UnusedCompass;
+extern HudScript HES_AButton;
+extern HudScript HES_MenuBoots1;
+extern HudScript HES_MenuHammer1;
+extern IconHudScriptPair gItemHudScripts[];
+
+static const void* item_icon(s32 item) {
+    return gItemHudScripts[gItemTable[item].hudElemID].enabled;
+}
+
+const void* pm3ds_ui_icon_script(int id) {
+    switch (id) {
+        case UI_ICON_STAR_PIECE: return item_icon(ITEM_STAR_PIECE);
+        case UI_ICON_COMPASS:    return &HES_UnusedCompass;
+        case UI_ICON_SETTINGS:   return item_icon(ITEM_SCREWDRIVER);
+        case UI_ICON_CONTROLS:   return &HES_AButton;
+        case UI_ICON_DEBUG:      return item_icon(ITEM_CALCULATOR);
+        case UI_ICON_BOOTS:      return &HES_MenuBoots1;
+        case UI_ICON_HAMMER:     return &HES_MenuHammer1;
+    }
+    return nullptr;
 }
 
 extern u8 MsgCharImgNormal[];

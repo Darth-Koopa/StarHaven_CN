@@ -54,6 +54,8 @@ typedef struct {
 typedef struct {
     int count, found, total;
     int rando;                                /* spots hold shuffled items: only the totals mean anything */
+    int here;                                 /* area[] index of Mario's area, -1 if it has no spots */
+    int room_found, room_total;               /* spots in the map Mario is in */
     pm3ds_tracker_area_t area[PM3DS_TRACKER_AREAS];
 } pm3ds_tracker_t;
 int pm3ds_tracker_query(pm3ds_tracker_t *out);
@@ -79,6 +81,15 @@ typedef struct {
 } pm3ds_ui_image_t;
 
 int pm3ds_ui_get_image(int id, pm3ds_ui_image_t *out);   /* 0 if unavailable */
+
+/* icons the pages draw, as the game's HudScripts (decoded like the menus'
+ * icons, so they need the ROM: only ask once a game is running) */
+enum {
+    UI_ICON_STAR_PIECE, UI_ICON_COMPASS, UI_ICON_SETTINGS, UI_ICON_CONTROLS,
+    UI_ICON_DEBUG, UI_ICON_BOOTS, UI_ICON_HAMMER,
+    UI_ICON_COUNT
+};
+const void *pm3ds_ui_icon_script(int id);
 
 /* the game's dialogue font: 16x16 CI4 glyphs, code = ASCII - 0x20 */
 typedef struct {

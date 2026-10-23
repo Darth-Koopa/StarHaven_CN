@@ -58,20 +58,27 @@ original 3DS and 2DS).
 
 ## Bottom screen
 
-- **Stats, Map, Party** tabs. Tap a partner on the Party tab to switch to them.
-- **Tattle**: every enemy Goombario has tattled so far. Tap one to read the whole tattle.
+The tabs run down the left side:
+
+- **Stats**: HP, FP, level, Star Points, coins, star pieces, Star Power and play time, and what
+  the area you are in still hides: the star pieces, badges and hidden blocks and panels found
+  there, and how many item spots the room you are standing in still holds.
+- **Map**: the world map, where you are and the area's counts. Drag it to look around.
+- **Party**: tap a partner to switch to them.
+- **Tattle**: every enemy Goombario has tattled so far. Tap one to read the whole tattle, with
+  its HP, Attack and Defense on top.
 - **Found**: for each area, how many star pieces, badges, hidden blocks and panels, and item
-  spots you have collected (gifts from characters are not counted; a randomizer file shows
-  only the totals).
+  spots you have collected; the area you are in is highlighted (gifts from characters are not
+  counted; a randomizer file shows only the totals).
 - **Save** on the Stats tab, tapped twice, saves the game wherever the pause menu could open.
   Loading puts you back on the spot on a map with a save block, and at the entrance you came
   in by anywhere else.
 - **Items** opens the item menu.
-- In battle: your HP, FP and Star Power, the battle menus to tap, and an A/B pad for action
-  commands. Mario's commands are big tiles with the game's icons: Jump and Hammer along the
+- In battle the side shows your HP, FP, Star Power and coins, next to the battle menus to tap
+  or an A/B pad for action commands. Mario's commands are big tiles with the game's icons: Jump and Hammer along the
   bottom, Strategies, Items and Star Spirits above them. Every list shows each entry's icon.
 - **Fast >>** turns fast-forward on and off.
-- **Options**:
+- **Options** (with its own tabs: Settings, Controls, Debug):
   - **Screen**: *Original* (4:3), *Fill* or *Wide*.
   - **3D depth**: how deep the 3D slider goes, from *Low* to *Deepest*.
   - **Frame rate**: 60 fps (in-between frames are added) or the original 30 fps. With the 3D
@@ -82,7 +89,7 @@ original 3DS and 2DS).
   - **Update check**: when Star Haven starts, it asks GitHub whether a newer version is out
     and, if so, says so on the bottom screen (*Skip* stops it mentioning that version). It
     downloads and installs nothing. Off here, from the next start.
-  - **Controls**: remap any button.
+  - **Controls** tab: remap any button.
 
 Settings are remembered.
 

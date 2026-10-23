@@ -2,20 +2,23 @@
  * bottom_screen.c — the bottom-screen menu, drawn with citro3d.
  *
  * Styled after Paper Mario's pause menu and built from the game's own art
- * (pause tab labels, status icons, partner portraits, world map) and its
- * dialogue font, all decoded once from the linked N64 data. Three tabs:
- *   Stats  location, chapter, HP/FP, BP, level, star points, coins,
- *          star pieces, star power, play time
- *   Map    the pause-menu world map with visited places and Mario
- *   Party  partner portraits (joined / not yet), current partner
- * plus two buttons: Options (top-screen view, frame rate, text speed,
- * fast-forward, controls, debug page; saved by platform/pm3ds_settings.c) and
- * a fast-forward toggle.
+ * (status icons, partner portraits, world map, item icons) and its dialogue
+ * font, all decoded from the linked N64 data. A rail of tabs down the left,
+ * one tall panel beside it:
+ *   Stats   location, chapter, star power, play time, HP/FP, level, BP,
+ *           star points, coins, star pieces, and what the area and the room
+ *           still hide (n64_shim/journal.c)
+ *   Map     the pause-menu world map with visited places and Mario
+ *   Party   partner portraits (joined / not yet), current partner
+ *   Tattle  every enemy Goombario has tattled
+ *   Found   the item spots collected, per area
+ * plus three buttons: Options (its own rail: settings, controls, debug page;
+ * saved by platform/pm3ds_settings.c), Items and a fast-forward toggle.
  *
- * In battle the tabs give way to a battle page: HP/FP/star power, the menu
- * the game is waiting on (commands, moves, items, targets) as buttons to tap,
- * and an A/B pad for action commands when no menu is open. Item and partner
- * lists in the world show the same way (n64_shim/touch_menu.c).
+ * In battle the rail shows HP/FP/star power/coins and the panel the menu the
+ * game is waiting on (commands, moves, items, targets) as buttons to tap, or
+ * an A/B pad for action commands when no menu is open. Item and partner lists
+ * in the world show the same way (n64_shim/touch_menu.c).
  *
  * Game data comes from n64_shim/hud_info.c through pm3ds_hud_info.h, so this
  * file needs no decomp headers.
@@ -398,9 +401,13 @@ static float text(float x, float y, const char *s, float scale, int white, u32 c
     for (; *s; s++) {
         int g = glyph_of(*s);
         if (g >= 0 && g < s_glyphs) {
+            /* only the glyph's own columns (and half a texel off the cell's
+             * top and bottom): at the cell's edge the GPU can sample the
+             * neighbouring glyph and leave a stray line after the text */
             float gx = (g % 16) * 16.0f, gy = (white ? 256.0f : 0.0f) + (g / 16) * 16.0f;
-            quad2(&s_font, x, y, x + 16 * scale, y + 16 * scale,
-                  gx / 256.0f, gy / 512.0f, (gx + 16) / 256.0f, (gy + 16) / 512.0f, c, c);
+            float cw = s_glyph_w[g] + 2 < 16 ? s_glyph_w[g] + 2 : 16;
+            quad2(&s_font, x, y + 0.5f * scale, x + cw * scale, y + 15.5f * scale,
+                  gx / 256.0f, (gy + 0.5f) / 512.0f, (gx + cw) / 256.0f, (gy + 15.5f) / 512.0f, c, c);
             x += s_glyph_w[g] * scale;
         } else {
             x += 5 * scale;
@@ -441,16 +448,43 @@ static void bar(float x, float y, float w, float h, int v, int max, u32 col) {
 }
 
 /* ---- layout -------------------------------------------------------------- */
-#define TAB_Y0 4
-#define TAB_Y1 30
-#define PANEL_Y0 28
-#define PANEL_Y1 204
+/* A rail of tabs down the left, one tall panel next to it, the button row
+ * underneath. Pages draw between CX0 and CX1, a title at HEAD_Y (and a
+ * second line under it), their body from BODY_Y. */
+#define RAIL_X1 50
+#define RAIL_Y0 6
+#define RAIL_TAB_H 40
+#define PANEL_X0 RAIL_X1
+#define PANEL_Y0 4
+#define PANEL_Y1 206
+#define CX0 58
+#define CX1 308
+#define HEAD_Y 10
+#define SUB_Y (HEAD_Y + 18)
+#define BODY_Y 44
 #define BTN_Y0 212
 #define BTN_Y1 234
-static const float s_tab_x[NUM_GAME_TABS][2] = { { 6, 64 }, { 68, 126 }, { 130, 188 }, { 192, 250 }, { 254, 312 } };
 static const float s_btn_opt[2] = { 8, 104 };
 static const float s_btn_items[2] = { 112, 208 };
 static const float s_btn_ff[2] = { 216, 312 };
+
+#define COL_CARD      RGBA(250, 236, 204, 255)
+#define COL_CARD_RIM  RGBA(200, 160, 110, 255)
+#define COL_AREA      RGBA(255, 242, 214, 255)
+#define COL_SEL       RGBA(255, 214, 120, 255)
+#define COL_OFF       RGBA(200, 185, 165, 255)
+#define COL_SUB       RGBA(170, 120, 80, 255)
+#define COL_HINT      RGBA(150, 100, 60, 255)
+#define COL_GOLD      RGBA(240, 176, 40, 255)
+#define COL_DIM       RGBA(110, 80, 50, 70)
+#define COL_DONE      RGBA(40, 150, 40, 255)
+#define COL_DONE_ROW  RGBA(220, 240, 200, 255)
+#define COL_DARK_CHIP RGBA(60, 36, 20, 210)
+
+static void button(const float x[2], const char *label);
+static bool draw_ui_icon(int id, float x, float y, float size, u32 c);
+static bool in(int px, int py, float x0, float y0, float x1, float y1);
+static void small_text_center(float cx, float y, const char *str, float scale, u32 c);
 
 /* shortcut for the game (src/world/menus.c): 1 = item menu, 2 = quick save, 0x100 + id = switch partner */
 volatile int pm3ds_touch_req;
@@ -461,9 +495,9 @@ volatile int pm3ds_quicksave_result;
 enum { QS_IDLE, QS_ARMED, QS_WAIT, QS_DONE };
 static int s_qs, s_qs_timer;
 #define QS_X0 254
-#define QS_X1 310
-#define QS_Y0 (PANEL_Y0 + 5)
-#define QS_Y1 (PANEL_Y0 + 25)
+#define QS_X1 308
+#define QS_Y0 8
+#define QS_Y1 26
 
 static void qs_tick(void) {
     s_qs_timer++;
@@ -497,7 +531,7 @@ static void qs_tap(void) {
 static void draw_qs_button(void) {
     static const char *const labels[] = { "Save", "Sure?", "...", "" };
     const char *label = labels[s_qs];
-    u32 face = s_qs == QS_ARMED ? RGBA(255, 196, 64, 255) : RGBA(255, 214, 120, 255);
+    u32 face = s_qs == QS_ARMED ? RGBA(255, 196, 64, 255) : COL_SEL;
     if (s_qs == QS_DONE) {
         label = pm3ds_quicksave_result > 0 ? "Saved!" : "Not now";
         face = pm3ds_quicksave_result > 0 ? RGBA(150, 220, 120, 255) : RGBA(240, 150, 120, 255);
@@ -515,93 +549,243 @@ static const char *chapter_label(int ch) {
     return ch >= 0 && ch <= 9 ? names[ch] : "";
 }
 
-static void draw_tabs(void) {
-    /* the pause menu's own labels, then two tabs it doesn't have */
-    static const int labels[3] = { UI_IMG_LABEL_STATS, UI_IMG_LABEL_MAP, UI_IMG_LABEL_PARTY };
-    static const char *const names[NUM_GAME_TABS] = { NULL, NULL, NULL, "Tattle", "Found" };
-    for (int i = 0; i < NUM_GAME_TABS; i++) {
-        bool on = s_tab == i;
-        float x0 = s_tab_x[i][0], x1 = s_tab_x[i][1];
-        float y0 = on ? TAB_Y0 : TAB_Y0 + 3;
-        round_rect(x0 + 2, y0 + 2, x1 + 2, TAB_Y1 + 6, 7, COL_SHADOW);
-        round_rect(x0, y0, x1, TAB_Y1 + 6, 7, COL_PANEL_EDGE);
-        round_rect(x0 + 2, y0 + 2, x1 - 2, TAB_Y1 + 6, 5, on ? COL_TAB_ON : COL_TAB);
-        if (names[i]) {
-            text_center((x0 + x1) / 2, y0 + 5, names[i], 0.9f, 0, COL_WHITE);
-            continue;
+/* ---- building blocks ------------------------------------------------------ */
+static void text_right(float x, float y, const char *s, float scale, u32 c) {
+    text(x - text_width(s, scale), y, s, scale, 0, c);
+}
+
+/* scale that fits s into avail pixels, at most scale, at least lo */
+static float fit(const char *s, float avail, float scale, float lo) {
+    float w = text_width(s, scale);
+    if (w <= avail) return scale;
+    float f = scale * avail / w;
+    return f < lo ? lo : f;
+}
+
+/* a flat card: thin tan rim, face */
+static void card(float x0, float y0, float x1, float y1, u32 face) {
+    round_rect(x0, y0, x1, y1, 6, COL_CARD_RIM);
+    round_rect(x0 + 1, y0 + 1, x1 - 1, y1 - 1, 5, face);
+}
+
+/* a raised tile: shadow, brown rim, face */
+static void tile(float x0, float y0, float x1, float y1, float r, u32 face) {
+    round_rect(x0 + 2, y0 + 2, x1 + 2, y1 + 2, r, COL_SHADOW);
+    round_rect(x0, y0, x1, y1, r, COL_PANEL_EDGE);
+    round_rect(x0 + 2, y0 + 2, x1 - 2, y1 - 2, r - 2, face);
+}
+
+/* a small button with its label centred */
+static void chip(float x0, float y0, float x1, float y1, const char *label, u32 face, float scale) {
+    round_rect(x0, y0, x1, y1, 7, COL_PANEL_EDGE);
+    round_rect(x0 + 2, y0 + 2, x1 - 2, y1 - 2, 5, face);
+    text_center((x0 + x1) / 2, (y0 + y1) / 2 - 8 * scale, label, scale, 0, COL_WHITE);
+}
+
+static void page_title(const char *title, const char *sub) {
+    text(CX0 + 2, HEAD_Y, title, fit(title, 160, 1.05f, 0.7f), 0, COL_WHITE);
+    if (sub) text(CX0 + 2, SUB_Y, sub, 0.8f, 0, COL_SUB);
+}
+
+static int pages_of(int n, int per) { return n > 0 ? (n + per - 1) / per : 1; }
+
+/* "<  2/3  >" at the top right of a page; drawn only with more than one page */
+static void pager(int page, int pages) {
+    if (pages <= 1) return;
+    char buf[16];
+    chip(226, HEAD_Y, 250, HEAD_Y + 18, "<", COL_SEL, 0.85f);
+    snprintf(buf, sizeof buf, "%d/%d", page + 1, pages);
+    text_center(268, HEAD_Y + 2, buf, 0.8f, 0, COL_HINT);
+    chip(286, HEAD_Y, 310, HEAD_Y + 18, ">", COL_SEL, 0.85f);
+}
+
+/* a tap on the pager: the new page, or -1 if the tap missed it */
+static int pager_tap(int px, int py, int page, int pages) {
+    if (pages <= 1 || py < HEAD_Y - 6 || py >= HEAD_Y + 24) return -1;
+    if (px >= 218 && px < 256) return (page + pages - 1) % pages;
+    if (px >= 278 && px < 316) return (page + 1) % pages;
+    return -1;
+}
+
+/* ---- the tab rail ---------------------------------------------------------- */
+typedef struct {
+    const char *name;
+    int img;    /* UI_IMG_* drawn when the icon is not there (yet), -1 none */
+    int icon;   /* UI_ICON_*, -1 none */
+} rail_tab_t;
+
+static const rail_tab_t s_game_rail[] = {
+    { "Stats", UI_IMG_MARIO, -1 },
+    { "Map", UI_IMG_MAP_LOCATION, UI_ICON_COMPASS },
+    { "Party", UI_IMG_PARTNER_FIRST + 1, -1 },   /* Kooper */
+    { "Tattle", UI_IMG_PARTNER_FIRST, -1 },      /* Goombario */
+    { "Found", UI_IMG_STAR_PIECE, UI_ICON_STAR_PIECE },
+};
+static const rail_tab_t s_opt_rail[] = {
+    { "Settings", UI_IMG_TIME, UI_ICON_SETTINGS },
+    { "Controls", -1, UI_ICON_CONTROLS },
+    { "Debug", -1, UI_ICON_DEBUG },
+};
+#define NUM_OPT_TABS 3
+
+/* after the panel: the active tab runs into the panel's rim */
+static void draw_rail(const rail_tab_t *tabs, int n, int active) {
+    for (int i = 0; i < n; i++) {
+        bool on = i == active;
+        float y0 = RAIL_Y0 + i * RAIL_TAB_H, y1 = y0 + RAIL_TAB_H - 1;
+        float x0 = on ? 4 : 7, x1 = on ? RAIL_X1 + 4 : RAIL_X1 - 2;
+        round_rect(x0 + 2, y0 + 2, x1 + 2, y1 + 2, 7, COL_SHADOW);
+        round_rect(x0, y0, x1, y1, 7, COL_PANEL_EDGE);
+        round_rect(x0 + 2, y0 + 2, on ? x1 : x1 - 2, y1 - 2, 5, on ? COL_PANEL : COL_TAB);
+        float cx = (x0 + RAIL_X1 - 2) / 2 + (on ? 1 : 0);
+        if (!(tabs[i].icon >= 0 && draw_ui_icon(tabs[i].icon, cx - 10, y0 + 3, 20, COL_WHITE)) && tabs[i].img >= 0) {
+            rect_t r = s_img[tabs[i].img];
+            float s = r.w > 16 ? 20.0f / r.w : 1.0f;
+            image(tabs[i].img, cx - r.w * s / 2, y0 + 3 + (20 - r.h * s) / 2, s, COL_WHITE);
         }
-        rect_t r = s_img[labels[i]];
-        image(labels[i], (x0 + x1) / 2 - r.w / 2, y0 + 5, 1.0f, COL_WHITE);
+        text_center(cx, y0 + 22, tabs[i].name, strlen(tabs[i].name) < 7 ? 0.62f : 0.55f, 0, COL_WHITE);
     }
 }
 
-static void stat_line(float x, float y, int icon, const char *label, const char *value) {
-    image(icon, x, y, 1.0f, COL_WHITE);
-    text(x + 20, y, label, 1.0f, 0, COL_WHITE);
-    text(306 - text_width(value, 1.0f), y, value, 1.0f, 0, COL_WHITE);
+/* the rail tab under (px, py), or -1 */
+static int rail_hit(int px, int py, int n) {
+    if (px >= RAIL_X1 + 2 || py < RAIL_Y0) return -1;
+    int i = (py - RAIL_Y0) / RAIL_TAB_H;
+    return i < n ? i : -1;
+}
+
+/* ---- Stats ----------------------------------------------------------------- */
+static pm3ds_tracker_t s_found;
+static int s_found_page;
+
+/* a ? block, size pixels square; unlit: a faint silhouette */
+static void qblock(float x, float y, float size, bool lit) {
+    float r = size / 5;
+    round_rect(x, y, x + size, y + size, r, lit ? RGBA(140, 80, 20, 255) : COL_DIM);
+    if (!lit) return;
+    round_rect(x + 1, y + 1, x + size - 1, y + size - 1, r - 1, RGBA(250, 186, 40, 255));
+    text_center(x + size / 2 + size / 32, y + size * 0.04f, "?", size / 16, 1, COL_WHITE);
+}
+
+/* total icons for one kind of spot, the found ones lit, within width w */
+enum { PIP_STAR_PIECE, PIP_BADGE, PIP_HIDDEN };
+static void pips(float x, float y, int kind, int found, int total, float w) {
+    if (total <= 0) return;
+    float step = w / total > 12 ? 12 : w / total, size = step - 2 > 10 ? 10 : step - 2;
+    for (int i = 0; i < total; i++) {
+        u32 c = i < found ? COL_WHITE : COL_DIM;
+        float px = x + i * step;
+        if (kind == PIP_STAR_PIECE) {
+            if (!draw_ui_icon(UI_ICON_STAR_PIECE, px, y, size, c)) image(UI_IMG_STAR_PIECE, px, y, size / 16, c);
+        } else if (kind == PIP_BADGE) {
+            image(UI_IMG_BP, px, y, size / 16, c);
+        } else {
+            qblock(px, y, size, i < found);
+        }
+    }
+}
+
+/* "3/5" centred on cx, or "-" when there are none of these; green when all found */
+static void count_cell(float cx, float y, int found, int total, float scale) {
+    char buf[12];
+    if (total == 0) snprintf(buf, sizeof buf, "-");
+    else snprintf(buf, sizeof buf, "%d/%d", found, total);
+    text_center(cx, y, buf, scale, 0, total > 0 && found == total ? COL_DONE : COL_WHITE);
+}
+
+/* the item spots of Mario's area and room (n64_shim/journal.c) */
+static void draw_area_card(float x0, float y0, float x1, float y1) {
+    const pm3ds_tracker_t *f = &s_found;
+    char buf[48];
+    card(x0, y0, x1, y1, COL_AREA);
+    if (f->here < 0) {
+        text_center((x0 + x1) / 2, (y0 + y1) / 2 - 8, "Nothing to find here", 0.85f, 0, COL_SUB);
+        return;
+    }
+    const pm3ds_tracker_area_t *a = &f->area[f->here];
+    text(x0 + 7, y0 + 4, "Found in this area", 0.85f, 0, COL_WHITE);
+    snprintf(buf, sizeof buf, "%d/%d", a->found, a->total);
+    text_right(x1 - 7, y0 + 3, buf, 1.0f, a->found == a->total ? COL_DONE : COL_WHITE);
+    bar(x0 + 8, y0 + 20, x1 - x0 - 16, 6, a->found, a->total, COL_GOLD);
+    if (f->rando) {
+        extern unsigned int pm3ds_rando_seed(void);
+        snprintf(buf, sizeof buf, "Randomizer seed %08X", pm3ds_rando_seed());
+        text(x0 + 8, y0 + 33, buf, 0.8f, 0, COL_WHITE);
+        text(x0 + 8, y0 + 51, "The spots hold shuffled items:", 0.72f, 0, COL_SUB);
+        text(x0 + 8, y0 + 64, "only the totals count.", 0.72f, 0, COL_SUB);
+    } else {
+        static const char *const labels[3] = { "Star Pieces", "Badges", "Hidden" };
+        const unsigned char *counts[3][2] = { { &a->sp_found, &a->sp_total }, { &a->badge_found, &a->badge_total },
+                                              { &a->hidden_found, &a->hidden_total } };
+        for (int k = 0; k < 3; k++) {
+            float y = y0 + 30 + k * 16;
+            int got = *counts[k][0], total = *counts[k][1];
+            if (k == PIP_STAR_PIECE) image(UI_IMG_STAR_PIECE, x0 + 8, y, 1.0f, COL_WHITE);
+            else if (k == PIP_BADGE) image(UI_IMG_BP, x0 + 8, y, 1.0f, COL_WHITE);
+            else qblock(x0 + 9, y + 1, 14, true);
+            text(x0 + 28, y + 1, labels[k], 0.8f, 0, COL_WHITE);
+            pips(x0 + 112, y + 3, k, got, total, x1 - x0 - 160);
+            count_cell(x1 - 24, y + 1, got, total, 0.8f);
+        }
+    }
+    if (f->room_total == 0) snprintf(buf, sizeof buf, "Nothing to find in this room");
+    else if (f->room_found == f->room_total) snprintf(buf, sizeof buf, "This room: all found");
+    else snprintf(buf, sizeof buf, "This room: %d of %d still here", f->room_total - f->room_found, f->room_total);
+    text_center((x0 + x1) / 2, y1 - 16, buf, 0.75f, 0, COL_SUB);
 }
 
 static void draw_stats(void) {
     const pm3ds_hud_info_t *h = &s_info;
     char buf[48];
-    text_center(160, PANEL_Y0 + 7, h->location, 1.0f, 0, COL_WHITE);
-    {
-        extern unsigned int pm3ds_rando_seed(void);   /* n64_shim/rando.c; matches spoiler_<seed>.txt */
-        char line[48];
-        if (pm3ds_rando_seed())
-            snprintf(line, sizeof line, "%s  -  seed %08X", chapter_label(h->chapter), pm3ds_rando_seed());
-        else
-            snprintf(line, sizeof line, "%s", chapter_label(h->chapter));
-        text_center(160, PANEL_Y0 + 24, line, 1.0f, 0, RGBA(170, 120, 80, 255));
-    }
-    fill(20, PANEL_Y0 + 43, 300, PANEL_Y0 + 44, RGBA(200, 170, 130, 255));
-
-    float y = PANEL_Y0 + 50;
-    image(UI_IMG_HEART, 16, y, 1.0f, COL_WHITE);
-    text(36, y, "HP", 1.0f, 0, COL_WHITE);
-    snprintf(buf, sizeof buf, "%d/%d", h->hp, h->max_hp);
-    text(146 - text_width(buf, 1.0f), y, buf, 1.0f, 0, COL_WHITE);
-    bar(16, y + 18, 130, 7, h->hp, h->max_hp, COL_HP);
-
-    image(UI_IMG_FLOWER, 16, y + 32, 1.0f, COL_WHITE);
-    text(36, y + 32, "FP", 1.0f, 0, COL_WHITE);
-    snprintf(buf, sizeof buf, "%d/%d", h->fp, h->max_fp);
-    text(146 - text_width(buf, 1.0f), y + 32, buf, 1.0f, 0, COL_WHITE);
-    bar(16, y + 50, 130, 7, h->fp, h->max_fp, COL_FP);
-
-    image(UI_IMG_BP, 16, y + 66, 1.0f, COL_WHITE);
-    text(36, y + 66, "BP", 1.0f, 0, COL_WHITE);
-    snprintf(buf, sizeof buf, "%d", h->bp);
-    text(146 - text_width(buf, 1.0f), y + 66, buf, 1.0f, 0, COL_WHITE);
-
-    snprintf(buf, sizeof buf, "%d", h->level);
-    stat_line(160, y, UI_IMG_MARIO, "Level", buf);
-    snprintf(buf, sizeof buf, "%d", h->star_points);
-    stat_line(160, y + 22, UI_IMG_STAR_POINT, "Star Points", buf);
-    snprintf(buf, sizeof buf, "%d", h->coins);
-    stat_line(160, y + 44, UI_IMG_COIN, "Coins", buf);
-    snprintf(buf, sizeof buf, "%d", h->star_pieces);
-    stat_line(160, y + 66, UI_IMG_STAR_PIECE, "Star Pieces", buf);
-
-    /* star power: one star per bar */
-    float sy = PANEL_Y1 - 24;
-    if (h->max_star_power > 0) {
-        float x = text(16, sy, "Star Power", 1.0f, 0, COL_WHITE) + 6;
-        int full = h->star_power / 256;
-        for (int i = 0; i < h->max_star_power && i < 7; i++)
-            image(i < full ? UI_IMG_POW_STAR : UI_IMG_POW_EMPTY, x + i * 10, sy + 4, 1.0f, COL_WHITE);
-    }
+    text(CX0 + 2, HEAD_Y, h->location, fit(h->location, 188, 1.05f, 0.7f), 0, COL_WHITE);
+    float x = text(CX0 + 2, SUB_Y, chapter_label(h->chapter), 0.8f, 0, COL_SUB) + 8;
+    int full = h->star_power / 256;
+    for (int i = 0; i < h->max_star_power && i < 7; i++)
+        image(i < full ? UI_IMG_POW_STAR : UI_IMG_POW_EMPTY, x + i * 9, SUB_Y + 4, 1.0f, COL_WHITE);
     unsigned sec = h->play_seconds;
     snprintf(buf, sizeof buf, "%u:%02u:%02u", sec / 3600, (sec / 60) % 60, sec % 60);
-    float tw = text_width(buf, 1.0f);
-    image(UI_IMG_TIME, 306 - tw - 20, sy, 1.0f, COL_WHITE);
-    text(306 - tw, sy, buf, 1.0f, 0, COL_WHITE);
+    float tw = text_width(buf, 0.8f);
+    image(UI_IMG_TIME, CX1 - tw - 18, SUB_Y - 1, 1.0f, COL_WHITE);
+    text(CX1 - tw, SUB_Y, buf, 0.8f, 0, COL_WHITE);
     draw_qs_button();
+
+    /* HP and FP */
+    for (int k = 0; k < 2; k++) {
+        float x0 = CX0 + k * 126;
+        int v = k ? h->fp : h->hp, m = k ? h->max_fp : h->max_hp;
+        card(x0, 46, x0 + 120, 76, COL_CARD);
+        image(k ? UI_IMG_FLOWER : UI_IMG_HEART, x0 + 5, 49, 1.0f, COL_WHITE);
+        text(x0 + 23, 49, k ? "FP" : "HP", 0.9f, 0, COL_WHITE);
+        snprintf(buf, sizeof buf, "%d/%d", v, m);
+        text_right(x0 + 114, 49, buf, 0.9f, COL_WHITE);
+        bar(x0 + 6, 66, 108, 5, v, m, k ? COL_FP : COL_HP);
+    }
+    /* level, BP, star points, coins, star pieces */
+    const int icons[5] = { UI_IMG_MARIO, UI_IMG_BP, UI_IMG_STAR_POINT, UI_IMG_COIN, UI_IMG_STAR_PIECE };
+    const int vals[5] = { h->level, h->bp, h->star_points, h->coins, h->star_pieces };
+    for (int k = 0; k < 5; k++) {
+        float x0 = CX0 + k * 50.4f;
+        card(x0, 81, x0 + 46, 101, COL_CARD);
+        image(icons[k], x0 + 3, 83, 1.0f, COL_WHITE);
+        snprintf(buf, sizeof buf, "%d", vals[k]);
+        text_right(x0 + 42, 84, buf, fit(buf, 22, 0.8f, 0.6f), COL_WHITE);
+    }
+    draw_area_card(CX0, 106, CX1, 202);
 }
+
+/* ---- Map ------------------------------------------------------------------- */
+#define MAP_X0 57
+#define MAP_Y0 11
+#define MAP_X1 309
+#define MAP_Y1 199
+#define MAP_CENTRE_X0 (MAP_X1 - 62)
+#define MAP_CENTRE_Y0 (MAP_Y1 - 24)
 
 static void draw_map(void) {
     const pm3ds_hud_info_t *h = &s_info;
-    float vx0 = 10, vy0 = PANEL_Y0 + 8, vx1 = 310, vy1 = PANEL_Y1 - 8;
+    const pm3ds_tracker_t *f = &s_found;
+    char buf[16];
+    float vx0 = MAP_X0, vy0 = MAP_Y0, vx1 = MAP_X1, vy1 = MAP_Y1;
     float vw = vx1 - vx0, vh = vy1 - vy0;
     if (s_map_follow && h->map_current >= 0) {
         s_map_cx = h->map_x[h->map_current];
@@ -614,6 +798,7 @@ static void draw_map(void) {
     if (s_map_cy < vh / 2) s_map_cy = vh / 2;
     if (s_map_cy > 320 - vh / 2) s_map_cy = 320 - vh / 2;
     float mx0 = s_map_cx - vw / 2, my0 = s_map_cy - vh / 2;
+    round_rect(vx0 - 2, vy0 - 2, vx1 + 2, vy1 + 2, 6, COL_PANEL_EDGE);
     if (s_map_ok)
         quad2(&s_map, vx0, vy0, vx1, vy1, mx0 / 512.0f, my0 / 512.0f,
               (mx0 + vw) / 512.0f, (my0 + vh) / 512.0f, COL_WHITE, COL_WHITE);
@@ -628,43 +813,78 @@ static void draw_map(void) {
         int walk = (s_frame / 8) & 1 ? UI_IMG_MAP_WALK1 : UI_IMG_MAP_WALK0;
         if (x >= vx0 && x <= vx1 && y >= vy0 && y <= vy1) image(walk, x - 12, y - 20, 1.0f, COL_WHITE);
     }
-    /* location banner */
-    float tw = text_width(h->location, 1.0f);
-    round_rect(160 - tw / 2 - 8, vy1 - 22, 160 + tw / 2 + 8, vy1 - 2, 8, RGBA(60, 36, 20, 210));
-    text_center(160, vy1 - 21, h->location, 1.0f, 1, COL_WHITE);
+    /* where Mario is, and what the area still hides */
+    bool counts = f->here >= 0;
+    float cw = text_width(h->location, 0.85f) + 14;
+    if (counts && cw < 124) cw = 124;
+    round_rect(vx0 + 4, vy0 + 4, vx0 + 4 + cw, vy0 + (counts ? 38 : 22), 7, COL_DARK_CHIP);
+    text(vx0 + 10, vy0 + 6, h->location, 0.85f, 1, COL_WHITE);
+    if (counts) {
+        const pm3ds_tracker_area_t *a = &f->area[f->here];
+        float y = vy0 + 21;
+        if (f->rando) {
+            snprintf(buf, sizeof buf, "Checked %d/%d", a->found, a->total);
+            text(vx0 + 10, y, buf, 0.7f, 1, COL_WHITE);
+        } else {
+            image(UI_IMG_STAR_PIECE, vx0 + 9, y, 0.75f, COL_WHITE);
+            snprintf(buf, sizeof buf, "%d/%d", a->sp_found, a->sp_total);
+            text(vx0 + 22, y, buf, 0.7f, 1, COL_WHITE);
+            image(UI_IMG_BP, vx0 + 48, y, 0.75f, COL_WHITE);
+            snprintf(buf, sizeof buf, "%d/%d", a->badge_found, a->badge_total);
+            text(vx0 + 61, y, buf, 0.7f, 1, COL_WHITE);
+            qblock(vx0 + 87, y, 11, true);
+            snprintf(buf, sizeof buf, "%d/%d", a->hidden_found, a->hidden_total);
+            text(vx0 + 100, y, buf, 0.7f, 1, COL_WHITE);
+        }
+    }
     if (!s_map_follow) {
-        round_rect(vx0 + 2, vy0 + 2, vx0 + 178, vy0 + 14, 5, RGBA(60, 36, 20, 200));
-        small_text(vx0 + 6, vy0 + 4, "tap here to re-centre", 40, COL_WHITE);
+        chip(MAP_CENTRE_X0, MAP_CENTRE_Y0, vx1 - 4, vy1 - 4, "Centre", COL_SEL, 0.75f);
+    } else {
+        round_rect(vx0 + 4, vy1 - 24, vx0 + 112, vy1 - 4, 7, COL_DARK_CHIP);
+        text(vx0 + 10, vy1 - 22, "Drag to look", 0.7f, 1, COL_WHITE);
     }
 }
 
-static bool in(int px, int py, float x0, float y0, float x1, float y1);
-static void small_text_center(float cx, float y, const char *str, float scale, u32 c);
+/* ---- Party ----------------------------------------------------------------- */
+/* portraits in pause-menu order; partner ids */
+static const int s_party_ids[PM3DS_HUD_PARTNERS] = { 1, 2, 3, 4, 9, 6, 7, 8 };
+
+static void party_rect(int i, float *x0, float *y0, float *x1, float *y1) {
+    *x0 = CX0 + (i % 4) * 63.5f;
+    *y0 = 46 + (i / 4) * 74;
+    *x1 = *x0 + 59;
+    *y1 = *y0 + 68;
+}
 
 static void draw_party(void) {
     const pm3ds_hud_info_t *h = &s_info;
-    static const int ids[PM3DS_HUD_PARTNERS] = { 1, 2, 3, 4, 9, 6, 7, 8 };
     static const char *names[PM3DS_HUD_PARTNERS] = {
         "Goombario", "Kooper", "Bombette", "Parakarry", "Bow", "Watt", "Sushie", "Lakilester",
     };
+    char sub[40];
+    if (h->partner) snprintf(sub, sizeof sub, "%s is with you", h->partner_name);
+    else snprintf(sub, sizeof sub, "No partner yet");
+    page_title("Party", sub);
     for (int i = 0; i < PM3DS_HUD_PARTNERS; i++) {
-        float cx = 46 + (i % 4) * 76, y = PANEL_Y0 + 12 + (i / 4) * 84;
-        bool owned = (h->partners_owned >> ids[i]) & 1;
-        bool active = h->partner == ids[i];
-        if (active) round_rect(cx - 34, y - 4, cx + 34, y + 76, 8, RGBA(255, 214, 120, 255));
-        image(owned ? UI_IMG_PARTNER_FIRST + i : UI_IMG_PARTNER_DISABLED_FIRST + i, cx - 24, y, 1.5f, COL_WHITE);
-        text_center(cx, y + 52, owned ? names[i] : "???", 1.0f, 0,
+        float x0, y0, x1, y1;
+        party_rect(i, &x0, &y0, &x1, &y1);
+        bool owned = (h->partners_owned >> s_party_ids[i]) & 1;
+        tile(x0, y0, x1, y1, 8, h->partner == s_party_ids[i] ? COL_SEL : owned ? COL_TAB_ON : COL_OFF);
+        image(owned ? UI_IMG_PARTNER_FIRST + i : UI_IMG_PARTNER_DISABLED_FIRST + i, (x0 + x1) / 2 - 18, y0 + 6, 1.125f,
+              COL_WHITE);
+        const char *nm = owned ? names[i] : "???";
+        text_center((x0 + x1) / 2, y0 + 47, nm, fit(nm, 52, 0.8f, 0.55f), 0,
                     owned ? COL_WHITE : RGBA(255, 255, 255, 140));
     }
-    if (h->partners_owned) small_text_center(160, PANEL_Y1 - 12, "Tap a partner to switch", 1.0f, RGBA(150, 100, 60, 255));
+    if (h->partners_owned) text_center((CX0 + CX1) / 2, 191, "Tap a partner to switch", 0.7f, 0, COL_HINT);
 }
 
 /* Party tab: the partner whose portrait is at (px, py), or 0 */
 static int partner_at(int px, int py) {
-    static const int ids[PM3DS_HUD_PARTNERS] = { 1, 2, 3, 4, 9, 6, 7, 8 };
     for (int i = 0; i < PM3DS_HUD_PARTNERS; i++) {
-        float cx = 46 + (i % 4) * 76, y = PANEL_Y0 + 12 + (i / 4) * 84;
-        if (in(px, py, cx - 34, y - 4, cx + 34, y + 76)) return ids[i];
+        float x0, y0, x1, y1;
+        party_rect(i, &x0, &y0, &x1, &y1);
+        if (in(px, py, x0, y0, x1, y1)) return s_party_ids[i];
     }
     return 0;
 }
@@ -687,45 +907,16 @@ static void draw_debug(void) {
     text_center(283, 217, "Back", 1.0f, 1, COL_WHITE);
 }
 
-/* ---- Tattle log, item tracker, quick save --------------------------------- */
+/* ---- Tattle log ------------------------------------------------------------ */
 static pm3ds_tattle_list_t s_log;
 static int s_log_page, s_log_open = -1, s_log_text_page;   /* s_log_open: s_log index shown in full */
 static char s_log_text[2048];
-static pm3ds_tracker_t s_found;
-static int s_found_page;
-#define LIST_HEAD_Y (PANEL_Y0 + 8)
-#define LIST_Y0 (PANEL_Y0 + 32)
+static int s_log_hp, s_log_atk, s_log_def;                 /* from the open tattle, -1 if it has none */
 #define LOG_ROWS 7
 #define LOG_PER_PAGE (LOG_ROWS * 2)
-#define LOG_ROW_H 20
-#define LOG_TEXT_SCALE 0.85f
+#define LOG_TEXT_SCALE 0.8f
 #define LOG_LINE_H 15
-#define LOG_LINES 9
-#define FOUND_ROWS 7
-#define FOUND_ROW_H 17
-#define FOUND_Y0 (PANEL_Y0 + 46)
-
-static int pages_of(int n, int per) { return n > 0 ? (n + per - 1) / per : 1; }
-
-/* "<  2/3  >" at the top right of a list; drawn only with more than one page */
-static void page_arrows(int page, int pages) {
-    if (pages <= 1) return;
-    char buf[24];
-    round_rect(214, LIST_HEAD_Y - 3, 238, LIST_HEAD_Y + 17, 7, COL_BTN);
-    text_center(226, LIST_HEAD_Y - 1, "<", 1.0f, 1, COL_WHITE);
-    round_rect(284, LIST_HEAD_Y - 3, 308, LIST_HEAD_Y + 17, 7, COL_BTN);
-    text_center(296, LIST_HEAD_Y - 1, ">", 1.0f, 1, COL_WHITE);
-    snprintf(buf, sizeof buf, "%d/%d", page + 1, pages);
-    text_center(261, LIST_HEAD_Y, buf, 0.9f, 0, COL_WHITE);
-}
-
-/* a tap on page_arrows: the new page, or -1 if the tap missed them */
-static int page_tap(int px, int py, int page, int pages) {
-    if (pages <= 1 || py < LIST_HEAD_Y - 5 || py >= LIST_HEAD_Y + 19) return -1;
-    if (px >= 208 && px < 244) return (page + pages - 1) % pages;
-    if (px >= 278 && px < 314) return (page + 1) % pages;
-    return -1;
-}
+#define LOG_TEXT_Y1 200
 
 /* word wrap: start/length of each line of str at scale within width */
 static int wrap_text(const char *str, float scale, float width, short *start, short *len, int max) {
@@ -751,48 +942,84 @@ static int wrap_text(const char *str, float scale, float width, short *start, sh
     return n;
 }
 
+/* the number after key in a tattle ("Max HP: 2"), -1 if it isn't there */
+static int tattle_stat(const char *t, const char *key) {
+    const char *p = strstr(t, key);
+    if (!p) return -1;
+    p += strlen(key);
+    while (*p == ' ') p++;
+    return *p >= '0' && *p <= '9' ? atoi(p) : -1;
+}
+
+static void log_open(int i) {
+    s_log_open = i;
+    s_log_text_page = 0;
+    pm3ds_tattle_text(s_log.entry[i], s_log_text, sizeof s_log_text);
+    s_log_hp = tattle_stat(s_log_text, "Max HP:");
+    s_log_atk = tattle_stat(s_log_text, "Attack Power:");
+    s_log_def = tattle_stat(s_log_text, "Defense Power:");
+}
+
+static bool log_has_stats(void) { return s_log_hp >= 0 && s_log_atk >= 0 && s_log_def >= 0; }
+
 static void log_entry_rect(int slot, float *x0, float *y0, float *x1, float *y1) {
-    *x0 = slot < LOG_ROWS ? 12 : 162;
-    *y0 = LIST_Y0 + (slot % LOG_ROWS) * LOG_ROW_H;
-    *x1 = *x0 + 146;
-    *y1 = *y0 + LOG_ROW_H - 3;
+    *x0 = CX0 + (slot / LOG_ROWS) * 126;
+    *y0 = 56 + (slot % LOG_ROWS) * 21;
+    *x1 = *x0 + 122;
+    *y1 = *y0 + 18;
 }
 
 static void draw_log(void) {
     char buf[40];
     if (s_log_open >= 0 && s_log_open < s_log.known) {   /* one tattle in full */
         static short starts[48], lens[48];
-        int lines = wrap_text(s_log_text, LOG_TEXT_SCALE, 292, starts, lens, 48);
-        int pages = pages_of(lines, LOG_LINES);
+        float ty0 = log_has_stats() ? 66 : 38;
+        int per = (int)((LOG_TEXT_Y1 - ty0 - 8) / LOG_LINE_H);
+        int lines = wrap_text(s_log_text, LOG_TEXT_SCALE, CX1 - CX0 - 16, starts, lens, 48);
+        int pages = pages_of(lines, per);
         if (s_log_text_page >= pages) s_log_text_page = 0;
-        round_rect(10, LIST_HEAD_Y - 3, 64, LIST_HEAD_Y + 17, 7, COL_BTN);
-        text_center(37, LIST_HEAD_Y - 1, "Back", 0.9f, 1, COL_WHITE);
-        text_center(176, LIST_HEAD_Y - 1, s_log.name[s_log_open], 1.0f, 0, COL_WHITE);
-        fill(14, LIST_Y0 - 6, 306, LIST_Y0 - 5, RGBA(200, 170, 130, 255));
-        for (int l = 0; l < LOG_LINES; l++) {
-            int k = s_log_text_page * LOG_LINES + l;
+        chip(CX0, HEAD_Y - 1, CX0 + 50, HEAD_Y + 19, "Back", COL_SEL, 0.85f);
+        const char *name = s_log.name[s_log_open];
+        text(CX0 + 58, HEAD_Y, name, fit(name, 190 - (pages > 1 ? 30 : 0), 1.05f, 0.6f), 0, COL_WHITE);
+        if (pages > 1) {
+            snprintf(buf, sizeof buf, "%d/%d", s_log_text_page + 1, pages);
+            text_right(CX1, HEAD_Y + 3, buf, 0.75f, COL_HINT);
+        }
+        if (log_has_stats()) {
+            static const char *const labels[3] = { "Max HP", "Attack", "Defense" };
+            const int vals[3] = { s_log_hp, s_log_atk, s_log_def };
+            for (int k = 0; k < 3; k++) {
+                float x0 = CX0 + k * 84;
+                card(x0, 38, x0 + 80, 60, COL_CARD);
+                if (k == 0) image(UI_IMG_HEART, x0 + 4, 41, 1.0f, COL_WHITE);
+                else draw_ui_icon(k == 1 ? UI_ICON_BOOTS : UI_ICON_HAMMER, x0 + 4, 41, 16, COL_WHITE);
+                text(x0 + 23, 42, labels[k], 0.7f, 0, COL_WHITE);
+                snprintf(buf, sizeof buf, "%d", vals[k]);
+                text_right(x0 + 75, 41, buf, 0.9f, COL_WHITE);
+            }
+        }
+        card(CX0, ty0, CX1, LOG_TEXT_Y1, COL_AREA);
+        for (int l = 0; l < per; l++) {
+            int k = s_log_text_page * per + l;
             if (k >= lines) break;
             char line[96];
             int n = lens[k] < (int)sizeof line - 1 ? lens[k] : (int)sizeof line - 1;
             memcpy(line, s_log_text + starts[k], n);
             line[n] = '\0';
-            text(14, LIST_Y0 + l * LOG_LINE_H, line, LOG_TEXT_SCALE, 0, COL_WHITE);
-        }
-        if (pages > 1) {
-            snprintf(buf, sizeof buf, "tap for more  %d/%d", s_log_text_page + 1, pages);
-            small_text_center(160, PANEL_Y1 - 12, buf, 1.0f, RGBA(150, 100, 60, 255));
+            text(CX0 + 8, ty0 + 6 + l * LOG_LINE_H, line, LOG_TEXT_SCALE, 0, COL_WHITE);
         }
         return;
     }
     s_log_open = -1;
     int pages = pages_of(s_log.known, LOG_PER_PAGE);
     if (s_log_page >= pages) s_log_page = 0;
-    snprintf(buf, sizeof buf, "Tattle Log  %d/%d", s_log.known, s_log.total);
-    text(14, LIST_HEAD_Y, buf, 1.0f, 0, COL_WHITE);
-    page_arrows(s_log_page, pages);
+    snprintf(buf, sizeof buf, "%d of %d enemies", s_log.known, s_log.total);
+    page_title("Tattle Log", buf);
+    pager(s_log_page, pages);
+    bar(CX0 + 2, BODY_Y, CX1 - CX0 - 2, 5, s_log.known, s_log.total, COL_GOLD);
     if (s_log.known == 0) {
-        text_center(160, LIST_Y0 + 50, "No tattles yet", 1.0f, 0, COL_WHITE);
-        small_text_center(160, LIST_Y0 + 76, "Tattle enemies in battle with Goombario", 1.0f, RGBA(150, 100, 60, 255));
+        text_center((CX0 + CX1) / 2, 100, "No tattles yet", 1.0f, 0, COL_WHITE);
+        text_center((CX0 + CX1) / 2, 124, "Tattle enemies in battle with Goombario", 0.7f, 0, COL_HINT);
         return;
     }
     for (int slot = 0; slot < LOG_PER_PAGE; slot++) {
@@ -800,93 +1027,92 @@ static void draw_log(void) {
         if (i >= s_log.known) break;
         float x0, y0, x1, y1;
         log_entry_rect(slot, &x0, &y0, &x1, &y1);
-        round_rect(x0, y0, x1, y1, 7, RGBA(255, 214, 120, 255));
-        float scale = text_width(s_log.name[i], 0.85f) > x1 - x0 - 10 ? 0.7f : 0.85f;
-        text(x0 + 6, y0 + 3, s_log.name[i], scale, 0, COL_WHITE);
+        tile(x0, y0, x1, y1, 6, COL_TAB_ON);
+        text(x0 + 7, y0 + 1, s_log.name[i], fit(s_log.name[i], x1 - x0 - 14, 0.8f, 0.55f), 0, COL_WHITE);
     }
 }
 
 static void log_tap(int px, int py) {
     if (s_log_open >= 0) {
-        if (in(px, py, 6, LIST_HEAD_Y - 5, 70, LIST_HEAD_Y + 19)) s_log_open = -1;
-        else if (py >= LIST_Y0 - 4) s_log_text_page++;   /* wraps in draw_log */
+        if (in(px, py, CX0 - 4, HEAD_Y - 5, CX0 + 54, HEAD_Y + 23)) s_log_open = -1;
+        else if (py >= 38) s_log_text_page++;   /* wraps in draw_log */
         return;
     }
-    int pages = pages_of(s_log.known, LOG_PER_PAGE);
-    int np = page_tap(px, py, s_log_page, pages);
+    int np = pager_tap(px, py, s_log_page, pages_of(s_log.known, LOG_PER_PAGE));
     if (np >= 0) { s_log_page = np; return; }
     for (int slot = 0; slot < LOG_PER_PAGE; slot++) {
         int i = s_log_page * LOG_PER_PAGE + slot;
         if (i >= s_log.known) break;
         float x0, y0, x1, y1;
         log_entry_rect(slot, &x0, &y0, &x1, &y1);
-        if (in(px, py, x0, y0, x1, y1)) {
-            s_log_open = i;
-            s_log_text_page = 0;
-            pm3ds_tattle_text(s_log.entry[i], s_log_text, sizeof s_log_text);
+        if (in(px, py, x0, y0 - 1, x1, y1 + 2)) {
+            log_open(i);
             return;
         }
     }
 }
 
-#define COL_DONE RGBA(40, 150, 40, 255)
-
-/* "3/5" right-aligned at x, or "-" when the area has none of these; green when all found */
-static void count_cell(float x, float y, int found, int total) {
-    char buf[12];
-    if (total == 0) snprintf(buf, sizeof buf, "-");
-    else snprintf(buf, sizeof buf, "%d/%d", found, total);
-    text(x - text_width(buf, 0.8f), y, buf, 0.8f, 0, total > 0 && found == total ? COL_DONE : COL_WHITE);
-}
+/* ---- Found ----------------------------------------------------------------- */
+#define FOUND_ROWS 7
+#define FOUND_ROW_H 19
+#define FOUND_Y0 70
 
 static void draw_found(void) {
     const pm3ds_tracker_t *f = &s_found;
     char buf[48];
     int pages = pages_of(f->count, FOUND_ROWS);
     if (s_found_page >= pages) s_found_page = 0;
-    snprintf(buf, sizeof buf, "Found  %d/%d", f->found, f->total);
-    text(14, LIST_HEAD_Y, buf, 1.0f, 0, COL_WHITE);
-    page_arrows(s_found_page, pages);
+    snprintf(buf, sizeof buf, "%d of %d item spots", f->found, f->total);
+    page_title("Found", buf);
+    pager(s_found_page, pages);
+    bar(CX0 + 2, BODY_Y, CX1 - CX0 - 2, 5, f->found, f->total, COL_GOLD);
     /* column heads: star pieces, badges, hidden blocks and panels, every spot.
      * A randomizer seed puts other items in the spots: only the totals hold. */
-    float hy = LIST_Y0 - 4;
+    float hy = 54;
     if (!f->rando) {
-        image(UI_IMG_STAR_PIECE, 152, hy - 2, 1.0f, COL_WHITE);
-        image(UI_IMG_BP, 196, hy - 2, 1.0f, COL_WHITE);
-        text_center(238, hy, "?", 0.9f, 0, COL_WHITE);
+        image(UI_IMG_STAR_PIECE, 171, hy, 0.85f, COL_WHITE);
+        image(UI_IMG_BP, 205, hy, 0.85f, COL_WHITE);
+        qblock(240, hy, 13, true);
     }
-    text_center(286, hy, f->rando ? "Checked" : "All", 0.8f, 0, COL_WHITE);
-    fill(14, FOUND_Y0 - 3, 306, FOUND_Y0 - 2, RGBA(200, 170, 130, 255));
+    text_center(289, hy + 1, f->rando ? "Checked" : "All", 0.75f, 0, COL_WHITE);
     for (int r = 0; r < FOUND_ROWS; r++) {
         int i = s_found_page * FOUND_ROWS + r;
         if (i >= f->count) break;
         const pm3ds_tracker_area_t *a = &f->area[i];
-        float y = FOUND_Y0 + r * FOUND_ROW_H;
-        float scale = text_width(a->name, 0.8f) > 128 ? 0.68f : 0.8f;
-        text(14, y, a->name, scale, 0, a->found == a->total ? COL_DONE : COL_WHITE);
-        if (!f->rando) {
-            count_cell(176, y, a->sp_found, a->sp_total);
-            count_cell(220, y, a->badge_found, a->badge_total);
-            count_cell(256, y, a->hidden_found, a->hidden_total);
+        float y0 = FOUND_Y0 + r * FOUND_ROW_H;
+        bool here = i == f->here, done = a->found == a->total;
+        tile(CX0, y0, CX1, y0 + 17, 6, here ? COL_SEL : done ? COL_DONE_ROW : COL_TAB_ON);
+        float x = CX0 + 6;
+        if (here) {
+            image(UI_IMG_MAP_WALK0, CX0 - 1, y0 - 6, 0.75f, COL_WHITE);
+            x = CX0 + 18;
         }
-        count_cell(306, y, a->found, a->total);
+        float avail = (f->rando ? 262 : 158) - x;
+        text(x, y0 + 1, a->name, fit(a->name, avail, 0.75f, 0.55f), 0, done ? COL_DONE : COL_WHITE);
+        if (!f->rando) {
+            count_cell(178, y0 + 1, a->sp_found, a->sp_total, 0.72f);
+            count_cell(212, y0 + 1, a->badge_found, a->badge_total, 0.72f);
+            count_cell(246, y0 + 1, a->hidden_found, a->hidden_total, 0.72f);
+        }
+        snprintf(buf, sizeof buf, "%d/%d", a->found, a->total);
+        text_right(CX1 - 4, y0 + 1, buf, 0.72f, done ? COL_DONE : COL_WHITE);
     }
 }
 
 /* ---- battle page and touch menus ------------------------------------------ */
 /* the game's list menu as buttons: two columns, TM_ROWS rows per page */
-#define TM_Y0 58
-#define TM_ROW_H 28
+#define TM_Y0 BODY_Y
+#define TM_ROW_H 30
 #define TM_ROWS 5
 #define TM_PER_PAGE (TM_ROWS * 2)
 /* the pad shown in battle when no menu is open */
-#define PAD_A_X 214
-#define PAD_A_Y 118
-#define PAD_A_R 58
-#define PAD_B_X 104
-#define PAD_B_Y 150
-#define PAD_B_R 34
-static const float s_pad_stick[4] = { 18, 62, 120, 104 };   /* x0 y0 x1 y1: hold the stick left */
+#define PAD_A_X 244
+#define PAD_A_Y 124
+#define PAD_A_R 54
+#define PAD_B_X 150
+#define PAD_B_Y 158
+#define PAD_B_R 32
+static const float s_pad_stick[4] = { 60, 56, 156, 100 };   /* x0 y0 x1 y1: hold the stick left */
 
 static bool tm_open(void) { return s_tm.kind != PM3DS_TM_NONE && s_info.in_game; }
 static bool battle_page(void) { return s_info.in_battle && s_tab <= TAB_GAME_LAST; }
@@ -896,8 +1122,8 @@ static int tm_pages(void) { return (s_tm.count + TM_PER_PAGE - 1) / TM_PER_PAGE;
 /* short lists get one column of wide buttons */
 static void tm_entry_rect(int slot, float *x0, float *y0, float *x1, float *y1) {
     int col = slot / TM_ROWS, row = slot % TM_ROWS;
-    *x0 = 12 + col * 152;
-    *x1 = s_tm.count <= TM_ROWS ? 308 : *x0 + 144;
+    *x0 = CX0 + col * 126;
+    *x1 = s_tm.count <= TM_ROWS ? CX1 : *x0 + 122;
     *y0 = TM_Y0 + row * TM_ROW_H;
     *y1 = *y0 + TM_ROW_H - 4;
 }
@@ -906,28 +1132,25 @@ static void disc(float cx, float cy, float r, u32 c) { round_rect(cx - r, cy - r
 
 /* The menus' icons (boots, hammer, items, ...) decoded from the game's own
  * HudScripts (pm3ds_tm_icon_rgba), so no art ships with the port: 64 cells of
- * 32x32 in one texture, filled as menus show icons they haven't shown before. */
+ * 32x32 in one texture, filled as menus show icons they haven't shown before.
+ * The first UI_ICON_COUNT cells hold the pages' own icons (pm3ds_ui_icon_script),
+ * decoded once a game is running and never given away. */
 #define ICON_CELLS 64
 #define ICON_TEX 256
 static C3D_Tex s_icons;
-static bool s_icons_ok, s_icons_dirty;
+static bool s_icons_ok, s_icons_dirty, s_ui_icons;
 static u8 *s_icon_canvas;
 static const void *s_icon_key[ICON_CELLS];
 static u8 s_icon_w[ICON_CELLS], s_icon_h[ICON_CELLS];   /* 0: the script has no image */
-static int s_icon_used;
+static int s_icon_used = UI_ICON_COUNT;
 
-/* the cell holding script's icon (decoding it on first use), -1 if none */
-static int icon_cell(const void *script) {
-    if (!script) return -1;
-    for (int i = 0; i < s_icon_used; i++)
-        if (s_icon_key[i] == script) return s_icon_w[i] ? i : -1;
-    if (!s_icon_canvas && !(s_icon_canvas = (u8 *)calloc(ICON_TEX * ICON_TEX, 4))) return -1;
-    int i = s_icon_used < ICON_CELLS ? s_icon_used++ : (int)((uintptr_t)script >> 2) % ICON_CELLS;
+/* decode script's icon into cell i; false if it has none */
+static bool icon_decode(const void *script, int i) {
     u8 px[32 * 32 * 4];
     int w = 0, h = 0;
     s_icon_key[i] = script;
     s_icon_w[i] = s_icon_h[i] = 0;
-    if (!pm3ds_tm_icon_rgba(script, px, &w, &h)) return -1;
+    if (!script || !pm3ds_tm_icon_rgba(script, px, &w, &h)) return false;
     int cx = (i % 8) * 32, cy = (i / 8) * 32;
     for (int y = 0; y < 32; y++) memset(s_icon_canvas + ((size_t)(cy + y) * ICON_TEX + cx) * 4, 0, 32 * 4);
     for (int y = 0; y < h; y++)
@@ -935,11 +1158,27 @@ static int icon_cell(const void *script) {
     s_icon_w[i] = (u8)w;
     s_icon_h[i] = (u8)h;
     s_icons_dirty = true;
-    return i;
+    return true;
+}
+
+/* the cell holding script's icon (decoding it on first use), -1 if none */
+static int icon_cell(const void *script) {
+    if (!script) return -1;
+    for (int i = 0; i < s_icon_used; i++)
+        if (s_icon_key[i] == script) return s_icon_w[i] ? i : -1;
+    if (!s_icon_canvas && !(s_icon_canvas = (u8 *)calloc(ICON_TEX * ICON_TEX, 4))) return -1;
+    int i = s_icon_used < ICON_CELLS ? s_icon_used++
+                                     : UI_ICON_COUNT + (int)((uintptr_t)script >> 2) % (ICON_CELLS - UI_ICON_COUNT);
+    return icon_decode(script, i) ? i : -1;
 }
 
 /* decode what the open menu needs and upload once (from the tick) */
 static void icons_update(void) {
+    if (!s_ui_icons && s_info.in_game &&
+        (s_icon_canvas || (s_icon_canvas = (u8 *)calloc(ICON_TEX * ICON_TEX, 4)))) {
+        for (int i = 0; i < UI_ICON_COUNT; i++) icon_decode(pm3ds_ui_icon_script(i), i);
+        s_ui_icons = true;
+    }
     for (int i = 0; i < s_tm.count && s_tm.kind != PM3DS_TM_NONE; i++) icon_cell(s_tm.e[i].icon);
     if (!s_icons_dirty) return;
     s_icons_dirty = false;
@@ -951,14 +1190,26 @@ static void icons_update(void) {
     }
 }
 
-/* an entry's icon fitted into a size x size box at (x, y); false if it has none */
-static bool draw_icon(const void *script, float x, float y, float size, u32 c) {
-    int i = s_icons_ok ? icon_cell(script) : -1;
-    if (i < 0) return false;
+/* cell i fitted into a size x size box at (x, y) */
+static void draw_cell(int i, float x, float y, float size, u32 c) {
     float w = s_icon_w[i], h = s_icon_h[i], s = size / (w > h ? w : h);
     float x0 = x + (size - w * s) / 2, y0 = y + (size - h * s) / 2;
     float u0 = (float)((i % 8) * 32) / ICON_TEX, v0 = (float)((i / 8) * 32) / ICON_TEX;
     quad2(&s_icons, x0, y0, x0 + w * s, y0 + h * s, u0, v0, u0 + w / ICON_TEX, v0 + h / ICON_TEX, c, c);
+}
+
+/* an entry's icon fitted into a size x size box at (x, y); false if it has none */
+static bool draw_icon(const void *script, float x, float y, float size, u32 c) {
+    int i = s_icons_ok ? icon_cell(script) : -1;
+    if (i < 0) return false;
+    draw_cell(i, x, y, size, c);
+    return true;
+}
+
+/* a page icon (UI_ICON_*); false until it is decoded and uploaded */
+static bool draw_ui_icon(int id, float x, float y, float size, u32 c) {
+    if (!s_icons_ok || !s_ui_icons || id < 0 || id >= UI_ICON_COUNT || !s_icon_w[id]) return false;
+    draw_cell(id, x, y, size, c);
     return true;
 }
 
@@ -979,8 +1230,8 @@ static bool wheel_tile_rect(int idx, float *x0, float *y0, float *x1, float *y1)
     int rows = (n[0] > 0) + (n[1] > 0);
     float gap = 6, h = (TILE_Y1 - TM_Y0 - (rows - 1) * gap) / rows;
     float top = TM_Y0 + (rows == 2 && row == 1 ? h + gap : 0);
-    float w = (292 - (n[row] - 1) * 4.0f) / n[row];
-    *x0 = 14 + pos * (w + 4);
+    float w = (CX1 - CX0 - (n[row] - 1) * 5.0f) / n[row];
+    *x0 = CX0 + pos * (w + 5);
     *x1 = *x0 + w;
     *y0 = top;
     *y1 = top + h;
@@ -993,41 +1244,48 @@ static void draw_wheel_tiles(void) {
         float x0, y0, x1, y1;
         wheel_tile_rect(i, &x0, &y0, &x1, &y1);
         bool sel = i == s_tm.cursor;
-        round_rect(x0 + 2, y0 + 2, x1 + 2, y1 + 2, 10, COL_SHADOW);
-        round_rect(x0, y0, x1, y1, 10, COL_PANEL_EDGE);
-        round_rect(x0 + 2, y0 + 2, x1 - 2, y1 - 2, 8,
-                   !e->enabled ? RGBA(200, 185, 165, 255) : sel ? RGBA(255, 214, 120, 255) : COL_TAB_ON);
+        tile(x0, y0, x1, y1, 10, !e->enabled ? COL_OFF : sel ? COL_SEL : COL_TAB_ON);
         float cy = (y0 + y1) / 2 - 26;   /* icon 32 + gap 4 + label 16 */
         draw_icon(e->icon, (x0 + x1) / 2 - 16, cy, 32, e->enabled ? COL_WHITE : RGBA(255, 255, 255, 160));
-        float avail = x1 - x0 - 8, w = text_width(e->name, 1.0f), sc = w > avail ? avail / w : 1.0f;
+        float sc = fit(e->name, x1 - x0 - 8, 1.0f, 0.5f);
         text_center((x0 + x1) / 2, cy + 36 + (1.0f - sc) * 8, e->name, sc, 0,
                     e->enabled ? COL_WHITE : RGBA(255, 255, 255, 120));
     }
 }
 
-static void draw_battle_header(void) {
+/* in battle the rail shows Mario's numbers instead of tabs */
+static void draw_battle_rail(void) {
     const pm3ds_hud_info_t *h = &s_info;
     char buf[24];
-    panel(4, 2, 316, 30, COL_PANEL);
-    image(UI_IMG_HEART, 12, 8, 1.0f, COL_WHITE);
-    snprintf(buf, sizeof buf, "%d/%d", h->hp, h->max_hp);
-    text(32, 7, buf, 1.0f, 0, COL_WHITE);
-    image(UI_IMG_FLOWER, 92, 8, 1.0f, COL_WHITE);
-    snprintf(buf, sizeof buf, "%d/%d", h->fp, h->max_fp);
-    text(112, 7, buf, 1.0f, 0, COL_WHITE);
-    if (h->max_star_power > 0) {
-        int full = h->star_power / 256;
-        for (int i = 0; i < h->max_star_power && i < 7; i++)
-            image(i < full ? UI_IMG_POW_STAR : UI_IMG_POW_EMPTY, 176 + i * 10, 12, 1.0f, COL_WHITE);
+    for (int k = 0; k < 2; k++) {
+        float y0 = 6 + k * 50;
+        int v = k ? h->fp : h->hp, m = k ? h->max_fp : h->max_hp;
+        tile(5, y0, 46, y0 + 46, 8, COL_TAB_ON);
+        image(k ? UI_IMG_FLOWER : UI_IMG_HEART, 17.5f, y0 + 4, 1.0f, COL_WHITE);
+        snprintf(buf, sizeof buf, "%d/%d", v, m);
+        text_center(25.5f, y0 + 21, buf, fit(buf, 36, 0.62f, 0.45f), 0, COL_WHITE);
+        bar(10, y0 + 37, 31, 4, v, m, k ? COL_FP : COL_HP);
     }
-    image(UI_IMG_COIN, 252, 8, 1.0f, COL_WHITE);
+    if (h->max_star_power > 0) {
+        float y0 = 106;
+        int n = h->max_star_power < 7 ? h->max_star_power : 7, full = h->star_power / 256;
+        int cols = n > 4 ? 2 : 1, rows = (n + cols - 1) / cols;
+        tile(5, y0, 46, y0 + 46, 8, COL_TAB_ON);
+        for (int i = 0; i < n; i++) {
+            float x = cols == 1 ? 21.5f : 15.5f + (i % 2) * 12;
+            float y = y0 + 23 - rows * 5 + (i / cols) * 10;
+            image(i < full ? UI_IMG_POW_STAR : UI_IMG_POW_EMPTY, x, y, 1.0f, COL_WHITE);
+        }
+    }
+    float y0 = 156;
+    tile(5, y0, 46, y0 + 46, 8, COL_TAB_ON);
+    image(UI_IMG_COIN, 17.5f, y0 + 6, 1.0f, COL_WHITE);
     snprintf(buf, sizeof buf, "%d", h->coins);
-    text(306 - text_width(buf, 1.0f), 7, buf, 1.0f, 0, COL_WHITE);
+    text_center(25.5f, y0 + 24, buf, fit(buf, 36, 0.7f, 0.5f), 0, COL_WHITE);
 }
 
-static void draw_tmenu(float y_top) {
+static void draw_tmenu(void) {
     char buf[24];
-    panel(4, y_top, 316, PANEL_Y1, COL_PANEL);
     /* keep the page on the game's cursor when a menu opens */
     if (s_tm.kind != s_tm_kind_seen || s_tm.count != s_tm_count_seen) {
         s_tm_kind_seen = s_tm.kind;
@@ -1036,20 +1294,13 @@ static void draw_tmenu(float y_top) {
     }
     if (s_tm_page >= tm_pages()) s_tm_page = 0;
     const char *title = s_tm.kind == PM3DS_TM_TARGET && s_tm.all_targets ? "Targets: all" : s_tm.title;
-    text_center(160, y_top + 6, title, 1.0f, 0, RGBA(170, 120, 80, 255));
+    page_title(title, s_tm.kind == PM3DS_TM_WHEEL ? "Pick a command" : s_tm.kind == PM3DS_TM_TARGET ? "Tap a target" : NULL);
     float tx, ty, tx1, ty1;
     if (wheel_tile_rect(0, &tx, &ty, &tx1, &ty1)) {
         draw_wheel_tiles();
         return;
     }
-    if (tm_pages() > 1) {
-        round_rect(12, y_top + 5, 48, y_top + 23, 7, COL_BTN);
-        text_center(30, y_top + 6, "<", 1.0f, 1, COL_WHITE);
-        round_rect(272, y_top + 5, 308, y_top + 23, 7, COL_BTN);
-        text_center(290, y_top + 6, ">", 1.0f, 1, COL_WHITE);
-        snprintf(buf, sizeof buf, "%d/%d", s_tm_page + 1, tm_pages());
-        small_text_center(260 - 16, y_top + 10, buf, 1.0f, RGBA(150, 100, 60, 255));
-    }
+    pager(s_tm_page, tm_pages());
     for (int slot = 0; slot < TM_PER_PAGE; slot++) {
         int i = s_tm_page * TM_PER_PAGE + slot;
         if (i >= s_tm.count) break;
@@ -1057,10 +1308,7 @@ static void draw_tmenu(float y_top) {
         float x0, y0, x1, y1;
         tm_entry_rect(slot, &x0, &y0, &x1, &y1);
         bool sel = i == s_tm.cursor;
-        round_rect(x0 + 2, y0 + 2, x1 + 2, y1 + 2, 8, COL_SHADOW);
-        round_rect(x0, y0, x1, y1, 8, COL_PANEL_EDGE);
-        round_rect(x0 + 2, y0 + 2, x1 - 2, y1 - 2, 6,
-                   !e->enabled ? RGBA(200, 185, 165, 255) : sel ? RGBA(255, 214, 120, 255) : COL_TAB_ON);
+        tile(x0, y0, x1, y1, 8, !e->enabled ? COL_OFF : sel ? COL_SEL : COL_TAB_ON);
         /* cost on the right, then the name in what is left */
         float right = x1 - 6;
         buf[0] = 0;
@@ -1074,22 +1322,20 @@ static void draw_tmenu(float y_top) {
         u32 tc = e->enabled ? COL_WHITE : RGBA(255, 255, 255, 120);
         if (buf[0]) {
             float cw = strlen(buf) * 8.0f;
-            small_text(right - cw, y0 + 8, buf, 12, e->cost_kind == PM3DS_TM_COST_HP ? RGBA(200, 40, 40, 255)
-                                                                                       : RGBA(90, 60, 30, 255));
+            small_text(right - cw, y0 + 9, buf, 12, e->cost_kind == PM3DS_TM_COST_HP ? RGBA(200, 40, 40, 255)
+                                                                                     : RGBA(90, 60, 30, 255));
             right -= cw + 4;
         }
         float left = x0 + 6;
-        if (draw_icon(e->icon, x0 + 4, y0 + 2, 20, e->enabled ? COL_WHITE : RGBA(255, 255, 255, 160))) left += 22;
-        float avail = right - left, w = text_width(e->name, 1.0f), sc = 1.0f;
-        if (w > avail) sc = avail / w;
-        if (sc < 0.6f) sc = 0.6f;
-        text(left, y0 + 3 + (1.0f - sc) * 8, e->name, sc, 0, tc);
+        if (draw_icon(e->icon, x0 + 4, y0 + 3, 20, e->enabled ? COL_WHITE : RGBA(255, 255, 255, 160))) left += 22;
+        float sc = fit(e->name, right - left, 0.9f, 0.55f);
+        text(left, y0 + 5 + (0.9f - sc) * 8, e->name, sc, 0, tc);
     }
 }
 
 static void draw_pad(void) {
-    panel(4, 34, 316, PANEL_Y1, COL_PANEL);
     bool a = pm3ds_touch_pad & 0x8000, b = pm3ds_touch_pad & 0x4000, st = pm3ds_touch_stick_x != 0;
+    page_title("Action command", "Tap or hold");
     disc(PAD_A_X + 3, PAD_A_Y + 3, PAD_A_R, COL_SHADOW);
     disc(PAD_A_X, PAD_A_Y, PAD_A_R, RGBA(40, 70, 170, 255));
     disc(PAD_A_X, PAD_A_Y, PAD_A_R - 4, a ? RGBA(120, 170, 255, 255) : RGBA(70, 120, 230, 255));
@@ -1098,20 +1344,9 @@ static void draw_pad(void) {
     disc(PAD_B_X, PAD_B_Y, PAD_B_R, RGBA(30, 120, 50, 255));
     disc(PAD_B_X, PAD_B_Y, PAD_B_R - 4, b ? RGBA(130, 220, 140, 255) : RGBA(60, 170, 80, 255));
     text_center(PAD_B_X, PAD_B_Y - 16, "B", 2.0f, 1, COL_WHITE);
-    round_rect(s_pad_stick[0] + 2, s_pad_stick[1] + 2, s_pad_stick[2] + 2, s_pad_stick[3] + 2, 10, COL_SHADOW);
-    round_rect(s_pad_stick[0], s_pad_stick[1], s_pad_stick[2], s_pad_stick[3], 10, COL_PANEL_EDGE);
-    round_rect(s_pad_stick[0] + 2, s_pad_stick[1] + 2, s_pad_stick[2] - 2, s_pad_stick[3] - 2, 8,
-               st ? RGBA(255, 196, 64, 255) : COL_TAB_ON);
-    text_center((s_pad_stick[0] + s_pad_stick[2]) / 2, s_pad_stick[1] + 4, "< Stick", 1.0f, 0, COL_WHITE);
-    small_text_center((s_pad_stick[0] + s_pad_stick[2]) / 2, s_pad_stick[1] + 26, "hold", 1.0f,
-                      RGBA(150, 100, 60, 255));
-    small_text_center(160, PANEL_Y1 - 14, "Action commands: tap or hold", 1.0f, RGBA(150, 100, 60, 255));
-}
-
-static void draw_battle(void) {
-    draw_battle_header();
-    if (tm_open()) draw_tmenu(34);
-    else draw_pad();
+    tile(s_pad_stick[0], s_pad_stick[1], s_pad_stick[2], s_pad_stick[3], 10, st ? RGBA(255, 196, 64, 255) : COL_TAB_ON);
+    text_center((s_pad_stick[0] + s_pad_stick[2]) / 2, s_pad_stick[1] + 6, "< Stick", 1.0f, 0, COL_WHITE);
+    text_center((s_pad_stick[0] + s_pad_stick[2]) / 2, s_pad_stick[1] + 24, "hold", 0.7f, 0, COL_HINT);
 }
 
 /* the touch pad's buttons under the finger (held state, every frame) */
@@ -1126,12 +1361,8 @@ static void pad_held(int px, int py) {
 }
 
 /* a tap on the menu: true if it was used */
-static bool tmenu_tap(int px, int py, float y_top) {
+static bool tmenu_tap(int px, int py) {
     if (!tm_open()) return false;
-    if (tm_pages() > 1 && py >= y_top + 2 && py < y_top + 26) {
-        if (px < 56) { s_tm_page = (s_tm_page + tm_pages() - 1) % tm_pages(); return true; }
-        if (px >= 264) { s_tm_page = (s_tm_page + 1) % tm_pages(); return true; }
-    }
     float tx0, ty0, tx1, ty1;
     if (wheel_tile_rect(0, &tx0, &ty0, &tx1, &ty1)) {
         for (int i = 0; i < s_tm.count; i++) {
@@ -1142,6 +1373,11 @@ static bool tmenu_tap(int px, int py, float y_top) {
             }
         }
         return false;
+    }
+    int np = pager_tap(px, py, s_tm_page, tm_pages());
+    if (np >= 0) {
+        s_tm_page = np;
+        return true;
     }
     for (int slot = 0; slot < TM_PER_PAGE; slot++) {
         int i = s_tm_page * TM_PER_PAGE + slot;
@@ -1157,29 +1393,23 @@ static bool tmenu_tap(int px, int py, float y_top) {
 }
 
 /* ---- Options and Controls pages ------------------------------------------ */
-#define OPT_ROWS 9
-#define OPT_Y0 8
-#define OPT_ROW_H 21
+/* their own rail: Settings, Controls, Debug */
+#define OPT_ROWS 7
+#define OPT_Y0 BODY_Y
+#define OPT_ROW_H 22
 static const char *const s_fps_names[2] = { "30 fps", "60 fps" };
 static const char *const s_text_names[TEXT_SPEEDS] = { "Normal", "Fast", "Instant" };
 
 static void opt_row(int i, const char *label, const char *value) {
     float y = OPT_Y0 + i * OPT_ROW_H;
-    text(18, y + 2, label, 1.0f, 0, COL_WHITE);
-    if (value) {
-        float w = text_width(value, 1.0f) + 24;
-        if (w < 96) w = 96;
-        round_rect(302 - w, y + 1, 302, y + OPT_ROW_H - 1, 9, COL_PANEL_EDGE);
-        round_rect(304 - w, y + 3, 300, y + OPT_ROW_H - 3, 7, RGBA(255, 214, 120, 255));
-        text_center(302 - w / 2, y + 2, value, 1.0f, 0, COL_WHITE);
-    } else {
-        text(282, y + 2, ">", 1.0f, 0, COL_WHITE);
-    }
+    tile(CX0, y, CX1, y + OPT_ROW_H - 3, 6, COL_TAB_ON);
+    text(CX0 + 7, y + 1, label, fit(label, 150, 0.82f, 0.6f), 0, COL_WHITE);
+    chip(226, y + 2, CX1 - 4, y + OPT_ROW_H - 5, value, COL_SEL, fit(value, 70, 0.75f, 0.5f));
 }
 
 static void draw_options(void) {
     char buf[16];
-    panel(4, 4, 316, 204, COL_PANEL);
+    page_title("Settings", "Tap a value to change it");
     opt_row(0, "Screen", s_view_names[pm3ds_cfg.view_mode % 3]);
     opt_row(1, "Frame rate", s_fps_names[pm3ds_cfg.fps60]);
     {   /* Old 3DS: no 3D (gfx_present.c), say so instead of a setting that does nothing */
@@ -1191,30 +1421,27 @@ static void draw_options(void) {
     opt_row(4, "Fast-forward speed", buf);
     opt_row(5, "Fast-forward button", pm3ds_cfg.ff_toggle ? "Toggle" : "Hold");
     opt_row(6, "Update check", pm3ds_cfg.update_check ? "On" : "Off");
-    opt_row(7, "Controls", NULL);
-    opt_row(8, "Debug info", NULL);
-    small_text(12, 221, PM3DS_APP_NAME " v" PM3DS_VERSION_STR, 40, COL_PANEL_EDGE);
-    round_rect(250, 214, 316, 236, 8, COL_BTN);
-    text_center(283, 217, "Back", 1.0f, 1, COL_WHITE);
+    small_text(12, 219, PM3DS_APP_NAME " v" PM3DS_VERSION_STR, 40, COL_PANEL_EDGE);
+    button(s_btn_ff, "Back");
 }
 
 /* every 3DS button and what it does; tap to change */
 #define CTL_ROWS 9
-#define CTL_Y0 10
-#define CTL_ROW_H 21
+#define CTL_Y0 32
+#define CTL_ROW_H 19
 static void draw_controls(void) {
-    panel(4, 4, 316, 204, COL_PANEL);
+    page_title("Controls", NULL);
+    text_right(CX1, HEAD_Y + 3, "Tap an action to change it", 0.62f, COL_HINT);
     for (int k = 0; k < KEY_IDX_COUNT; k++) {
-        float x = k < CTL_ROWS ? 12 : 164, y = CTL_Y0 + (k % CTL_ROWS) * CTL_ROW_H;
-        text(x, y + 2, pm3ds_settings_key_name(k), 0.9f, 0, COL_WHITE);
-        round_rect(x + 62, y, x + 144, y + 19, 7, COL_PANEL_EDGE);
-        round_rect(x + 64, y + 2, x + 142, y + 17, 5, RGBA(255, 214, 120, 255));
-        text_center(x + 103, y + 2, pm3ds_settings_action_name(pm3ds_cfg.keymap[k]), 0.9f, 0, COL_WHITE);
+        float x = k < CTL_ROWS ? CX0 : CX0 + 126, y = CTL_Y0 + (k % CTL_ROWS) * CTL_ROW_H;
+        tile(x, y, x + 122, y + CTL_ROW_H - 2, 6, COL_TAB_ON);
+        const char *key = pm3ds_settings_key_name(k), *act = pm3ds_settings_action_name(pm3ds_cfg.keymap[k]);
+        round_rect(x + 3, y + 2, x + 47, y + CTL_ROW_H - 4, 6, RGBA(90, 70, 60, 255));
+        text_center(x + 25, y + 2, key, fit(key, 40, 0.7f, 0.45f), 1, COL_WHITE);
+        text(x + 52, y + 2, act, fit(act, 66, 0.75f, 0.5f), 0, COL_WHITE);
     }
-    round_rect(8, 214, 108, 236, 8, COL_BTN);
-    text_center(58, 217, "Defaults", 1.0f, 1, COL_WHITE);
-    round_rect(250, 214, 316, 236, 8, COL_BTN);
-    text_center(283, 217, "Back", 1.0f, 1, COL_WHITE);
+    button(s_btn_opt, "Defaults");
+    button(s_btn_ff, "Back");
 }
 
 static void button(const float x[2], const char *label) {
@@ -1589,12 +1816,11 @@ static void draw_menu_page(void) {
         draw_debug();
         return;
     }
-    if (s_tab == TAB_OPTIONS) {
-        draw_options();
-        return;
-    }
-    if (s_tab == TAB_CONTROLS) {
-        draw_controls();
+    if (s_tab == TAB_OPTIONS || s_tab == TAB_CONTROLS) {
+        panel(PANEL_X0, PANEL_Y0, 316, PANEL_Y1, COL_PANEL);
+        draw_rail(s_opt_rail, NUM_OPT_TABS, s_tab == TAB_OPTIONS ? 0 : 1);
+        if (s_tab == TAB_OPTIONS) draw_options();
+        else draw_controls();
         return;
     }
     if (!s_info.in_game) {
@@ -1605,25 +1831,25 @@ static void draw_menu_page(void) {
         draw_buttons();
         return;
     }
+    panel(PANEL_X0, PANEL_Y0, 316, PANEL_Y1, COL_PANEL);
     if (battle_page()) {
-        draw_battle();
+        draw_battle_rail();
+        if (tm_open()) draw_tmenu();
+        else draw_pad();
         draw_buttons();
         return;
     }
-    if (tm_open() && s_tab <= TAB_GAME_LAST) {   /* an item or partner list in the world */
-        draw_tabs();
-        draw_tmenu(PANEL_Y0);
-        draw_buttons();
-        return;
-    }
-    draw_tabs();
-    panel(4, PANEL_Y0, 316, PANEL_Y1, COL_PANEL);
-    switch (s_tab) {
-        case TAB_STATS: draw_stats(); break;
-        case TAB_MAP:   draw_map();   break;
-        case TAB_PARTY: draw_party(); break;
-        case TAB_LOG:   draw_log();   break;
-        case TAB_FOUND: draw_found(); break;
+    draw_rail(s_game_rail, NUM_GAME_TABS, s_tab);
+    if (tm_open()) {   /* an item or partner list in the world */
+        draw_tmenu();
+    } else {
+        switch (s_tab) {
+            case TAB_STATS: draw_stats(); break;
+            case TAB_MAP:   draw_map();   break;
+            case TAB_PARTY: draw_party(); break;
+            case TAB_LOG:   draw_log();   break;
+            case TAB_FOUND: draw_found(); break;
+        }
     }
     draw_buttons();
 }
@@ -1633,6 +1859,14 @@ static int s_tab_before_options = TAB_STATS;
 
 static bool in(int px, int py, float x0, float y0, float x1, float y1) {
     return px >= x0 && px < x1 && py >= y0 && py < y1;
+}
+
+static void select_tab(int tab) {
+    s_tab = tab;
+    if (tab == TAB_LOG) { s_log_open = -1; pm3ds_tattle_query(&s_log); }
+    if (tab == TAB_STATS || tab == TAB_MAP || tab == TAB_FOUND) pm3ds_tracker_query(&s_found);
+    if (tab == TAB_FOUND && s_found.here >= 0) s_found_page = s_found.here / FOUND_ROWS;
+    if (tab == TAB_MAP) s_map_follow = true;
 }
 
 static void handle_touch(void) {
@@ -1646,9 +1880,9 @@ static void handle_touch(void) {
     bool pressed = down && !was_down;
     was_down = down;
 
-    if (down && !pressed && s_tab == TAB_MAP && s_info.in_game) {   /* drag the map */
+    if (down && !pressed && s_tab == TAB_MAP && s_info.in_game && !tm_open()) {   /* drag the map */
         int dx = tp.px - last_x, dy = tp.py - last_y;
-        if (in(last_x, last_y, 10, PANEL_Y0 + 8, 310, PANEL_Y1 - 8) && (dx || dy)) {
+        if (in(last_x, last_y, MAP_X0, MAP_Y0, MAP_X1, MAP_Y1) && (dx || dy)) {
             drag_dist += abs(dx) + abs(dy);
             if (drag_dist > 4) {
                 s_map_follow = false;
@@ -1689,10 +1923,17 @@ static void handle_touch(void) {
         return;
     }
 
-    bool back = in(tp.px, tp.py, 250, 214, 316, 236);
     if (s_tab == TAB_DEBUG) {
-        if (back) s_tab = TAB_OPTIONS;
+        if (in(tp.px, tp.py, 250, 214, 316, 236)) s_tab = TAB_OPTIONS;
         return;
+    }
+    bool back = in(tp.px, tp.py, s_btn_ff[0], BTN_Y0, s_btn_ff[1], BTN_Y1);
+    if (s_tab == TAB_OPTIONS || s_tab == TAB_CONTROLS) {
+        int r = rail_hit(tp.px, tp.py, NUM_OPT_TABS);
+        if (r >= 0) {
+            s_tab = r == 0 ? TAB_OPTIONS : r == 1 ? TAB_CONTROLS : TAB_DEBUG;
+            return;
+        }
     }
     if (s_tab == TAB_OPTIONS) {
         if (back) {
@@ -1700,7 +1941,7 @@ static void handle_touch(void) {
             return;
         }
         int row = (tp.py - OPT_Y0) / OPT_ROW_H;
-        if (tp.py < OPT_Y0 || row >= OPT_ROWS) return;
+        if (tp.px < CX0 - 4 || tp.py < OPT_Y0 || row >= OPT_ROWS) return;
         switch (row) {
             case 0: pm3ds_cfg.view_mode = (pm3ds_cfg.view_mode + 1) % 3; break;   /* Original -> Fill -> Wide */
             case 1: pm3ds_cfg.fps60 = !pm3ds_cfg.fps60; break;
@@ -1713,8 +1954,6 @@ static void handle_touch(void) {
             case 4: pm3ds_cfg.ff_speed = pm3ds_cfg.ff_speed >= 4 ? 2 : pm3ds_cfg.ff_speed + 1; break;
             case 5: pm3ds_cfg.ff_toggle = !pm3ds_cfg.ff_toggle; break;
             case 6: pm3ds_cfg.update_check = !pm3ds_cfg.update_check; break;   /* from the next launch */
-            case 7: s_tab = TAB_CONTROLS; return;
-            case 8: s_tab = TAB_DEBUG; return;
         }
         pm3ds_settings_save();
         return;
@@ -1722,11 +1961,11 @@ static void handle_touch(void) {
     if (s_tab == TAB_CONTROLS) {
         if (back) {
             s_tab = TAB_OPTIONS;
-        } else if (in(tp.px, tp.py, 8, 214, 108, 236)) {
+        } else if (in(tp.px, tp.py, s_btn_opt[0], BTN_Y0, s_btn_opt[1], BTN_Y1)) {
             pm3ds_settings_default_keymap(pm3ds_cfg.keymap);
             pm3ds_settings_save();
-        } else if (tp.py >= CTL_Y0 && tp.py < CTL_Y0 + CTL_ROWS * CTL_ROW_H) {
-            int k = (tp.py - CTL_Y0) / CTL_ROW_H + (tp.px >= 160 ? CTL_ROWS : 0);
+        } else if (tp.px >= CX0 - 4 && tp.py >= CTL_Y0 && tp.py < CTL_Y0 + CTL_ROWS * CTL_ROW_H) {
+            int k = (tp.py - CTL_Y0) / CTL_ROW_H + (tp.px >= CX0 + 124 ? CTL_ROWS : 0);
             if (k < KEY_IDX_COUNT) {
                 pm3ds_cfg.keymap[k] = (uint8_t)((pm3ds_cfg.keymap[k] + 1) % ACT_COUNT);
                 pm3ds_settings_save();
@@ -1734,6 +1973,7 @@ static void handle_touch(void) {
         }
         return;
     }
+    int r;
     if (in(tp.px, tp.py, s_btn_opt[0], BTN_Y0, s_btn_opt[1], BTN_Y1)) {
         s_tab_before_options = s_tab;
         s_tab = TAB_OPTIONS;
@@ -1744,26 +1984,22 @@ static void handle_touch(void) {
         const char *mid = mid_button(&mid_pad);
         if (mid && !mid_pad) pm3ds_touch_req = 1;   /* Items; Back/Swap are held above */
     } else if (battle_page()) {
-        tmenu_tap(tp.px, tp.py, 34);
-    } else if (s_info.in_game && s_tab <= TAB_GAME_LAST && tm_open() && tp.py >= PANEL_Y0) {
-        tmenu_tap(tp.px, tp.py, PANEL_Y0);
-    } else if (s_info.in_game && s_tab == TAB_STATS && in(tp.px, tp.py, QS_X0 - 4, TAB_Y1 + 2, QS_X1 + 4, QS_Y1 + 3)) {
+        tmenu_tap(tp.px, tp.py);
+    } else if (s_info.in_game && s_tab <= TAB_GAME_LAST && (r = rail_hit(tp.px, tp.py, NUM_GAME_TABS)) >= 0) {
+        select_tab(r);
+    } else if (s_info.in_game && s_tab <= TAB_GAME_LAST && tm_open()) {
+        tmenu_tap(tp.px, tp.py);
+    } else if (s_info.in_game && s_tab == TAB_STATS && in(tp.px, tp.py, QS_X0 - 4, QS_Y0 - 4, QS_X1 + 6, QS_Y1 + 4)) {
         qs_tap();
-    } else if (s_info.in_game && s_tab == TAB_LOG && tp.py >= TAB_Y1 + 2) {
+    } else if (s_info.in_game && s_tab == TAB_LOG) {
         log_tap(tp.px, tp.py);
-    } else if (s_info.in_game && s_tab == TAB_FOUND && tp.py >= TAB_Y1 + 2) {
-        int np = page_tap(tp.px, tp.py, s_found_page, pages_of(s_found.count, FOUND_ROWS));
+    } else if (s_info.in_game && s_tab == TAB_FOUND) {
+        int np = pager_tap(tp.px, tp.py, s_found_page, pages_of(s_found.count, FOUND_ROWS));
         if (np >= 0) s_found_page = np;
     } else if (s_info.in_game && s_tab == TAB_PARTY && partner_at(tp.px, tp.py)) {
         int id = partner_at(tp.px, tp.py);
         if ((s_info.partners_owned >> id) & 1) pm3ds_touch_req = 0x100 + id;
-    } else if (s_info.in_game && tp.py < TAB_Y1 + 2) {
-        for (int i = 0; i < NUM_GAME_TABS; i++)
-            if (in(tp.px, tp.py, s_tab_x[i][0], 0, s_tab_x[i][1], TAB_Y1 + 2)) s_tab = i;
-        if (s_tab == TAB_LOG) { s_log_open = -1; pm3ds_tattle_query(&s_log); }
-        if (s_tab == TAB_FOUND) pm3ds_tracker_query(&s_found);
-        if (s_tab == TAB_MAP) s_map_follow = true;
-    } else if (s_tab == TAB_MAP && in(tp.px, tp.py, 10, PANEL_Y0 + 8, 160, PANEL_Y0 + 22)) {
+    } else if (s_tab == TAB_MAP && !s_map_follow && in(tp.px, tp.py, MAP_CENTRE_X0, MAP_CENTRE_Y0, MAP_X1, MAP_Y1)) {
         s_map_follow = true;
     }
 }
@@ -1819,7 +2055,7 @@ void pm3ds_bottom_screen_tick(unsigned frame) {
     /* the log and tracker read a few hundred flags: only while shown, twice a second */
     if (s_info.in_game && frame % 30 == 0) {
         if (s_tab == TAB_LOG && s_log_open < 0) pm3ds_tattle_query(&s_log);
-        if (s_tab == TAB_FOUND) pm3ds_tracker_query(&s_found);
+        if (s_tab == TAB_STATS || s_tab == TAB_MAP || s_tab == TAB_FOUND) pm3ds_tracker_query(&s_found);
     }
     pm3ds_tm_get(&s_tm);
     icons_update();

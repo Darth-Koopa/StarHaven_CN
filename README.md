@@ -5,7 +5,7 @@ A native Nintendo 3DS port of **Paper Mario** (Nintendo 64), built from the
 on the 3DS; nothing is emulated.
 
 <p align="center">
-  <img src="port/3ds/docs/screenshots/field.png" width="380" alt="Koopa Village on the top screen, the Stats tab on the bottom screen">
+  <img src="port/3ds/docs/screenshots/field.png" width="380" alt="Koopa Village on the top screen; on the bottom screen the Stats tab with what Koopa Region and the room still hide">
   <img src="port/3ds/docs/screenshots/battle.png" width="380" alt="A battle, with Mario's commands as big icon tiles on the bottom screen">
 </p>
 
@@ -45,13 +45,14 @@ Console? Keep playing it on the 3DS:
 - 60 fps (in-between frames are added), or the original 30
 - Fast-forward and faster text
 - Original, Fill or Wide screen, the 3D slider with a depth setting, remappable buttons
-- A touch bottom screen with tabs:
-  - **Stats**, with a quick-save button
+- A touch bottom screen with its tabs down the side:
+  - **Stats**, with a quick-save button and what the area and the room you are in still hide
   - **Map**: the world map, showing where you are
   - **Party**: tap a partner to switch to them
   - **Tattle**: every enemy Goombario has tattled so far; tap one to read the whole tattle
   - **Found**: star pieces, badges, hidden blocks and panels and item spots collected in each area
-  - plus Items, and in battle the menus to tap: Mario's commands as big tiles with the game's icons
+  - plus Items, and in battle your HP, FP and Star Power down the side and the menus to tap:
+    Mario's commands as big tiles with the game's icons
 - A randomizer, chosen when you start a new file, with a seed you can share
 - Imports N64 saves (Project64, RetroArch, Wii U Virtual Console and others), and a
   [web converter](https://secondarylifer.github.io/StarHaven/converter/) for both directions,

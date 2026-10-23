@@ -13,6 +13,7 @@
  */
 #include "common.h"
 #include "battle/battle.h"
+#include "map.h"
 
 #include <string.h>
 
@@ -127,12 +128,17 @@ static const struct { const char* prefix; const char* name; } sTrackedAreas[] = 
     { "hos", "Star Region" },     { "osr", "Castle Grounds" },
 };
 
+MapConfig* get_current_map_config(void);
+
 int pm3ds_tracker_query(pm3ds_tracker_t* out) {
     memset(out, 0, sizeof(*out));
+    out->here = -1;
     if (gGameStatusPtr == nullptr) {
         return 0;
     }
     out->rando = pm3ds_rando_seed() != 0;
+    MapConfig* mc = gGameStatusPtr->areaID >= 0 ? get_current_map_config() : nullptr;
+    const char* mapID = mc != nullptr ? mc->id : nullptr;
     for (u32 a = 0; a < ARRAY_COUNT(sTrackedAreas) && out->count < PM3DS_TRACKER_AREAS; a++) {
         pm3ds_tracker_area_t* r = &out->area[out->count];
         snprintf(r->name, sizeof(r->name), "%s", sTrackedAreas[a].name);
@@ -142,6 +148,10 @@ int pm3ds_tracker_query(pm3ds_tracker_t* out) {
                 continue;
             }
             bool got = evt_get_variable(nullptr, s->flag) != 0;
+            if (mapID != nullptr && strcmp(s->map, mapID) == 0) {
+                out->room_total++;
+                out->room_found += got;
+            }
             r->total++;
             r->found += got;
             if (s->item == ITEM_STAR_PIECE) {
@@ -158,6 +168,9 @@ int pm3ds_tracker_query(pm3ds_tracker_t* out) {
         }
         if (r->total == 0) {
             continue;
+        }
+        if (mapID != nullptr && strncmp(mapID, sTrackedAreas[a].prefix, 3) == 0) {
+            out->here = out->count;
         }
         out->found += r->found;
         out->total += r->total;
