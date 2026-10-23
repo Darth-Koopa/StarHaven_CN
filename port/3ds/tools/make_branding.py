@@ -167,10 +167,13 @@ def make_emblem(cgfx):
     img = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
     img.alpha_composite(star, ((256 - star.width) // 2, 4))
     d = cgfx_texture.replace(bytearray(open(cgfx, "rb").read()), "PaperMarioLogo", img)
-    # the model is about 2.2 x 1.2 units around y = 1.715 (with its animation); the HOME Menu's
-    # banner area is about 26 x 13 at z = -1, so scale it up through the root bone and centre it
-    scale = 9.5
-    d = cgfx_texture.place_root(d, scale, 0.0, -1.715 * scale, -1.0)
+    # the model is about 2.2 x 1.2 units around y = 1.715 (with its animation); the HOME Menu
+    # shows about x -13..13 and y -3.5..5.5 of the banner (a 9.5x model centred on y = 0 lost the
+    # bottom of its title), so scale it up 7x through the root bone and centre it on y = 1.2.
+    # Each part is a front and a back layer 0.03-0.06 apart: the depth stays unscaled so they
+    # don't drift apart into two visible sheets.
+    scale = 7.0
+    d = cgfx_texture.place_root(d, scale, 0.0, 1.2 - 1.715 * scale, -1.0, depth_scale=1.0)
     open(cgfx, "wb").write(d)
 
 

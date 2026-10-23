@@ -222,6 +222,7 @@ void pm3ds_gfx_n64_to_top(float x, float y, float *tx, float *ty) {
 /* per-frame stats */
 static unsigned g_stat_draws, g_stat_verts;
 extern unsigned pm3ds_tstat_ops, pm3ds_tstat_tris, pm3ds_tstat_rects, pm3ds_tstat_culled;
+extern unsigned pm3ds_tstat_culldl, pm3ds_tstat_culldl_hit, pm3ds_tstat_npcs_culled;
 
 void pm3ds_gfx_present_init(void) {
     g_target = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
@@ -1419,6 +1420,7 @@ static void render_lists(const void *const *lists, int nlists) {
     g_draw_enabled = true;
     g_stat_draws = 0;
     pm3ds_tstat_ops = pm3ds_tstat_tris = pm3ds_tstat_rects = pm3ds_tstat_culled = 0;
+    pm3ds_tstat_culldl = pm3ds_tstat_culldl_hit = 0;
     g_stat_offscreen = 0;
 
     { extern int pm3ds_gfx_dbg_vtx;
@@ -1877,9 +1879,12 @@ drawn:
                 g_gp_renders = 0;
             }
 #endif
-            pm3ds_log(PM3DS_LOG_INFO, "PERF fps=%.1f game=%.2fms render=%.2fms idle=%.2fms tris=%u draws=%u up=%u cmd=%.0f%% 3d=%d",
+            pm3ds_log(PM3DS_LOG_INFO, "PERF fps=%.1f game=%.2fms render=%.2fms idle=%.2fms tris=%u draws=%u up=%u cmd=%.0f%% 3d=%d culldl=%u/%u npcskip=%.1f",
                       fps, ms_game, ms_rend, ms_wait, pm3ds_tstat_tris, g_stat_draws, pm3ds_tstat_uploads,
-                      g_cmdbuf_peak * 100.0f, g_si_was_stereo ? (g_stereo_interp ? 60 : 30) : 0);
+                      g_cmdbuf_peak * 100.0f, g_si_was_stereo ? (g_stereo_interp ? 60 : 30) : 0,
+                      pm3ds_tstat_culldl_hit, pm3ds_tstat_culldl,
+                      (double)pm3ds_tstat_npcs_culled / (frames ? frames : 1));
+            pm3ds_tstat_npcs_culled = 0;   /* counted by the game's steps, so summed per log line */
             g_cmdbuf_peak = 0.0f;
             pm3ds_tstat_uploads = 0;
             last_tick = now;

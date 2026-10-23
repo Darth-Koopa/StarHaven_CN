@@ -23,4 +23,9 @@
 #define PM3DS_GFX_TAG_DECAL_BAND 0x50334442u       /* 'P3DB' */
 #define PM3DS_GFX_TAG_DECAL_BAND_END 0x50336462u   /* 'P3db' */
 
+/* Debug (PM3DS_CULL_VERIFY): between these two is an NPC that src/npc.c would have
+ * skipped as off screen; the translator logs any of its triangles that reach the screen. */
+#define PM3DS_GFX_TAG_CULL_CHECK 0x50334343u       /* 'P3CC' */
+#define PM3DS_GFX_TAG_CULL_CHECK_END 0x50336363u   /* 'P3cc' */
+
 #endif

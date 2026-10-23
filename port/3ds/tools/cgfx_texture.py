@@ -6,7 +6,7 @@ format and leaves every other byte alone, so the model and its animations are un
 usage: cgfx_texture.py list <model.cgfx>
        cgfx_texture.py dump <model.cgfx> <outdir>
        cgfx_texture.py replace <model.cgfx> <texture name> <image> <out.cgfx>
-       cgfx_texture.py root <model.cgfx> <scale> <x> <y> <z> <out.cgfx>
+       cgfx_texture.py root <model.cgfx> <scale> <x> <y> <z> <depth scale> <out.cgfx>
 
 Layout (image TXOB, offsets from the object): +0x1C width, +0x34 PICA format,
 +0x44 data size, +0x48 self-relative pointer to the pixels. Pixels are 8x8
@@ -16,8 +16,8 @@ CGFX dictionaries are Patricia trees keyed on the names' bits.
 Bone (offsets from the bone): +0 self-relative name pointer, +4 flags, +8 index,
 +0xC parent index (-1 for the root), +0x20 scale, +0x2C rotation, +0x38 translation
 (vec3 each), then the local, world and inverse-world 3x4 matrices (row-major) at
-+0x44, +0x74 and +0xA4. The HOME Menu's banner area is about 26 x 13 units at z = -1
-(the quad of bannertool's flat-banner template).
++0x44, +0x74 and +0xA4. bannertool's flat-banner template quad spans x -13..13 and
+y -7.5..5.5, but on a console the bottom of that is cut off: keep a model above y = -3.
 """
 import struct
 import sys
@@ -120,13 +120,16 @@ def root_bone(d):
     raise ValueError("no root bone named 'Scene root'")
 
 
-def place_root(d, scale, x, y, z):
-    """d (bytearray) with the root bone scaled uniformly and moved, so every bone under it follows"""
+def place_root(d, scale, x, y, z, depth_scale=None):
+    """d (bytearray) with the root bone scaled and moved, so every bone under it follows;
+    depth_scale (default: scale) is the scale along z, the way the banner faces"""
+    sz = scale if depth_scale is None else depth_scale
     o = root_bone(bytes(d))
-    struct.pack_into("<I", d, o + 4, 0x1D0)   # uniform scale, local + world matrix calculated, rendered
-    struct.pack_into("<9f", d, o + 0x20, scale, scale, scale, 0, 0, 0, x, y, z)
-    m = (scale, 0, 0, x, 0, scale, 0, y, 0, 0, scale, z)
-    inv = (1 / scale, 0, 0, -x / scale, 0, 1 / scale, 0, -y / scale, 0, 0, 1 / scale, -z / scale)
+    # local + world matrix calculated, rendered (+ uniform scale when it is)
+    struct.pack_into("<I", d, o + 4, 0x1D0 if sz == scale else 0x1C0)
+    struct.pack_into("<9f", d, o + 0x20, scale, scale, sz, 0, 0, 0, x, y, z)
+    m = (scale, 0, 0, x, 0, scale, 0, y, 0, 0, sz, z)
+    inv = (1 / scale, 0, 0, -x / scale, 0, 1 / scale, 0, -y / scale, 0, 0, 1 / sz, -z / sz)
     struct.pack_into("<12f", d, o + 0x44, *m)
     struct.pack_into("<12f", d, o + 0x74, *m)
     struct.pack_into("<12f", d, o + 0xA4, *inv)
@@ -145,9 +148,9 @@ def main(argv):
     elif len(argv) == 5 and argv[0] == "replace":
         d = replace(bytearray(open(argv[1], "rb").read()), argv[2], Image.open(argv[3]))
         open(argv[4], "wb").write(d)
-    elif len(argv) == 7 and argv[0] == "root":
-        d = place_root(bytearray(open(argv[1], "rb").read()), *map(float, argv[2:6]))
-        open(argv[6], "wb").write(d)
+    elif len(argv) == 8 and argv[0] == "root":
+        d = place_root(bytearray(open(argv[1], "rb").read()), *map(float, argv[2:7]))
+        open(argv[7], "wb").write(d)
     else:
         sys.exit(__doc__)
 

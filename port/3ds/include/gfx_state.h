@@ -132,6 +132,7 @@ typedef struct gfx_state {
     bool     cimg_rtt;              /* drawing a window's contents into the GPU texture */
     bool     box_rtt_tag;           /* PM3DS_GFX_TAG_BOX_RTT seen: the next SETCIMG is one */
     bool     screen_copy_tag;       /* PM3DS_GFX_TAG_SCREEN_COPY seen: the next SETCIMG is one */
+    bool     cull_check;            /* inside PM3DS_GFX_TAG_CULL_CHECK (debug PM3DS_CULL_VERIFY only) */
     bool     decal_band;            /* inside PM3DS_GFX_TAG_DECAL_BAND .. _END: map model decals */
 
     /* --- bookkeeping ---------------------------------------------------- */

@@ -236,6 +236,8 @@ float pm3ds_stereo_shift;              /* signed pixels at infinity, 0 = mono */
 #define PM3DS_STEREO_CONV 420.0f       /* ~ the field camera's distance to Mario */
 
 uint32_t gfx_vtx_serial;   /* gfx_vtx_t.serial source */
+float pm3ds_view_ndc_x(float vp_x, float vp_w);   /* gfx_present.c */
+extern unsigned pm3ds_tstat_cullcheck_visible;
 
 /* gSPModifyVertex: change one field of a loaded vertex (the underwater
  * ripple moves its grid's corners in screen space this way). */
@@ -378,6 +380,33 @@ static void emit_tri(gfx_state_t *st, unsigned ia, unsigned ib, unsigned ic) {
         return;
     }
     const gfx_vtx_t *a = &st->vtx[ia], *b = &st->vtx[ib], *c = &st->vtx[ic];
+#ifdef PM3DS_CULL_VERIFY
+    if (st->cull_check) {   /* an NPC src/npc.c would have skipped: did this triangle reach the screen? */
+        const float half = st->vp_scale[0] * 0.25f, centre = st->vp_trans[0] * 0.25f;
+        const float kx = pm3ds_view_ndc_x(centre - half, half * 2.0f);   /* exact screen edges, no margin */
+        const gfx_vtx_t *t3[3] = { a, b, c };
+        unsigned all = 0x1F;
+        bool behind = false;
+        for (int k = 0; k < 3; k++) {
+            const gfx_vtx_t *v = t3[k];
+            unsigned code = 0;
+            if (v->cx >  kx * v->cw) code |= 0x01;
+            if (v->cx < -kx * v->cw) code |= 0x02;
+            if (v->cy >  v->cw) code |= 0x04;
+            if (v->cy < -v->cw) code |= 0x08;
+            if (v->cz < -v->cw) code |= 0x10;
+            if (v->cw <= 0.0f) behind = true;
+            all &= code;
+        }
+        if (!all) {   /* not certainly off screen: on it, or partly behind the camera */
+            pm3ds_tstat_cullcheck_visible++;
+            static int logged;
+            if (logged++ < 20) pm3ds_log(PM3DS_LOG_WARN, "CULLVERIFY visible: ndc x %.2f y %.2f w %.1f%s",
+                                         a->cw > 0.0f ? a->cx / a->cw : 0.0f, a->cw > 0.0f ? a->cy / a->cw : 0.0f, a->cw,
+                                         behind ? " (partly behind the camera)" : "");
+        }
+    }
+#endif
 #ifdef PM3DS_DRAWLOG_FRAME
     {
         extern uint32_t pm3ds_gfx_frame_number(void);
@@ -812,6 +841,31 @@ static void handle_texrect(gfx_state_t *st, const gfx_cmd_t *g, bool flip) {
 unsigned pm3ds_tstat_ops;
 unsigned pm3ds_tstat_tris;
 unsigned pm3ds_tstat_rects;
+unsigned pm3ds_tstat_culldl, pm3ds_tstat_culldl_hit;   /* G_CULLDL seen / lists ended by it */
+unsigned pm3ds_tstat_npcs_culled;   /* NPCs not drawn because they are off screen (src/npc.c) */
+unsigned pm3ds_tstat_cullcheck_visible;   /* PM3DS_CULL_VERIFY: such NPCs' triangles that were on screen */
+
+
+/* G_CULLDL: true when loaded vertices v0..v1 all lie outside one side of what is on screen
+ * (the RSP ends the display list then). Each test is a half-space in clip space, so the
+ * answer holds for vertices behind the camera too. Wide mode shows past NDC x = +-1; the
+ * margin covers the 3D slider's per-eye shift and the 60 fps in-between frames. */
+static bool culldl_offscreen(const gfx_state_t *st, int v0, int v1) {
+    const float half = st->vp_scale[0] * 0.25f, centre = st->vp_trans[0] * 0.25f;
+    const float kx = pm3ds_view_ndc_x(centre - half, half * 2.0f) + 0.15f, ky = 1.15f;
+    unsigned all = 0x1F;
+    for (int i = v0; i <= v1 && all; i++) {
+        const gfx_vtx_t *v = &st->vtx[i];
+        unsigned code = 0;
+        if (v->cx >  kx * v->cw) code |= 0x01;
+        if (v->cx < -kx * v->cw) code |= 0x02;
+        if (v->cy >  ky * v->cw) code |= 0x04;
+        if (v->cy < -ky * v->cw) code |= 0x08;
+        if (v->cz < -v->cw)      code |= 0x10;   /* in front of the near plane */
+        all &= code;
+    }
+    return all != 0;
+}
 
 #define DL_STACK 32
 #define WALK_MAX_OPS 400000
@@ -896,6 +950,10 @@ int gfx_walk_dl(gfx_state_t *st, const void *dl) {
             case OP_NOOP:
                 if (g->w1 == PM3DS_GFX_TAG_BOX_RTT) st->box_rtt_tag = true;
                 if (g->w1 == PM3DS_GFX_TAG_SCREEN_COPY) st->screen_copy_tag = true;
+#ifdef PM3DS_CULL_VERIFY
+                if (g->w1 == PM3DS_GFX_TAG_CULL_CHECK) st->cull_check = true;
+                if (g->w1 == PM3DS_GFX_TAG_CULL_CHECK_END) st->cull_check = false;
+#endif
                 if (g->w1 == PM3DS_GFX_TAG_DECAL_BAND || g->w1 == PM3DS_GFX_TAG_DECAL_BAND_END) {
                     bool band = g->w1 == PM3DS_GFX_TAG_DECAL_BAND;
                     if (st->decal_band != band) {
@@ -907,7 +965,21 @@ int gfx_walk_dl(gfx_state_t *st, const void *dl) {
             case OP_MODIFYVTX:
                 handle_modifyvtx(st, g);
                 break;
-            case OP_CULLDL: case OP_SPNOOP:
+            case OP_CULLDL: {
+                int v0 = (int)bf(g->w0, 0, 16) / 2, v1 = (int)bf(g->w1, 0, 16) / 2;
+                pm3ds_tstat_culldl++;
+#ifdef PM3DS_NO_OFFSCREEN_CULL   /* debug A/B: draw every list, as before */
+                break;
+#endif
+                if (v0 <= v1 && v1 < GFX_VTX_POOL_SIZE && culldl_offscreen(st, v0, v1)) {
+                    pm3ds_tstat_culldl_hit++;
+                    if (sp == 0) { g = NULL; continue; }   /* as G_ENDDL */
+                    g = stack[--sp];
+                    continue;
+                }
+                break;
+            }
+            case OP_SPNOOP:
             case OP_LOAD_UCODE: case OP_DMA_IO: case OP_SPECIAL_1: case OP_SPECIAL_2: case OP_SPECIAL_3:
             case OP_RDPLOADSYNC: case OP_RDPPIPESYNC: case OP_RDPTILESYNC: case OP_RDPFULLSYNC:
             case OP_RDPHALF_2:
