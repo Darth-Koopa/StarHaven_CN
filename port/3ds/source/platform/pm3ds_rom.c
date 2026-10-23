@@ -8,7 +8,7 @@
  * carry it in romfs. The ROM is checked here once, then read on demand
  * (n64_shim/rom_stream.c): it no longer has to fit in RAM. Only the game's data is kept (pm3ds_rom_layout.h: 48 MB
  * for Europe, whose 64 MB dumps repeat 0x2000000-0x3000000 after it; 40 MB
- * for the US), and a CRC32 of it in .z64 order must match the version the
+ * for the US and iQue), and a CRC32 of it in .z64 order must match the version the
  * port is built for.
  *
  * The table in romfs (PM3DS_ROMDATA_PATH: one per version, so a package can
@@ -189,12 +189,9 @@ static bool load_candidate(const char *path, rom_status_t *st) {
     }
     fclose(f);
     pm3ds_boot_permille = -1;
-    char game_id[5] = { 0 }, region = 0;
-    bool is_pm = false;
+    char game_id[5] = { 0 };
     if (other_game) {           /* buf still holds the header */
         memcpy(game_id, buf + 0x3B, 4);
-        region = (char)buf[0x3E];
-        is_pm = !memcmp(buf + 0x3B, "NMQ", 3);
     }
     free(buf);
     st->order = order;
@@ -206,9 +203,9 @@ static bool load_candidate(const char *path, rom_status_t *st) {
     }
     if (other_game) {
         snprintf(st->reason, sizeof st->reason, "This is not the right ROM");
-        snprintf(st->detail, sizeof st->detail, "%s game ID %.4s, needs " PM3DS_ROM_GAME_ID,
-                 is_pm ? (region == 'E' ? "US version," : region == 'J' ? "Japanese version," : "") : "", game_id);
-        pm3ds_log(PM3DS_LOG_WARN, "rom: %s has game ID %.4s, not " PM3DS_ROM_GAME_ID, path, game_id);
+        snprintf(st->detail, sizeof st->detail, "game ID %.4s, expected %s",
+                 game_id, PM3DS_ROM_GAME_ID_LABEL);
+        pm3ds_log(PM3DS_LOG_WARN, "rom: %s has game ID %.4s, expected %s", path, game_id, PM3DS_ROM_GAME_ID_LABEL);
         return false;
     }
     if (n != s_want_size) {
@@ -350,7 +347,7 @@ static void show_problem(const rom_status_t *st) {
         l_detail,
         "",
         "Put your own Paper Mario ROM",
-        "(USA or Europe) on the SD card as",
+        "(USA, Europe or iQue China) on SD",
         ROM_SHOWN,
         "(.z64, .n64 or .v64)",
         "",

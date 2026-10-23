@@ -9,7 +9,7 @@ on the 3DS; nothing is emulated.
   <img src="port/3ds/docs/screenshots/battle.png" width="380" alt="A battle, with Mario's commands as big icon tiles on the bottom screen">
 </p>
 
-**Star Haven contains no game data.** You need your own Paper Mario ROM (EU or US).
+**Star Haven contains no game data.** The established release supports your own Paper Mario ROM (EU or US). An experimental iQue China build is being brought up separately; it requires the original iQue ROM and is not yet part of the standard release.
 
 ## Install
 
@@ -41,7 +41,7 @@ Console? Keep playing it on the 3DS:
 
 ## Features
 
-- EU and US versions in one package
+- EU and US versions in one package; experimental iQue China build via GitHub Actions
 - 60 fps (in-between frames are added), or the original 30
 - Fast-forward and faster text
 - Original, Fill or Wide screen, the 3D slider with a depth setting, remappable buttons
@@ -74,7 +74,7 @@ Console? Keep playing it on the 3DS:
 ## Building
 
 See [port/3ds/README.md](port/3ds/README.md). Everything builds in a Docker image with
-devkitARM, libctru and citro3d, and needs your own ROMs in `ver/pal/` and `ver/us/`.
+devkitARM, libctru and citro3d, and needs the matching original ROM in `ver/pal/`, `ver/us/` or (for the experimental Chinese build) `ver/ique/`. The iQue GitHub Actions workflow uses a private ROM download URL stored in the `IQUE_ROM_URL` repository secret.
 
 ## Layout
 

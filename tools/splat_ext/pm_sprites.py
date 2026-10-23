@@ -19,7 +19,7 @@ from splat.util.color import unpack_color
 sys.path.insert(0, str(Path(__file__).parent))
 from sprite_common import AnimComponent, iter_in_groups, read_offset_list
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "build"))
 from common import get_asset_path
 
 # TODO move into yaml

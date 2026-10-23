@@ -28,8 +28,8 @@ and make sure pigment64 is in your system path.
 
 Install build dependencies:
 ```sh
-./install_deps.sh
-./install_compilers.sh
+bash ./install_deps.sh
+bash ./install_compilers.sh
 ```
 
 > **NOTE:** On Mac, if you get an error that looks like
@@ -52,8 +52,8 @@ Continue onto [building](#building)
 3. Run the following command: `sudo apt update && sudo apt upgrade && cd ~`
 4. Install build dependencies:
 ```sh
-./install_deps.sh
-./install_compilers.sh
+bash ./install_deps.sh
+bash ./install_compilers.sh
 ```
 5. Continue with [building](#building)
 

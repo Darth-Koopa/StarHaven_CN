@@ -108,7 +108,7 @@ typedef struct {
 
 #define LOC(flag, item, src, map, kav, chapter) { flag, item, src, map },
 static const TrackedSpot sSpots[] = {
-#if VERSION_US
+#if VERSION_US || VERSION_IQUE
 #include "rando_locations_us.inc"
 #else
 #include "rando_locations.inc"

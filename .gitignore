@@ -27,6 +27,7 @@ build.ninja
 # port/3ds/tools/gen_link_syms.py <link log> when new _ROM_START refs appear
 !port/3ds/m11_syms.ld
 !port/3ds/m11_syms_us.ld
+!port/3ds/m11_syms_ique.ld
 !src/map_shape.ld
 *.elf
 *.z64
@@ -74,4 +75,4 @@ compile_commands.json
 # Claude Code scheduler/runtime state — never track
 .claude/
 port/3ds/build_world.log
-port/3ds/build_assets/
+port/3ds/build_assets*/

@@ -19,6 +19,7 @@
 
 #include "gfx_state.h"
 #include "pm3ds_gfx_tags.h"
+#include "pm3ds_addr.h"
 #include "pm3ds_log.h"
 #ifndef PM3DS_HOST_TEST
 #include "gfx_interp.h"
@@ -651,7 +652,15 @@ static void handle_loadtlut(gfx_state_t *st, const gfx_cmd_t *g) {
     int base = (int)t->tmem - 256;          /* one TLUT entry per TMEM word */
     if (base < 0 || base >= 256) return;
     if (base + count > 256) count = 256 - base;
-    if (!addr_plausible(st->timg_addr)) return;
+    if (!pm3ds_addr_is_texture_source(st->timg_addr)) {
+        static int warned = 0;
+        if (!warned++) {
+            pm3ds_log(PM3DS_LOG_WARN,
+                      "gfx: skip TLUT from implausible texture address 0x%08X",
+                      (unsigned)st->timg_addr);
+        }
+        return;
+    }
     pm3ds_pi_read(st->timg_addr, &st->tlut[base * 2], (uint32_t)count * 2);
     for (int bank = base / 16; bank <= (base + count - 1) / 16 && bank < 16; bank++) {
         st->tlut_src[bank] = st->timg_addr + (uint32_t)(bank * 16 - base) * 2;

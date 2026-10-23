@@ -20,7 +20,7 @@ import sys
 import yaml
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-# PM3DS_VERSION=pal (m11_syms.ld) or us (m11_syms_us.ld), as for make
+# PM3DS_VERSION=pal, us or ique, as for make
 VER = os.environ.get("PM3DS_VERSION", "pal")
 OUT = os.path.join(ROOT, "port", "3ds", "m11_syms%s.ld" % ("" if VER == "pal" else "_" + VER))
 SEG_RE = re.compile(r"undefined reference to `(\w+_(?:ROM_START|ROM_END|VRAM))'")

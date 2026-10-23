@@ -1,5 +1,8 @@
 #include "kmr_06.h"
 #include "ld_addrs.h"
+#ifdef _3DS
+#include "pm3ds_rom_layout.h"
+#endif
 
 extern s32 gItemIconRasterOffsets[];
 extern s32 gItemIconPaletteOffsets[];
@@ -77,7 +80,11 @@ API_CALLABLE(N(CreateSticker)) {
     IMG_PTR iconImg = heap_malloc(0x200);
     PAL_PTR iconPal = heap_malloc(0x20);
 
-    s32 iconBase = (s32) icon_ROM_START;
+#if defined(_3DS)
+    s32 iconBase = (s32)PM3DS_ICON_ROM_ADDR(0);
+#else
+    s32 iconBase = (s32)icon_ROM_START;
+#endif
     s32 iconImgEnd = iconBase + 0x200;
     s32 iconPalEnd = iconBase + 0x20;
 

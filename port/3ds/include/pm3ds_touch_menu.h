@@ -22,7 +22,7 @@ enum { PM3DS_TM_COST_NONE, PM3DS_TM_COST_FP, PM3DS_TM_COST_SP, PM3DS_TM_COST_COI
        PM3DS_TM_COST_HP };
 
 typedef struct {
-    char name[28];      /* the game's font codes + 0x20: ASCII for plain text */
+    char name[84];      /* UTF-8 UI text; CJK glyphs use private-use code points */
     int16_t cost;       /* move cost, price; HP for a target (-1 unknown) */
     int16_t max_hp;     /* targets */
     uint8_t cost_kind;  /* PM3DS_TM_COST_* */
@@ -41,7 +41,7 @@ typedef struct {
     int cursor;
     int all_targets;    /* TARGET: the move hits every target, any tap confirms */
     int partner;        /* the partner's turn (battle menus) */
-    char title[28];
+    char title[84];
     pm3ds_tm_entry_t e[PM3DS_TM_MAX];
 } pm3ds_touch_menu_t;
 

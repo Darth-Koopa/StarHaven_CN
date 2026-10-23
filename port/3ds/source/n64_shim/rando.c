@@ -61,7 +61,7 @@ typedef struct {
 
 #define LOC(flag, item, src, map, kav, chapter) { flag, item, src, kav, chapter, #item, map },
 static const RandoLoc sLocs[] = {
-#if VERSION_US
+#if VERSION_US || VERSION_IQUE
 #include "rando_locations_us.inc"
 #else
 #include "rando_locations.inc"
@@ -81,7 +81,7 @@ typedef struct {
 
 #define SHOP(item, price, desc, map, rowf) { item, price, desc, map, rowf, #item },
 static const RandoShop sShops[] = {
-#if VERSION_US
+#if VERSION_US || VERSION_IQUE
 #include "rando_shops_us.inc"
 #else
 #include "rando_shops.inc"

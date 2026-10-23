@@ -2,6 +2,9 @@
 #include "hud_element.h"
 #include "nu/nusys.h"
 #include "ld_addrs.h"
+#ifdef _3DS
+#include "pm3ds_rom_layout.h"
+#endif
 
 #define MAX_HUD_CACHE_ENTRIES 192
 
@@ -196,7 +199,11 @@ void hud_element_load_script(HudElement* hudElement, HudScript* anim) {
                             capacity = HudElemCacheCapacity / 2;
                         }
                         ASSERT(capacity > *gHudElementCacheSize + HudElemSizes[preset].size);
+                        #ifdef _3DS
+                        nuPiReadRom((u32)PM3DS_ICON_ROM_ADDR(raster), entry->data, HudElemSizes[preset].size);
+#else
                         nuPiReadRom((s32)icon_ROM_START + raster, entry->data, HudElemSizes[preset].size);
+#endif
                         *gHudElementCacheSize += HudElemSizes[preset].size;
                         if (gGameStatusPtr->context == CONTEXT_WORLD) {
                             *pos = i;
@@ -232,7 +239,11 @@ void hud_element_load_script(HudElement* hudElement, HudScript* anim) {
                             capacity = HudElemCacheCapacity / 2;
                         }
                         ASSERT(capacity > *gHudElementCacheSize + 32);
+                        #ifdef _3DS
+                        nuPiReadRom((u32)PM3DS_ICON_ROM_ADDR(palette), entry->data, 32);
+#else
                         nuPiReadRom((s32)icon_ROM_START + palette, entry->data, 32);
+#endif
                         *gHudElementCacheSize += 32;
                         if (gGameStatusPtr->context == CONTEXT_WORLD) {
                             *pos = i;

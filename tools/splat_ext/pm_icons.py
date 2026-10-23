@@ -1,9 +1,11 @@
 import os
 import re
 from pathlib import Path
+import sys
 from splat.segtypes.segment import Segment
 import n64img.image
 from splat.util.color import unpack_color
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "build"))
 from common import iter_in_groups
 from splat.util import options
 import yaml as yaml_loader

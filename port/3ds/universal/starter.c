@@ -1,54 +1,125 @@
 /*
- * starter.c — main() of the release package, which holds the game twice:
- * built for the European ROM and for the US one (tools/universal.py links
- * both; the US copy's symbols carry a us_ prefix). This looks at the
+ * starter.c — main() of the universal release, which links PAL, US and the
+ * official iQue Chinese build. tools/universal.py keeps PAL symbols as-is
+ * and prefixes the US/iQue copies with us_ and ique_. This looks at the
  * player's ROM on the SD card and hands over to the matching copy.
  *
- * One ROM (or none): run its copy; with none, the PAL copy shows what to do.
- * Both versions on the card: ask which to play.
+ * One ROM (or none): run its copy; with none, the PAL copy shows setup help.
+ * Multiple supported ROMs on the card: ask which one to play.
  */
 #include <3ds.h>
 #include <dirent.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include "pm3ds_brand.h"
 
 int pal_main(int argc, char **argv);   /* the PAL copy's port_main.c main(), renamed */
 int us_main(int argc, char **argv);    /* the US copy's */
+int ique_main(int argc, char **argv); /* official iQue Chinese copy */
 void pm3ds_sd_migrate(void);           /* the PAL copy's (pm3ds_rom.c): the old SD folder */
 
-/* the region letter of an N64 Paper Mario ROM file in any byte order:
- * 'P' (Europe), 'E' (USA); 0 for anything else */
+/* The official iQue dump is 40 MiB, has a blank game-code field at 0x3B,
+ * and is identified by CRC32 over the canonical .z64-order first 40 MiB.
+ * Keep these constants in sync with pm3ds_rom_layout.h. */
+#define IQUE_ROM_DATA_SIZE 0x2800000u
+#define IQUE_ROM_CRC32     0x18C02AD5u
+
+enum { ROM_ORDER_Z64, ROM_ORDER_V64, ROM_ORDER_N64, ROM_ORDER_BAD };
+
+static int rom_order(const unsigned char *h) {
+    uint32_t w = (uint32_t)h[0] << 24 | (uint32_t)h[1] << 16 | (uint32_t)h[2] << 8 | h[3];
+    if (w == 0x80371240u) return ROM_ORDER_Z64;
+    if (w == 0x37804012u) return ROM_ORDER_V64;
+    if (w == 0x40123780u) return ROM_ORDER_N64;
+    return ROM_ORDER_BAD;
+}
+
+static void to_z64(unsigned char *p, size_t n, int order) {
+    if (order == ROM_ORDER_V64) {
+        for (size_t i = 0; i + 1 < n; i += 2) {
+            unsigned char t = p[i]; p[i] = p[i + 1]; p[i + 1] = t;
+        }
+    } else if (order == ROM_ORDER_N64) {
+        for (size_t i = 0; i + 3 < n; i += 4) {
+            unsigned char a = p[i], b = p[i + 1];
+            p[i] = p[i + 3]; p[i + 1] = p[i + 2]; p[i + 2] = b; p[i + 3] = a;
+        }
+    }
+}
+
+static uint32_t s_crc_table[256];
+static bool s_crc_table_ready;
+
+static void crc_prepare(void) {
+    if (s_crc_table_ready) return;
+    for (uint32_t i = 0; i < 256; i++) {
+        uint32_t c = i;
+        for (int bit = 0; bit < 8; bit++)
+            c = (c >> 1) ^ (0xEDB88320u & (0u - (c & 1u)));
+        s_crc_table[i] = c;
+    }
+    s_crc_table_ready = true;
+}
+
+static uint32_t crc_update(uint32_t crc, const unsigned char *p, size_t n) {
+    crc_prepare();
+    crc = ~crc;
+    while (n--) crc = (crc >> 8) ^ s_crc_table[(crc ^ *p++) & 0xFFu];
+    return ~crc;
+}
+
+/* Only called for a candidate whose N64 header is valid but whose game ID
+ * field is all zero. Stream it in small chunks so the launcher never needs a
+ * 40 MiB allocation. CRC is calculated after normalizing .z64/.v64/.n64. */
+static uint32_t rom_crc32_prefix(const char *path, uint32_t length, int order) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    unsigned char *buf = (unsigned char *)malloc(512 * 1024);
+    if (!buf) { fclose(f); return 0; }
+    uint32_t crc = 0;
+    uint32_t done = 0;
+    while (done < length) {
+        size_t want = length - done < 512 * 1024 ? length - done : 512 * 1024;
+        size_t got = fread(buf, 1, want, f);
+        if (got != want) { crc = 0; break; }
+        to_z64(buf, got, order);
+        crc = crc_update(crc, buf, got);
+        done += (uint32_t)got;
+    }
+    free(buf);
+    fclose(f);
+    return done == length ? crc : 0;
+}
+
+/* Return E=USA, P=Europe, Q=iQue China, or 0 for unsupported/unknown ROM. */
 static char rom_region(const char *path) {
     unsigned char h[0x40];
     FILE *f = fopen(path, "rb");
     if (!f) return 0;
     size_t n = fread(h, 1, sizeof h, f);
+    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return 0; }
+    long file_size = ftell(f);
     fclose(f);
     if (n != sizeof h) return 0;
-    uint32_t w = (uint32_t)h[0] << 24 | (uint32_t)h[1] << 16 | (uint32_t)h[2] << 8 | h[3];
-    if (w == 0x37804012u) {                       /* .v64: 16-bit halves swapped */
-        for (size_t i = 0; i < n; i += 2) {
-            unsigned char t = h[i];
-            h[i] = h[i + 1];
-            h[i + 1] = t;
-        }
-    } else if (w == 0x40123780u) {                /* .n64: 32-bit words reversed */
-        for (size_t i = 0; i < n; i += 4) {
-            unsigned char a = h[i], b = h[i + 1];
-            h[i] = h[i + 3];
-            h[i + 1] = h[i + 2];
-            h[i + 2] = b;
-            h[i + 3] = a;
-        }
-    } else if (w != 0x80371240u) {
-        return 0;
-    }
-    if (memcmp(h + 0x3B, "NMQ", 3)) return 0;     /* game code: Paper Mario */
-    return (h[0x3E] == 'P' || h[0x3E] == 'E') ? (char)h[0x3E] : 0;
+    int order = rom_order(h);
+    if (order == ROM_ORDER_BAD) return 0;
+    to_z64(h, n, order);
+    if (!memcmp(h + 0x3B, "NMQ", 3))
+        return (h[0x3E] == 'P' || h[0x3E] == 'E') ? (char)h[0x3E] : 0;
+
+    /* The authentic iQue dump has zeroes where a normal N64 ID would be.
+     * Require the known CRC as well as the blank ID; size alone is unsafe
+     * because the USA release is also 40 MiB. */
+    if (file_size >= (long)IQUE_ROM_DATA_SIZE &&
+        h[0x3B] == 0 && h[0x3C] == 0 && h[0x3D] == 0 && h[0x3E] == 0 &&
+        rom_crc32_prefix(path, IQUE_ROM_DATA_SIZE, order) == IQUE_ROM_CRC32)
+        return 'Q';
+    return 0;
 }
 
 static bool has_rom_ext(const char *name) {
@@ -59,7 +130,7 @@ static bool has_rom_ext(const char *name) {
 }
 
 /* which versions are on the card, as the copies look for them (pm3ds_rom.c) */
-static void find_versions(bool *eu, bool *us) {
+static void find_versions(bool *eu, bool *us, bool *ique) {
     DIR *d = opendir(PM3DS_SD_DIR);
     if (!d) return;
     struct dirent *e;
@@ -70,6 +141,7 @@ static void find_versions(bool *eu, bool *us) {
         char r = rom_region(path);
         *eu |= r == 'P';
         *us |= r == 'E';
+        *ique |= r == 'Q';
     }
     closedir(d);
 }
@@ -113,30 +185,31 @@ static void draw_top(void) {
     box(76, 62, 324, 178, 116, 72, 40);       /* rim */
     box(78, 64, 322, 176, 255, 247, 222);     /* panel */
     text(82, PM3DS_APP_NAME_CAPS, 2, 116, 72, 40);
-    text(116, "Two Paper Mario ROMs found", 1, 116, 72, 40);
-    text(140, "Choose one on the", 1, 116, 72, 40);
-    text(152, "bottom screen", 1, 116, 72, 40);
+    text(116, "Paper Mario ROMs found", 1, 116, 72, 40);
+    text(140, "Choose one below", 1, 116, 72, 40);
     gfxFlushBuffers();
 }
 
-/* both versions present: 'E' (USA), 'P' (Europe), 0 if the player closed the app */
-static char ask(void) {
+/* Several supported ROMs are present: A=USA, B=Europe, X=iQue China. */
+static char ask(bool eu, bool us, bool ique) {
     gfxInitDefault();
     draw_top();
     consoleInit(GFX_BOTTOM, NULL);
     printf("\n\n  " PM3DS_APP_NAME "\n\n"
-           "  Your SD card has two ROMs.\n"
-           "  Which one do you want to play?\n\n"
-           "    A   USA\n"
-           "    B   Europe (English, German,\n"
-           "        French, Spanish)\n");
+           "  Choose your ROM:\n\n");
+    if (us) printf("    A   USA\n");
+    if (eu) printf("    B   Europe\n");
+    if (ique) printf("    X   iQue China (Chinese)\n");
+    printf("\n    START   Exit\n");
     char pick = 0;
     while (!pick && aptMainLoop()) {
         hidScanInput();
         u32 k = hidKeysDown();
-        if (k & KEY_A) pick = 'E';
-        else if (k & KEY_B) pick = 'P';
-        gfxFlushBuffers();      /* without these the console never reaches the screen */
+        if ((k & KEY_A) && us) pick = 'E';
+        else if ((k & KEY_B) && eu) pick = 'P';
+        else if ((k & KEY_X) && ique) pick = 'Q';
+        else if (k & KEY_START) break;
+        gfxFlushBuffers();
         gfxSwapBuffers();
         gspWaitForVBlank();
     }
@@ -146,10 +219,15 @@ static char ask(void) {
 
 int main(int argc, char **argv) {
     pm3ds_sd_migrate();
-    bool eu = false, us = false;
-    find_versions(&eu, &us);
-    char pick = us && !eu ? 'E' : eu && !us ? 'P' : us && eu ? ask() : 'P';
+    bool eu = false, us = false, ique = false;
+    find_versions(&eu, &us, &ique);
+    int count = (int)eu + (int)us + (int)ique;
+    char pick;
+    if (count == 1) pick = us ? 'E' : eu ? 'P' : 'Q';
+    else if (count > 1) pick = ask(eu, us, ique);
+    else pick = 'P'; /* PAL build shows the existing setup/help screen. */
     if (pick == 'E') return us_main(argc, argv);
     if (pick == 'P') return pal_main(argc, argv);
+    if (pick == 'Q') return ique_main(argc, argv);
     return 0;
 }

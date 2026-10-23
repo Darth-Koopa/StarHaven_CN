@@ -18,7 +18,7 @@ import sys
 import yaml
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-# PM3DS_VERSION=pal (world_files.mk) or us (world_files_us.mk), as for make
+# PM3DS_VERSION=pal (world_files.mk), us or ique, as for make
 VER = os.environ.get("PM3DS_VERSION", "pal")
 SPLAT = os.path.join(ROOT, "ver", VER, "splat.yaml")
 PREFIXES = tuple(sys.argv[1:]) or (

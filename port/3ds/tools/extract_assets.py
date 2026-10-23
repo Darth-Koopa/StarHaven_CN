@@ -27,6 +27,7 @@ Exit codes:
 """
 
 import hashlib
+import os
 import shutil
 import subprocess
 import sys
@@ -138,9 +139,23 @@ def main() -> int:
     ver_baserom.write_bytes(out_bytes)
 
     print(f"running splat on ver/{region}/splat.yaml …", file=sys.stderr)
+    # The decomp's custom Splat segment modules import helpers from
+    # tools/build/common.py and sibling modules from tools/splat_ext. Those
+    # paths are added by some developer shells, but not by a clean GitHub
+    # Actions runner. Set them explicitly for a reproducible extraction.
+    env = os.environ.copy()
+    python_paths = [
+        str(REPO_ROOT / "tools" / "build"),
+        str(REPO_ROOT / "tools" / "splat_ext"),
+    ]
+    if env.get("PYTHONPATH"):
+        python_paths.append(env["PYTHONPATH"])
+    env["PYTHONPATH"] = os.pathsep.join(python_paths)
+
     cp = subprocess.run(
-        ["python3", "-m", "splat", "split", str(splat_yaml)],
+        [sys.executable, "-m", "splat", "split", str(splat_yaml)],
         cwd=REPO_ROOT,
+        env=env,
     )
     if cp.returncode != 0:
         print("FAIL: splat exited non-zero", file=sys.stderr)

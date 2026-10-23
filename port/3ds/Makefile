@@ -16,7 +16,7 @@
 # host-tests must NOT exist there — otherwise it'd be the first-listed
 # target in that scope and steal the implicit default goal from the .3dsx
 # / .elf rules.
-ifeq ($(filter build build_us,$(notdir $(CURDIR))),)
+ifeq ($(filter build build_us build_ique,$(notdir $(CURDIR))),)
 .PHONY: host-tests
 host-tests:
 	$(MAKE) -C tests run
@@ -51,10 +51,10 @@ include $(DEVKITARM)/3ds_rules
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
-# which ROM the build is for: pal = Paper Mario (Europe), us = Paper Mario (USA)
-# (make PM3DS_VERSION=us). Each version has its own build directory, output
-# name and generated files (build_assets*, world_files*.mk, m11_syms*.ld);
-# include/pm3ds_rom_layout.h holds its ROM offsets.
+# ROM target: pal = Europe, us = USA, ique = official Chinese iQue release.
+# Each target has its own build directory, generated assets, symbol script,
+# world-file list and ROM-data manifest.  Keep the iQue build independent
+# until it has been tested on hardware; the universal launcher can combine it.
 PM3DS_VERSION	?=	pal
 ifeq ($(PM3DS_VERSION),pal)
 PM3DS_VFLAG	:=	-DVERSION_PAL=1
@@ -62,8 +62,11 @@ PM3DS_VSUFFIX	:=
 else ifeq ($(PM3DS_VERSION),us)
 PM3DS_VFLAG	:=	-DVERSION_US=1
 PM3DS_VSUFFIX	:=	_us
+else ifeq ($(PM3DS_VERSION),ique)
+PM3DS_VFLAG	:=	-DVERSION_IQUE=1
+PM3DS_VSUFFIX	:=	_ique
 else
-$(error PM3DS_VERSION must be pal or us)
+$(error PM3DS_VERSION must be pal, us or ique)
 endif
 TARGET		:=	PaperMario3DS$(PM3DS_VSUFFIX)
 BUILD		:=	build$(PM3DS_VSUFFIX)
@@ -289,7 +292,12 @@ CFILES		:=	$(filter-out %.inc.c,$(foreach dir,$(SOURCES),$(notdir $(wildcard $(d
 # M4 wave 12: exclude decomp src/ root files that pull in N64-specific
 # libultra internals we don't ship on 3DS. The port-side n64_shim layer
 # replaces these.
-M4_EXCLUDE := crash_screen.c create_audio_system_obfuscated.c is_debug.c load_engine_data_obfuscated.c
+# The DMA-copy wrappers for obfuscated N64 entry points are not part of the
+# 3DS runtime. With SHIFT=1 (and for iQue even without SHIFT), main/world/battle
+# call sites redirect to native implementations. iQue's Splat map intentionally
+# has no *_obfuscated ROM_START/ROM_END/VRAM symbols, so compiling this wrapper
+# file causes undeclared-symbol errors before the linker can run.
+M4_EXCLUDE := crash_screen.c create_audio_system_obfuscated.c is_debug.c load_engine_data_obfuscated.c obfuscation_shims.c
 # files only the PAL ROM has (ver/pal/splat.yaml but not ver/us): languages,
 # the title-screen language menu, PAL heap layout
 PAL_ONLY_CFILES := filemenu_selectlanguage.c heaps4.c titlemenu.c \
@@ -424,7 +432,7 @@ WORLD_OFILES := $(addprefix wobj/,$(WORLD_CFILES:.c=.o))
 OFILES += $(WORLD_OFILES)
 # effect shim aliases + zeroed overlay address symbols (tools/gen_link_syms.py)
 LDFLAGS += $(TOPDIR)/m11_syms$(PM3DS_VSUFFIX).ld
-$(OUTPUT).elf : $(WORLD_OFILES)
+$(OUTPUT).elf : $(WORLD_OFILES) $(TOPDIR)/m11_syms$(PM3DS_VSUFFIX).ld
 # One data section per file, as in the N64 build: display lists that end
 # without gsSPEndDisplayList fall through into the next array (fire_breath's
 # D_09000B88_373F68 -> D_09000BA8_373F88), and animations read frames past the

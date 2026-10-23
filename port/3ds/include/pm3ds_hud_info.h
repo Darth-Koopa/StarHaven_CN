@@ -33,7 +33,7 @@ void pm3ds_hud_query(pm3ds_hud_info_t *out);
 
 /* Tattle log (n64_shim/journal.c): enemies Goombario has tattled, in actor order */
 #define PM3DS_TATTLE_MAX  160
-#define PM3DS_TATTLE_NAME 24
+#define PM3DS_TATTLE_NAME 72
 typedef struct {
     int known, total;                     /* tattled / enemies with a tattle */
     short entry[PM3DS_TATTLE_MAX];        /* for pm3ds_tattle_text */

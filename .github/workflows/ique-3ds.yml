@@ -1,0 +1,243 @@
+name: StarHaven iQue 3DS build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-checks:
+    name: Source and iQue configuration checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install YAML parser
+        run: python -m pip install --disable-pip-version-check PyYAML
+      - name: Check Python and shell syntax
+        run: |
+          python -m py_compile port/3ds/tools/*.py port/3ds/tests/*.py tools/splat_ext/*.py
+          bash -n port/3ds/tools/package.sh
+          bash -n port/3ds/tools/gen_version_headers.sh
+          bash -n install_compilers.sh
+      - name: Verify iQue configuration is internally consistent
+        run: |
+          python port/3ds/tests/check_ique_config.py
+          python port/3ds/tests/check_ique_texture_wiring.py
+          make -C port/3ds/tests test_pm3ds_addr
+          port/3ds/tests/test_pm3ds_addr
+          rm -f port/3ds/tests/test_pm3ds_addr
+          test -f port/3ds/Dockerfile
+          grep -Fq 'docker build --pull --progress=plain' .github/workflows/ique-3ds.yml
+          grep -Fq 'FROM devkitpro/devkitarm:20260610' port/3ds/Dockerfile
+          ! grep -Fq 'dkp-pacman -Syyu' port/3ds/Dockerfile
+
+  build-ique:
+    name: Build and package iQue .3dsx
+    if: github.event_name == 'workflow_dispatch'
+    needs: source-checks
+    runs-on: ubuntu-latest
+    env:
+      IQUE_ROM_URL: ${{ secrets.IQUE_ROM_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install host build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl git ninja-build pkg-config \
+            python3-dev python3-venv libyaml-dev zlib1g-dev
+
+      - name: Install Python build dependencies
+        run: |
+          python -m venv .venv
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+          .venv/bin/python -m pip install --upgrade pip setuptools wheel
+          .venv/bin/python -m pip install -r tools/configure/requirements.txt
+
+      - name: Install asset tools
+        run: |
+          cargo install pigment64 --version 0.4.2
+          cargo install crunch64-cli --version 0.3.1
+          bash ./install_compilers.sh
+
+      - name: Download and verify the private iQue ROM
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${IQUE_ROM_URL:-}" ]]; then
+            echo "Missing repository Actions secret IQUE_ROM_URL." >&2
+            echo "Set it to a private, direct-download URL for the original iQue .z64 ROM." >&2
+            exit 1
+          fi
+          curl --fail --location --silent --show-error --retry 3 \
+            "$IQUE_ROM_URL" -o "$RUNNER_TEMP/Paper-Mario-iQue.z64"
+          printf '%s  %s\n' \
+            '5c724685085eba796537573dd6f84aaddedc8582' \
+            "$RUNNER_TEMP/Paper-Mario-iQue.z64" | sha1sum --check
+          echo 'Verified the original iQue ROM hash.'
+
+      - name: Extract iQue assets and generate version headers
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 port/3ds/tools/extract_assets.py "$RUNNER_TEMP/Paper-Mario-iQue.z64"
+          PM3DS_VERSION=ique python3 port/3ds/tools/gen_include_assets.py
+          python3 port/3ds/tools/check_ique_font_assets.py
+          bash port/3ds/tools/gen_version_headers.sh ique
+          python3 port/3ds/tools/check_ique_texture_assets.py "$RUNNER_TEMP/Paper-Mario-iQue.z64"
+          PM3DS_VERSION=ique python3 port/3ds/tools/gen_world_files.py
+          PM3DS_VERSION=ique python3 port/3ds/tools/gen_link_syms.py
+          grep -Fxq 'ique 5c724685085eba796537573dd6f84aaddedc8582' assets/.extract.stamp
+          test -s ver/ique/baserom.z64
+          test -s port/3ds/build_assets_ique/manifest.tsv
+          python3 port/3ds/tools/check_generated_headers.py ique
+          test -s port/3ds/gen/ique/message_ids.h
+          test -s port/3ds/gen/ique/item_data.inc.c
+          test -s port/3ds/gen/ique/icon_offsets.h
+          test -s port/3ds/gen/ique/sprite/sprite_shading_profiles.h
+          test -s port/3ds/gen/ique/recipes.inc.c
+          test -s port/3ds/gen/ique/pause/world_map.png.h
+          test -s port/3ds/world_files_ique.mk
+          test -s port/3ds/m11_syms_ique.ld
+
+      - name: Build the iQue 3DS executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The image is prebuilt by devkitPro. Pulling it avoids running
+          # dkp-pacman against pkg.devkitpro.org on a GitHub-hosted IP.
+          # This Dockerfile has no COPY/ADD instructions. Feed it over stdin
+          # to use an empty build context, so the staged ROM and extracted
+          # game assets are never sent as Docker build context.
+          docker build --pull --progress=plain -t papermario-3ds-builder - \
+            < "$GITHUB_WORKSPACE/port/3ds/Dockerfile"
+          docker run --rm papermario-3ds-builder bash -c 'set -euo pipefail; \
+            test -f "$DEVKITARM/3ds_rules"; \
+            command -v arm-none-eabi-gcc; \
+            command -v 3dsxtool; \
+            test -f "$DEVKITPRO/libctru/include/3ds.h"'
+
+          build_log="$RUNNER_TEMP/ique-build.log"
+          linked=0
+          # Some N64 overlay segment symbols are discovered by the linker.
+          # First build plus up to six retries after adding newly discovered
+          # linker symbols. Stop immediately for ordinary compile/link errors.
+          for attempt in 1 2 3 4 5 6 7; do
+            echo "iQue cross-build attempt $attempt/7"
+            if docker run --rm \
+              -v "$GITHUB_WORKSPACE:/project" \
+              -w /project \
+              papermario-3ds-builder \
+              bash -c 'set -euo pipefail; make -j2 -C port/3ds PM3DS_VERSION=ique PM3DS_GAME=1' \
+              >"$build_log" 2>&1; then
+              cat "$build_log"
+              linked=1
+              break
+            fi
+            cat "$build_log"
+            if [[ "$attempt" -eq 7 ]]; then
+              break
+            fi
+            # The symbol-discovery retry is only valid for linker errors of the
+            # matching GNU ld's undefined-reference line for *_ROM_START, *_ROM_END,
+            # or *_VRAM. Compile errors must never invoke this symbol-discovery loop.
+            # Do not rerun it for C compile errors (such as undeclared symbols):
+            # those require source/config fixes and cannot change this linker map.
+            if ! grep -Eq "undefined reference to \`[[:alnum:]_]+_(ROM_START|ROM_END|VRAM)'" "$build_log"; then
+              echo "Build failed without a discoverable overlay-segment linker reference; not retrying symbol generation." >&2
+              exit 1
+            fi
+            before=$(sha256sum port/3ds/m11_syms_ique.ld | cut -d ' ' -f 1)
+            PM3DS_VERSION=ique python3 port/3ds/tools/gen_link_syms.py "$build_log"
+            after=$(sha256sum port/3ds/m11_syms_ique.ld | cut -d ' ' -f 1)
+            if [[ "$before" == "$after" ]]; then
+              echo "Build failed without discovering new overlay segment symbols." >&2
+              exit 1
+            fi
+          done
+          if [[ "$linked" != 1 ]]; then
+            echo "iQue build did not link after an initial attempt plus six symbol retries." >&2
+            exit 1
+          fi
+          test -s port/3ds/PaperMario3DS_ique.elf
+          test -s port/3ds/PaperMario3DS_ique.smdh
+          # The universal launcher isn't linked for an iQue-only artifact, but
+          # compile it here so its ROM-order/CRC identification code stays valid.
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/project" \
+            -w /project \
+            papermario-3ds-builder \
+            bash -c 'set -euo pipefail; /opt/devkitpro/devkitARM/bin/arm-none-eabi-gcc \
+              -std=gnu11 -Wall -O2 -D_3DS -D__3DS__ -DARM11 \
+              -I/project/port/3ds/include -I/opt/devkitpro/libctru/include \
+              -c /project/port/3ds/universal/starter.c \
+              -o /tmp/starhaven_universal_starter.o'
+
+      - name: Strip ROM-derived blobs and package the .3dsx
+        run: |
+          PM3DS_VERSION=ique NAME=StarHaven_iQue \
+            bash port/3ds/tools/package.sh \
+              port/3ds/PaperMario3DS_ique.elf dist 3dsx
+
+      - name: Validate the stripped release package
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/StarHaven_iQue.3dsx
+          test -s dist/romfs/romdata_ique.bin
+          python3 - <<'PY'
+          import struct
+          from pathlib import Path
+
+          app = Path("dist/StarHaven_iQue.3dsx").read_bytes()[:4]
+          if app != b"3DSX":
+              raise SystemExit(f"invalid .3dsx magic: {app!r}")
+          romdata = Path("dist/romfs/romdata_ique.bin").read_bytes()
+          if len(romdata) < 64:
+              raise SystemExit("romdata_ique.bin is shorter than its 64-byte header")
+          magic, version, rom_size, rom_crc, anchor, n_blobs, n_ptrs, data_crc, name = struct.unpack(
+              "<4sIIIIIII32s", romdata[:64]
+          )
+          expected = (b"PMRD", 1, 0x2800000, 0x18C02AD5)
+          if (magic, version, rom_size, rom_crc) != expected:
+              raise SystemExit(
+                  f"wrong iQue romdata header: magic={magic!r}, version={version}, "
+                  f"size=0x{rom_size:X}, crc=0x{rom_crc:08X}"
+              )
+          expected_len = 64 + 16 * n_blobs + 8 * n_ptrs
+          if len(romdata) != expected_len:
+              raise SystemExit(f"romdata table length {len(romdata)} != expected {expected_len}")
+          if name.rstrip(b"\0") != b"Paper Mario (iQue China)":
+              raise SystemExit(f"unexpected ROM label {name!r}")
+          rom_exts = {".z64", ".n64", ".v64"}
+          rom_files = [p for p in Path("dist").rglob("*") if p.is_file() and p.suffix.lower() in rom_exts]
+          if rom_files:
+              raise SystemExit(f"refusing to publish a package containing ROM images: {rom_files}")
+          print(
+              f"release package OK: {n_blobs} ROM-data blobs, {n_ptrs} relocations; "
+              f"iQue CRC32={rom_crc:08X}; no ROM images present"
+          )
+          PY
+
+      - name: Upload iQue build (no ROM included)
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarHaven-iQue-3DS
+          path: |
+            dist/StarHaven_iQue.3dsx
+            dist/romfs/romdata_ique.bin
+          if-no-files-found: error
+          retention-days: 14

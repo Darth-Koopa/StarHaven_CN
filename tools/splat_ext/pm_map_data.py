@@ -5,6 +5,7 @@ from pathlib import Path
 
 import crunch64
 from splat.segtypes.segment import Segment
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "build"))
 from common import iter_in_groups
 from splat.util import options
 import png  # type: ignore

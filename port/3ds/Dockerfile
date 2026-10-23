@@ -1,35 +1,32 @@
-# ============================================================================
-# Paper Mario 3DS - Docker Build Environment
-# ============================================================================
-# This Dockerfile creates a container with the full devkitPro 3DS toolchain.
+# ==========================================================================
+# StarHaven / Paper Mario 3DS build environment
 #
-# Usage:
-#   docker build -t papermario-3ds .
-#   docker run --rm -v $(pwd):/project papermario-3ds
+# Use the official, prebuilt devkitPro ARM image. Do not install packages
+# with dkp-pacman during CI: the package mirror can deny GitHub-hosted runner
+# requests (HTTP 403), and package resolution makes builds non-reproducible.
+# The date tag pins the toolchain image used by this build.
 #
-# The devkitPro image includes:
-#   - devkitARM (arm-none-eabi-gcc)
-#   - libctru (3DS OS library)
-#   - citro3d (3DS GPU library)
-#   - 3dsxtool, smdhtool, bannertool
-# ============================================================================
+# The image contains devkitARM, libctru, citro3d, 3dsxtool and the other
+# standard 3DS tools. Host-side ROM extraction and MIPS tools run on the
+# GitHub Actions runner; this image is only for the 3DS cross-build/package.
+# ==========================================================================
+FROM devkitpro/devkitarm:20260610
 
-FROM devkitpro/toolchain-base:latest
+LABEL org.opencontainers.image.title="StarHaven iQue 3DS builder"
 
-# Source the devkit-env so tools are in PATH
-ENV DEVKITPRO=/opt/devkitpro
-ENV DEVKITARM=/opt/devkitpro/devkitARM
-ENV DEVKITPPC=/opt/devkitpro/devkitPPC
-ENV PATH=$DEVKITARM/bin:$DEVKITPRO/tools/bin:$PATH
+ENV DEVKITPRO=/opt/devkitpro \
+    DEVKITARM=/opt/devkitpro/devkitARM \
+    DEVKITPPC=/opt/devkitpro/devkitPPC \
+    PATH=/opt/devkitpro/devkitARM/bin:/opt/devkitpro/tools/bin:${PATH}
 
-# Install the 3DS development toolchain
-RUN dkp-pacman -Syyu --noconfirm 3ds-dev
+# Fail during image build if the selected upstream image ever changes and
+# no longer includes the toolchain pieces this project relies on.
+RUN set -eu; \
+    test -x "$DEVKITARM/bin/arm-none-eabi-gcc"; \
+    test -f "$DEVKITARM/3ds_rules"; \
+    test -f "$DEVKITPRO/libctru/include/3ds.h"; \
+    command -v 3dsxtool; \
+    arm-none-eabi-gcc --version
 
-# Verify tools are available
-RUN arm-none-eabi-gcc --version && which 3dsxtool && echo "OK"
-
-# Set working directory
 WORKDIR /project
-
-# Default command: build the 3DS port
 CMD ["make", "-C", "/project/port/3ds"]

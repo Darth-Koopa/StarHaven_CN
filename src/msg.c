@@ -1,8 +1,15 @@
 #include "common.h"
+#if defined(_3DS) && defined(PM3DS_ASSET_ROOT)
+#include <stdint.h>
+#include <string.h>
+#endif
 #ifdef _3DS
 int pm3ds_settings_text_speed(void);   // port/3ds/source/platform/pm3ds_settings.c
 #endif
 #include "ld_addrs.h"
+#ifdef _3DS
+#include "pm3ds_rom_layout.h"
+#endif
 #include "message_ids.h"
 #include "sprite.h"
 
@@ -235,9 +242,21 @@ void load_font_data(Addr offset, u32 size, void* dest) {
 #else
 void load_font_data(Addr offset, u16 size, void* dest) {
 #endif
+#if defined(_3DS) && defined(PM3DS_ASSET_ROOT)
+    /* In the 3DS full-game build, INCLUDE_RAW makes each charset_*_OFFSET
+     * symbol the address of an embedded asset blob, not a cart-ROM offset.
+     * Copy that host pointer directly.  Routing it through dma_copy() can
+     * misclassify a pointer outside the linker's image-bound check as a
+     * legacy low ROM offset, then copy unrelated bytes from the game ROM.
+     * That manifests as noisy/tiled glyphs on both the game display and the
+     * bottom-screen UI, which reuses MsgCharImgNormal. */
+    memcpy(dest, (const void *)(uintptr_t)offset, size);
+    extern void gfx_tex_invalidate_range(const void *addr, size_t len);
+    gfx_tex_invalidate_range(dest, size);
+#else
     u8* base = charset_ROM_START + (s32) offset;
-
     dma_copy(base, base + size, dest);
+#endif
 }
 
 void load_font(s32 font) {
@@ -1031,11 +1050,19 @@ void msg_copy_to_print_buffer(MessagePrintState* printer, s32 arg1, s32 arg2) {
                         offset = arg << 8 | argQ;
 
                         D_8015131C = D_80159B50;
+#if defined(_3DS)
+                        dma_copy((u8*)PM3DS_ICON_ROM_ADDR(gItemIconRasterOffsets[offset]),
+                                 (u8*)PM3DS_ICON_ROM_ADDR(gItemIconRasterOffsets[offset] + 0x200), a2);
+                        romEnd = (u8*)PM3DS_ICON_ROM_ADDR(gItemIconPaletteOffsets[offset] + 0x20);
+                        dma_copy((u8*)PM3DS_ICON_ROM_ADDR(gItemIconPaletteOffsets[offset]),
+                                 romEnd, D_8015C7E0);
+#else
                         dma_copy(icon_ROM_START + gItemIconRasterOffsets[offset],
-                                icon_ROM_START + gItemIconRasterOffsets[offset] + 0x200, a2);
+                                 icon_ROM_START + gItemIconRasterOffsets[offset] + 0x200, a2);
                         romEnd = icon_ROM_START + gItemIconPaletteOffsets[offset] + 0x20;
                         dma_copy(icon_ROM_START + gItemIconPaletteOffsets[offset],
                                  romEnd, D_8015C7E0);
+#endif
                         printer->curPrintDelay = printer->printDelayTime;
                         if (--arg1 <= 0) {
                             printer->delayFlags |= MSG_DELAY_FLAG_1;

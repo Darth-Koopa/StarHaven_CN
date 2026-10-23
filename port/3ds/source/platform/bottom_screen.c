@@ -78,12 +78,33 @@ static C3D_Tex *s_cur_tex;
 /* textures: UI atlas (art + white + circle), font (two palettes), world map */
 static C3D_Tex s_atlas, s_font, s_map;
 static bool s_atlas_ok, s_font_ok, s_map_ok;
+static u8 *s_font_canvas;       /* retained for the on-demand iQue glyph cache */
+static const u16 *s_font_palettes;
+static bool s_font_dirty;
+#if VERSION_IQUE
+#define FONT_ATLAS_W 512
+#define FONT_ATLAS_H 1024
+#define FONT_ATLAS_COLS 32
+#define FONT_ATLAS_SLOTS 1024
+#define PM3DS_IQUE_GLYPH_COUNT (0x4F000 / 0x80)
+#define PM3DS_CJK_PRIVATE_BASE 0xE000
+static int s_cjk_glyph_for_slot[FONT_ATLAS_SLOTS];
+static int s_cjk_slot_for_glyph[PM3DS_IQUE_GLYPH_COUNT];
+static int s_cjk_next_slot;
+static int s_cjk_replace_slot;
+extern unsigned char charset_standard_OFFSET[];
+#else
+#define FONT_ATLAS_W 256
+#define FONT_ATLAS_H 512
+#define FONT_ATLAS_COLS 16
+#define FONT_ATLAS_SLOTS 256
+#endif
 #define ATLAS_W 256
 #define ATLAS_H 256
 typedef struct { short x, y, w, h; } rect_t;
 static rect_t s_img[UI_IMG_COUNT];
 static rect_t s_white, s_circle;
-static u8 s_glyph_w[256];
+static u8 s_glyph_w[1024];
 static int s_glyphs;
 static C3D_Tex s_small;      /* libctru's 8x8 console font: crisp small text */
 static bool s_small_ok;
@@ -256,29 +277,39 @@ void pm3ds_bottom_screen_reload_art(void) {
     build_map();
 }
 
-/* font texture 256x512: glyphs 16 per row, standard palette in the top half,
- * white palette in the bottom half */
+/* The font atlas holds 1024 16x16 glyphs per palette. The game's normal
+ * font occupies the first 162 slots; free slots cache iQue Chinese glyphs. */
 static void build_font(void) {
     pm3ds_ui_font_t f;
     if (!pm3ds_ui_get_font(&f)) return;
-    u8 *canvas = (u8 *)calloc(256 * 512, 4);
+    u8 *canvas = (u8 *)calloc(FONT_ATLAS_W * FONT_ATLAS_H, 4);
     if (!canvas) return;
-    s_glyphs = f.glyph_count < 176 ? f.glyph_count : 176;
+    s_glyphs = f.glyph_count < FONT_ATLAS_SLOTS ? f.glyph_count : FONT_ATLAS_SLOTS;
+    s_font_palettes = f.palettes;
     for (int half = 0; half < 2; half++) {
         const u16 *pal = f.palettes + (half == 0 ? 0x0A : 0x00) * 8;   /* MSG_PAL_STANDARD / MSG_PAL_WHITE */
         for (int g = 0; g < s_glyphs; g++) {
             pm3ds_ui_image_t im = { f.rasters + g * 128, pal, 16, 16, UI_FMT_CI4 };
-            decode_image(&im, canvas, 256, (g % 16) * 16, half * 256 + (g / 16) * 16);
+            decode_image(&im, canvas, FONT_ATLAS_W, (g % FONT_ATLAS_COLS) * 16,
+                         half * (FONT_ATLAS_H / 2) + (g / FONT_ATLAS_COLS) * 16);
         }
     }
     for (int g = 0; g < s_glyphs; g++) s_glyph_w[g] = f.widths[g];
-    if (C3D_TexInit(&s_font, 256, 512, GPU_RGBA8)) {
-        upload_rgba8(&s_font, canvas, 256, 512);
+#if VERSION_IQUE
+    for (int g = 0; g < FONT_ATLAS_SLOTS; g++) s_cjk_glyph_for_slot[g] = -1;
+    for (int g = 0; g < PM3DS_IQUE_GLYPH_COUNT; g++) s_cjk_slot_for_glyph[g] = -1;
+    s_cjk_next_slot = s_glyphs;
+    s_cjk_replace_slot = s_glyphs;
+#endif
+    if (C3D_TexInit(&s_font, FONT_ATLAS_W, FONT_ATLAS_H, GPU_RGBA8)) {
+        s_font_canvas = canvas;
+        upload_rgba8(&s_font, s_font_canvas, FONT_ATLAS_W, FONT_ATLAS_H);
         C3D_TexSetFilter(&s_font, GPU_NEAREST, GPU_LINEAR);
         C3D_TexSetWrap(&s_font, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
         s_font_ok = true;
+    } else {
+        free(canvas);
     }
-    free(canvas);
 }
 
 /* the 8x8 console font (1 bpp, MSB = left pixel), 16x8 glyphs in 128x64 */
@@ -307,8 +338,16 @@ static void build_small_font(void) {
 }
 
 /* ---- primitives ---------------------------------------------------------- */
+static void upload_font_if_dirty(void) {
+    if (s_font_ok && s_font_canvas && s_font_dirty) {
+        upload_rgba8(&s_font, s_font_canvas, FONT_ATLAS_W, FONT_ATLAS_H);
+        s_font_dirty = false;
+    }
+}
+
 static void flush(void) {
     if (s_vcount > s_batch_start) {
+        upload_font_if_dirty();
         C3D_DrawArrays(GPU_TRIANGLES, s_batch_start, s_vcount - s_batch_start);
     }
     s_batch_start = s_vcount;
@@ -382,15 +421,79 @@ static void image(int id, float x, float y, float scale, u32 c) {
 /* ---- text (the game's font) ---------------------------------------------- */
 static int glyph_of(char ch) {
     unsigned char c = (unsigned char)ch;
-    if (c > 0x20 && c - 0x20 < s_glyphs) return c - 0x20;   /* past 0x7F: the game's accented letters */
+    if (c > 0x20 && c - 0x20 < s_glyphs) return c - 0x20;
     return -1;   /* space */
+}
+
+#if VERSION_IQUE
+static int cjk_slot(int glyph) {
+    if (!s_font_ok || !s_font_canvas || !s_font_palettes || glyph < 0 ||
+        glyph >= PM3DS_IQUE_GLYPH_COUNT || s_glyphs >= FONT_ATLAS_SLOTS) {
+        return -1;
+    }
+    if (s_cjk_slot_for_glyph[glyph] >= s_glyphs) return s_cjk_slot_for_glyph[glyph];
+
+    int slot;
+    if (s_cjk_next_slot < FONT_ATLAS_SLOTS) {
+        slot = s_cjk_next_slot++;
+    } else {
+        /* A queued vertex batch may still reference the old contents of this
+         * atlas slot. Draw it before evicting the glyph, otherwise a later
+         * upload could silently change already-queued text in the same frame. */
+        flush();
+        /* Keep the game's Latin glyphs intact and rotate only the CJK cache. */
+        slot = s_cjk_replace_slot++;
+        if (s_cjk_replace_slot >= FONT_ATLAS_SLOTS) s_cjk_replace_slot = s_glyphs;
+        if (s_cjk_glyph_for_slot[slot] >= 0) {
+            s_cjk_slot_for_glyph[s_cjk_glyph_for_slot[slot]] = -1;
+        }
+    }
+
+    const u8 *raster = charset_standard_OFFSET + (size_t)glyph * 0x80;
+    pm3ds_ui_image_t im = { raster, s_font_palettes + 0x0A * 8, 16, 16, UI_FMT_CI4 };
+    decode_image(&im, s_font_canvas, FONT_ATLAS_W, (slot % FONT_ATLAS_COLS) * 16,
+                 (slot / FONT_ATLAS_COLS) * 16);
+    im.pal = s_font_palettes;
+    decode_image(&im, s_font_canvas, FONT_ATLAS_W, (slot % FONT_ATLAS_COLS) * 16,
+                 (FONT_ATLAS_H / 2) + (slot / FONT_ATLAS_COLS) * 16);
+    s_glyph_w[slot] = 16;
+    s_cjk_glyph_for_slot[slot] = glyph;
+    s_cjk_slot_for_glyph[glyph] = slot;
+    s_font_dirty = true;
+    return slot;
+}
+#endif
+
+/* Consume one UTF-8 code point. For iQue, Chinese characters are represented
+ * as U+E000 + the glyph index in charset/standard.dat. */
+static const char *font_text_unit(const char *s, int *glyph, int *width, int *space) {
+    unsigned char c = (unsigned char)s[0];
+#if VERSION_IQUE
+    if (c == 0xEE && s[1] && s[2] && (((unsigned char)s[1] & 0xC0) == 0x80) &&
+        (((unsigned char)s[2] & 0xC0) == 0x80)) {
+        unsigned int cp = ((unsigned int)(c & 0x0F) << 12) |
+                          ((unsigned int)((unsigned char)s[1] & 0x3F) << 6) |
+                          ((unsigned int)((unsigned char)s[2] & 0x3F));
+        if (cp >= PM3DS_CJK_PRIVATE_BASE && cp < PM3DS_CJK_PRIVATE_BASE + PM3DS_IQUE_GLYPH_COUNT) {
+            *glyph = cjk_slot((int)(cp - PM3DS_CJK_PRIVATE_BASE));
+            *width = 16;
+            *space = 0;
+            return s + 3;
+        }
+    }
+#endif
+    *glyph = glyph_of((char)c);
+    *width = (*glyph >= 0 && *glyph < s_glyphs) ? s_glyph_w[*glyph] : 5;
+    *space = c == ' ';
+    return s + 1;
 }
 
 static float text_width(const char *s, float scale) {
     float w = 0;
-    for (; *s; s++) {
-        int g = glyph_of(*s);
-        w += (g >= 0 && g < s_glyphs ? s_glyph_w[g] : 5) * scale;
+    while (*s) {
+        int glyph, unit_width, is_space;
+        s = font_text_unit(s, &glyph, &unit_width, &is_space);
+        w += unit_width * scale;
     }
     return w;
 }
@@ -398,20 +501,18 @@ static float text_width(const char *s, float scale) {
 /* white = 1 picks the white palette; c tints the result */
 static float text(float x, float y, const char *s, float scale, int white, u32 c) {
     if (!s_font_ok) return x;
-    for (; *s; s++) {
-        int g = glyph_of(*s);
-        if (g >= 0 && g < s_glyphs) {
-            /* only the glyph's own columns (and half a texel off the cell's
-             * top and bottom): at the cell's edge the GPU can sample the
-             * neighbouring glyph and leave a stray line after the text */
-            float gx = (g % 16) * 16.0f, gy = (white ? 256.0f : 0.0f) + (g / 16) * 16.0f;
-            float cw = s_glyph_w[g] + 2 < 16 ? s_glyph_w[g] + 2 : 16;
+    while (*s) {
+        int glyph, unit_width, is_space;
+        s = font_text_unit(s, &glyph, &unit_width, &is_space);
+        if (glyph >= 0 && glyph < FONT_ATLAS_SLOTS) {
+            float gx = (glyph % FONT_ATLAS_COLS) * 16.0f;
+            float gy = (white ? (FONT_ATLAS_H / 2.0f) : 0.0f) + (glyph / FONT_ATLAS_COLS) * 16.0f;
+            float cw = s_glyph_w[glyph] + 2 < 16 ? s_glyph_w[glyph] + 2 : 16;
             quad2(&s_font, x, y + 0.5f * scale, x + cw * scale, y + 15.5f * scale,
-                  gx / 256.0f, (gy + 0.5f) / 512.0f, (gx + cw) / 256.0f, (gy + 15.5f) / 512.0f, c, c);
-            x += s_glyph_w[g] * scale;
-        } else {
-            x += 5 * scale;
+                  gx / FONT_ATLAS_W, (gy + 0.5f) / FONT_ATLAS_H, (gx + cw) / FONT_ATLAS_W,
+                  (gy + 15.5f) / FONT_ATLAS_H, c, c);
         }
+        x += unit_width * scale;
     }
     return x;
 }
@@ -926,12 +1027,15 @@ static int wrap_text(const char *str, float scale, float width, short *start, sh
         if (!str[i]) break;
         int j = i, last_space = -1;
         float w = 0;
-        for (; j < end_all; j++) {
-            int g = glyph_of(str[j]);
-            float cw = (g >= 0 && g < s_glyphs ? s_glyph_w[g] : 5) * scale;
-            if (str[j] == ' ') last_space = j;
+        while (j < end_all) {
+            int glyph, char_width, is_space;
+            const char *next = font_text_unit(str + j, &glyph, &char_width, &is_space);
+            int next_j = (int)(next - str);
+            float cw = char_width * scale;
+            if (is_space) last_space = j;
             if (w + cw > width && j > i) break;
             w += cw;
+            j = next_j;
         }
         int end = j < end_all && last_space > i ? last_space : j;
         start[n] = (short)i;

@@ -3,8 +3,8 @@
  *
  * Cart offsets from ver/<version>/splat.yaml, for the data the port reads
  * straight from the ROM instead of through the decomp's link stubs. Only
- * #defines: assembly and the decomp's C include it too. Build with
- * -DVERSION_PAL=1 (Paper Mario (Europe)) or -DVERSION_US=1 (Paper Mario (USA)).
+ * #defines: assembly and the decomp's C include it too. Build with exactly
+ * one of VERSION_PAL, VERSION_US or VERSION_IQUE enabled.
  */
 #ifndef PM3DS_ROM_LAYOUT_H
 #define PM3DS_ROM_LAYOUT_H
@@ -26,6 +26,7 @@
 #define PM3DS_ROM_NAME          "Paper Mario (Europe)"
 #define PM3DS_ROM_SIZES         "48 or 64 MB"   /* the dump sizes players may have */
 #define PM3DS_ROM_GAME_ID       "NMQP"          /* N64 header 0x3B: game code + region */
+#define PM3DS_ROM_GAME_ID_LABEL "NMQP (Europe)"
 #define PM3DS_SAVE_NAME         "save.fla"
 #define PM3DS_ROMDATA_PATH      "romfs:/romdata_eu.bin"   /* tools/romdata.py's table */
 #elif VERSION_US
@@ -45,13 +46,37 @@
 #define PM3DS_ROM_NAME          "Paper Mario (USA)"
 #define PM3DS_ROM_SIZES         "40 MB"
 #define PM3DS_ROM_GAME_ID       "NMQE"
+#define PM3DS_ROM_GAME_ID_LABEL "NMQE (USA)"
 #define PM3DS_SAVE_NAME         "save_us.fla"   /* PAL saves have another layout */
 #define PM3DS_ROMDATA_PATH      "romfs:/romdata_us.bin"
+#elif VERSION_IQUE
+#define PM3DS_ROM_ICON          0x215390    /* HUD icons */
+#define PM3DS_ROM_LOGOS         0x247230    /* 0x1B000 bytes */
+#define PM3DS_ROM_TITLE_BG_1    0x262230    /* story pages; tape at +0x2A440 */
+#define PM3DS_ROM_IMGFX_DATA    0x294870
+#define PM3DS_ROM_SHADING       0x35EC00    /* sprite_shading_profiles */
+#define PM3DS_ROM_AUDIO         0xF00000    /* SBN */
+#define PM3DS_ROM_AUDIO_END     0x1942C40   /* kept in RAM (n64_shim/rom_stream.c) */
+#define PM3DS_ROM_SPRITES       0x1943000
+#define PM3DS_ROM_MAPFS         0x1E40000
+#define PM3DS_ROM_MAPFS_END     0x27FEE1E
+#define PM3DS_ROM_MSG           0x1B83000   /* native iQue Chinese message table */
+#define PM3DS_ROM_DATA_SIZE     0x2800000   /* 40 MiB */
+#define PM3DS_ROM_CRC32         0x18C02AD5  /* canonical .z64 order */
+#define PM3DS_ROM_NAME          "Paper Mario (iQue China)"
+#define PM3DS_ROM_SIZES         "40 MB"
+/* The official iQue dump has a blank 4-byte game-code/region field. The
+ * CRC32 below covers its canonical first 40 MiB; do not stamp a fake ID. */
+#define PM3DS_ROM_GAME_ID       "\0\0\0\0"
+#define PM3DS_ROM_GAME_ID_LABEL "the blank iQue game-ID field"
+#define PM3DS_SAVE_NAME         "save_ique.fla"
+#define PM3DS_ROMDATA_PATH      "romfs:/romdata_ique.bin"
 #else
-#error "the 3DS port is built for VERSION_PAL or VERSION_US"
+#error "the 3DS port is built for VERSION_PAL, VERSION_US or VERSION_IQUE"
 #endif
 
 /* cart-tagged offset, as the decomp's DMA code takes it */
 #define PM3DS_CART(off)         (0x10000000 + (off))
+#define PM3DS_ICON_ROM_ADDR(offset) (PM3DS_CART(PM3DS_ROM_ICON) + (offset))
 
 #endif

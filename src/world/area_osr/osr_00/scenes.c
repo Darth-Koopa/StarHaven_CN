@@ -28,8 +28,21 @@ API_CALLABLE(N(func_802406E0_AACF10)) {
     u8* rasterOffset = charset_peach_letter_OFFSET;
     u16* paletteOffset = charset_peach_letter_pal_OFFSET;
 
+#if defined(_3DS) && defined(PM3DS_ASSET_ROOT)
+    /* INCLUDE_IMG/PAL symbols point at embedded .bin blobs in the 3DS build;
+     * they are not offsets from the original charset ROM segment. Copy the
+     * blobs directly, just as load_font_data() does. Passing these symbols
+     * through charset_ROM_START/dma_copy depended on ld_addrs.h include order
+     * and could make the opening Peach Letter a noisy CI8 rectangle. */
+    memcpy(N(PeachLetterImg), charset_peach_letter_OFFSET, sizeof(N(PeachLetterImg)));
+    memcpy(N(PeachLetterPal), charset_peach_letter_pal_OFFSET, sizeof(N(PeachLetterPal)));
+    extern void gfx_tex_invalidate_range(const void *addr, size_t len);
+    gfx_tex_invalidate_range(N(PeachLetterImg), sizeof(N(PeachLetterImg)));
+    gfx_tex_invalidate_range(N(PeachLetterPal), sizeof(N(PeachLetterPal)));
+#else
     dma_copy(romStart + (s32)rasterOffset, romStart + (s32)rasterOffset + sizeof(N(PeachLetterImg)), &N(PeachLetterImg));
     dma_copy(romStart + (s32)paletteOffset, romStart + (s32)paletteOffset + sizeof(N(PeachLetterPal)), &N(PeachLetterPal));
+#endif
 
     N(MsgImage).raster   = N(PeachLetterImg);
     N(MsgImage).palette  = N(PeachLetterPal);

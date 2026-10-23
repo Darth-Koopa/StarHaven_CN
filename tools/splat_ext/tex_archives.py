@@ -3,9 +3,11 @@ from math import ceil
 import struct
 import json
 from pathlib import Path
+import sys
 
 import png
 import n64img.image
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "build"))
 from common import iter_in_groups
 
 from sys import path

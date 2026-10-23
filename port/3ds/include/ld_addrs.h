@@ -1,9 +1,10 @@
+#ifndef PM3DS_PORT_LD_ADDRS_H
+#define PM3DS_PORT_LD_ADDRS_H
+
 /* port/3ds/include/ld_addrs.h
  *
- * M4 phase 1.3: redirects to the real generated linker-symbol
- * header at ver/pal/build/include/ld_addrs.h (17,399 lines of
- * `extern Addr` declarations for every linker symbol src/*.c
- * references).
+ * Redirects to the real generated linker-symbol header belonging to the
+ * selected ROM version (ver/<version>/build/include/ld_addrs.h).
  *
  * M1 carried a 12-line stub here that also #defined
  * DMA_COPY_SEGMENT(segment) to call pm3ds_dma_copy_segment(#segment).
@@ -14,9 +15,12 @@
  * the `dma_copy` runtime helper will land in the n64_shim when the
  * first src/ file that calls DMA_COPY_SEGMENT enters SOURCES.
  */
+#include "types.h"
 #include "pm3ds_rom_layout.h"
 #if VERSION_PAL
 #include "../../../ver/pal/build/include/ld_addrs.h"
+#elif VERSION_IQUE
+#include "../../../ver/ique/build/include/ld_addrs.h"
 #else
 #include "../../../ver/us/build/include/ld_addrs.h"
 #endif
@@ -157,3 +161,5 @@ extern int LavaPiranha_ModelScript_23[];
 extern int LavaPiranha_ModelScript_24[];
 #define world_model_anim_kzn_24_ROM_START ((unsigned char*)LavaPiranha_ModelScript_24)
 #define world_model_anim_kzn_24_ROM_END ((unsigned char*)LavaPiranha_ModelScript_24 + 0xAD0)
+
+#endif /* PM3DS_PORT_LD_ADDRS_H */

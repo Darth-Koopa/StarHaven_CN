@@ -1,15 +1,15 @@
 #!/bin/bash
 # Package a linked game ELF without the ROM: strip the game data the build
 # compiled in from the ROM (tools/romdata.py) and build a .3dsx and/or CIA
-# whose romfs holds only the version's table (romdata_eu.bin or romdata_us.bin).
+# whose romfs holds only the version's table (romdata_eu.bin, romdata_us.bin or romdata_ique.bin).
 # The player puts their own ROM on the
 # SD card (/3ds/StarHaven/baserom.z64), see source/platform/pm3ds_rom.c.
 #
 # usage: package.sh <game.elf> <outdir> [3dsx] [cia]     (default: both)
-#   PM3DS_VERSION  pal (default) or us, as for make; universal for the ELF of
-#            tools/universal.py (both copies stripped, both tables in romfs)
+#   PM3DS_VERSION  pal (default), us or ique; universal for the ELF of
+#            tools/universal.py (all three copies stripped, one table per ROM)
 #   BASEROM  the developer's ROM, only to locate the data (ver/<version>/baserom.z64;
-#            universal reads ver/pal and ver/us)
+#            universal reads ver/pal, ver/us and ver/ique)
 #   MAKEROM  makerom binary (port/3ds/local/bin/makerom)
 #   ICON, BANNER  CIA icon.icn / banner.bnr (port/3ds/cia/, from tools/make_branding.py)
 #   NAME     output file name (StarHaven)
@@ -26,7 +26,9 @@ ICON=${ICON:-$PORT/cia/icon.icn}
 BANNER=${BANNER:-$PORT/cia/banner.bnr}
 case "$PM3DS_VERSION" in
     pal|universal) NAME=${NAME:-StarHaven} ;;
-    *) NAME=${NAME:-StarHaven_US} ;;
+    us) NAME=${NAME:-StarHaven_US} ;;
+    ique) NAME=${NAME:-StarHaven_iQue} ;;
+    *) echo "unknown PM3DS_VERSION: $PM3DS_VERSION" >&2; exit 2 ;;
 esac
 SMDH=$(basename "${ELF%.elf}").smdh            # made by make next to the ELF's twin in port/3ds
 [ -f "$PORT/$SMDH" ] || SMDH=PaperMario3DS.smdh
@@ -34,12 +36,15 @@ SMDH=$(basename "${ELF%.elf}").smdh            # made by make next to the ELF's 
 mkdir -p "$OUT/romfs"
 rm -f "$OUT/romfs/"*
 if [ "$PM3DS_VERSION" = universal ]; then
-    # the PAL copy (unprefixed symbols), then the US copy (us_ symbols)
+    # Strip one build at a time. Each pass keeps the other version-prefixed
+    # copies intact and writes only offset/size metadata, never ROM bytes.
     PM3DS_VERSION=pal ROMDATA_PREFIX= python3 "$PORT/tools/romdata.py" \
         "$ELF" "$ROOT/ver/pal/baserom.z64" "$OUT/$NAME.pal.elf" "$OUT/romfs/romdata_eu.bin"
     PM3DS_VERSION=us ROMDATA_PREFIX=us_ python3 "$PORT/tools/romdata.py" \
-        "$OUT/$NAME.pal.elf" "$ROOT/ver/us/baserom.z64" "$OUT/$NAME.elf" "$OUT/romfs/romdata_us.bin"
-    rm -f "$OUT/$NAME.pal.elf"
+        "$OUT/$NAME.pal.elf" "$ROOT/ver/us/baserom.z64" "$OUT/$NAME.us.elf" "$OUT/romfs/romdata_us.bin"
+    PM3DS_VERSION=ique ROMDATA_PREFIX=ique_ python3 "$PORT/tools/romdata.py" \
+        "$OUT/$NAME.us.elf" "$ROOT/ver/ique/baserom.z64" "$OUT/$NAME.elf" "$OUT/romfs/romdata_ique.bin"
+    rm -f "$OUT/$NAME.pal.elf" "$OUT/$NAME.us.elf"
 else
     TABLE=romdata_$([ "$PM3DS_VERSION" = pal ] && echo eu || echo "$PM3DS_VERSION").bin
     python3 "$PORT/tools/romdata.py" "$ELF" "$BASEROM" "$OUT/$NAME.elf" "$OUT/romfs/$TABLE"

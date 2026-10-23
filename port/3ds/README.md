@@ -1,6 +1,6 @@
 # Star Haven — native Nintendo 3DS port of Paper Mario
 
-A native port of the Paper Mario decompilation (PAL `ver/pal` and US `ver/us`) to the Nintendo 3DS.
+A native port of the Paper Mario decompilation to Nintendo 3DS. PAL and US are the established release targets; an iQue Chinese target is being brought up separately.
 The game's C code is compiled for the ARM11 and linked with a 3DS platform layer;
 nothing is emulated except the N64 RSP/RDP work, which is translated on the fly.
 
@@ -9,7 +9,7 @@ bottom screen and a randomizer. Runs on **New 3DS / New 2DS XL** (124 MB New-3DS
 original 3DS and 2DS start the CIA in their 80 MB mode (96 MB crashes HOME Menu) at about
 30 fps, with the audio mixer on the second core, frame skip when behind, and no reverb, 3D or
 NPC/enemy shadows.
-Release packages hold both the PAL and the US build and pick one from the player's ROM.
+The existing release package supports PAL and US. The experimental iQue build is produced separately by the GitHub Actions workflow until it has been validated on hardware.
 
 Players supply the ROM: it goes on the SD card as `/3ds/StarHaven/baserom.z64`, and release
 packages contain no game data (see *Releases*). `RELEASE_README.md` is the player-facing readme.
@@ -35,27 +35,46 @@ Decomp sources are edited in place under `#ifdef _3DS` / `PM3DS_*` guards only.
 ## Building
 
 Everything builds in the `papermario-3ds-builder` Docker image (devkitARM + libctru + citro3d).
+Each target uses its own original baserom and generated assets. Do not copy a translated or
+patched ROM into a different region's `ver/<version>/` directory.
 
-1. Put the PAL ROM at `ver/pal/baserom.z64` and extract as for the decomp.
-2. Extract the images the C files `INCLUDE_IMG` (written to `port/3ds/build_assets/`, gitignored):
-   `python3 port/3ds/tools/gen_include_assets.py`  — re-run after a fresh clone; `.incbin`
-   files are not make dependencies, so do a clean build after regenerating them.
-3. For local test builds, either put the ROM on the (emulated) SD card as
-   `/3ds/StarHaven/baserom.z64` or copy it into the romfs: `cp ver/pal/baserom.z64 port/3ds/romfs/`.
-4. Build:
+1. Put the target ROM at `ver/<version>/baserom.z64` and run the decomp asset extraction/configure
+   steps. For iQue, the required original ROM SHA-1 is
+   `5c724685085eba796537573dd6f84aaddedc8582`.
+2. Generate ROM-derived images and fonts into the gitignored `port/3ds/build_assets*/` directory:
+   ```sh
+   PM3DS_VERSION=ique python3 port/3ds/tools/gen_include_assets.py
    ```
-   docker run --rm -v "$PWD:/project" -e DEVKITPRO=/opt/devkitpro -e DEVKITARM=/opt/devkitpro/devkitARM \
-     papermario-3ds-builder bash -c "make -j16 -C /project/port/3ds PM3DS_GAME=1 PM3DS_ENABLE_ROMFS=1"
+   Use `PM3DS_VERSION=pal` or `us` for those targets. `.incbin` assets are not Make dependencies,
+   so clean the matching build directory after regenerating them.
+3. For a local test build, place the same original ROM on the 3DS SD card as
+   `/3ds/StarHaven/baserom.z64`.
+4. Build the iQue target:
+   ```sh
+   docker run --rm -v "$PWD:/project" -w /project papermario-3ds-builder \
+     bash -lc 'make -j2 -C port/3ds PM3DS_VERSION=ique PM3DS_GAME=1'
    ```
-   `PM3DS_GAME=1` carries the required flag set. `make` does **not** notice changes to
-   `EXTRA_CFLAGS` alone — touch the affected files (or clean) when changing them.
+   Output: `port/3ds/PaperMario3DS_ique.3dsx` and `.elf`. For PAL omit `PM3DS_VERSION`;
+   for US use `PM3DS_VERSION=us`.
 
-Output: `port/3ds/PaperMario3DS.3dsx` (+ `.elf`).
+`PM3DS_GAME=1` enables the native world/game build. The Makefile does **not** notice changes to
+`EXTRA_CFLAGS` alone; touch affected files or clean the matching build directory when changing them.
 
-The US build is the same with the US ROM at `ver/us/baserom.z64` and `PM3DS_VERSION=us` added
-to the make line (output `PaperMario3DS_us.3dsx`). With both built,
-`python3 /project/port/3ds/tools/universal.py` (in the image) links them into one program,
-`port/3ds/StarHaven_universal.elf`, which picks the copy that matches the ROM at boot.
+### Build iQue with GitHub Actions
+
+`.github/workflows/ique-3ds.yml` runs source/config consistency checks on pushes and pull requests.
+A manual **Actions → StarHaven iQue 3DS build → Run workflow** dispatch also builds the `.3dsx`.
+Because ROMs must not be committed or uploaded with source, configure repository secret
+`IQUE_ROM_URL` with a private direct-download URL that returns the original uncompressed iQue
+`.z64` ROM. The workflow verifies its SHA-1 before extracting assets, building, and packaging;
+only `StarHaven_iQue.3dsx` and its ROM-data *mapping table* are uploaded as the artifact, not the ROM.
+The build requires a GitHub runner that can fetch that URL without an interactive login.
+
+### Universal launcher
+
+The universal-launcher sources have an experimental iQue path, but the Actions workflow does not
+ship a combined PAL/US/iQue build. First validate the standalone iQue `.3dsx` on an emulator and
+hardware; a combined launcher requires all three region builds and matching baseroms.
 
 ## Releases (no game data)
 
@@ -70,7 +89,7 @@ of the result. The universal CIA is about 9 MB.
 python3 port/3ds/tools/gen_include_assets.py      # also writes build_assets/manifest.tsv
 # build as above, with EXTRA_CFLAGS='' (no Wi-Fi log) for a public release
 bash port/3ds/tools/package.sh port/3ds/PaperMario3DS.elf out/        # out/StarHaven.cia, .3dsx
-# the release package: both versions in one (needs ver/pal and ver/us)
+# experimental universal package (needs the matching PAL, US and iQue baseroms)
 PM3DS_VERSION=universal bash port/3ds/tools/package.sh port/3ds/StarHaven_universal.elf out/
 ```
 It needs `makerom` (3DSGuy/Project_CTR) at `port/3ds/local/bin/makerom` or `$MAKEROM`.

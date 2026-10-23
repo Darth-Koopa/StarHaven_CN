@@ -18,6 +18,7 @@ LDFLAGS := -pthread -no-pie
 
 TESTS := \
     test_pm_endian \
+    test_pm3ds_addr \
     test_pm3ds_heap \
     test_os_mesgqueue \
     test_os_timer \

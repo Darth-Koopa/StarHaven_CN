@@ -13,6 +13,7 @@
 #include "hud_element.h"
 #include "nu/nusys.h"
 #include "ld_addrs.h"
+#include "pm3ds_rom_layout.h"
 
 #include <string.h>
 
@@ -114,6 +115,34 @@ static void decode_msg_as(s32 msgID, char* out, s32 size, bool dialogue) {
             }
             u8 style = m[++i];   // arguments as msg.c reads them
             i += style == MSG_STYLE_CHOICE ? 4 : style == MSG_STYLE_POSTCARD ? 1 : 0;
+#if VERSION_IQUE
+        } else if (c >= MSG_CHAR_MULTIBYTE_FIRST && c <= MSG_CHAR_MULTIBYTE_LAST) {
+            /* iQue uses bytes 0x5F..0x8F as the lead byte of a two-byte
+             * Chinese glyph code. Preserve the native glyph index in a
+             * private-use UTF-8 code point (U+E000 + index); bottom_screen.c
+             * resolves that token against charset/standard.dat. */
+            u8 trail = m[i + 1];
+            s32 glyph;
+            if (trail < 1 || trail > 0x33) {
+                /* Do not consume an unrelated control/ASCII byte when a
+                 * malformed lead byte is encountered. */
+                if (n + 1 < size) out[n++] = '?';
+            } else {
+                glyph = (MSG_CHAR_ZH_START - MSG_CHAR_MULTIBYTE_FIRST) + c
+                      + ((s32)trail - 1) * (MSG_CHAR_MULTIBYTE_LAST - MSG_CHAR_MULTIBYTE_FIRST + 1);
+                i++;
+                if (glyph < 0 || glyph >= (0x4F000 / 0x80)) {
+                    if (n + 1 < size) out[n++] = '?';
+                } else if (n + 3 < size) {
+                    u32 cp = 0xE000u + (u32)glyph;
+                    out[n++] = (char)(0xE0 | (cp >> 12));
+                    out[n++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+                    out[n++] = (char)(0x80 | (cp & 0x3F));
+                } else {
+                    break;
+                }
+            }
+#endif
         } else if (c < 0xF0 && c + 0x20 < 0x100) {
             out[n++] = (char)(c + 0x20);
         }
@@ -357,8 +386,8 @@ int pm3ds_tm_icon_rgba(const void* script, uint8_t* out, int* w, int* h) {
                 if (size <= 0 || size > (s32)sizeof(rom)) {
                     return 0;
                 }
-                nuPiReadRom((s32)icon_ROM_START + pos[1], rom, size);
-                nuPiReadRom((s32)icon_ROM_START + pos[2], romPal, sizeof(romPal));
+                nuPiReadRom((u32)PM3DS_ICON_ROM_ADDR(pos[1]), rom, size);
+                nuPiReadRom((u32)PM3DS_ICON_ROM_ADDR(pos[2]), romPal, sizeof(romPal));
                 raster = rom;
                 pal = romPal;
                 break;

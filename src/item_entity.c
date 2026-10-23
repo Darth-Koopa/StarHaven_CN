@@ -8,6 +8,9 @@
 #include "message_ids.h"
 #include "nu/nusys.h"
 #include "ld_addrs.h"
+#ifdef _3DS
+#include "pm3ds_rom_layout.h"
+#endif
 #include "sprite.h"
 #include "sprite/player.h"
 
@@ -325,7 +328,11 @@ void item_entity_load(ItemEntity* item) {
                         entry->data = &gHudElementCacheBuffer[*gHudElementCacheSize];
 
                         ASSERT(*gHudElementCacheSize + size < 0x11000);
+                        #ifdef _3DS
+                        nuPiReadRom((u32)PM3DS_ICON_ROM_ADDR(raster), entry->data, size);
+#else
                         nuPiReadRom((s32)icon_ROM_START + raster, entry->data, size);
+#endif
                         *gHudElementCacheSize += size;
                         if (gGameStatusPtr->context == CONTEXT_WORLD) {
                             *pos = i;
@@ -358,7 +365,11 @@ void item_entity_load(ItemEntity* item) {
                         entry->id = palette;
                         entry->data = &gHudElementCacheBuffer[*gHudElementCacheSize];
                         ASSERT(*gHudElementCacheSize + 0x20 < 0x11000);
+                        #ifdef _3DS
+                        nuPiReadRom((u32)PM3DS_ICON_ROM_ADDR(palette), entry->data, 0x20);
+#else
                         nuPiReadRom((s32)icon_ROM_START + palette, entry->data, 0x20);
+#endif
                         *gHudElementCacheSize += 0x20;
                         if (gGameStatusPtr->context == CONTEXT_WORLD) {
                             *pos = i;

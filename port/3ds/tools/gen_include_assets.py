@@ -17,12 +17,12 @@ import sys
 import yaml
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-# PM3DS_VERSION=pal (build_assets/) or us (build_assets_us/), as for make
+# PM3DS_VERSION=pal (build_assets/), us, or ique, as for make
 VER = os.environ.get("PM3DS_VERSION", "pal")
 SPLAT = os.path.join(ROOT, "ver", VER, "splat.yaml")
 ROM = os.path.join(ROOT, "ver", VER, "baserom.z64")
 OUT = os.path.join(ROOT, "port", "3ds", "build_assets" + ("" if VER == "pal" else "_" + VER))
-# INCLUDE_RAW charset segments (pm_charset in splat.yaml; JP-only fonts absent)
+# INCLUDE_RAW charset segments (JP has separate Japanese tables; iQue has a large Chinese standard font)
 CHARSET = {
     "pal": {
         "charset/standard.dat": (0x110CB0, 0x115FB0),
@@ -39,6 +39,16 @@ CHARSET = {
         "charset/subtitle.dat": (0x115910, 0x116498),
         "charset/subtitle/palette.dat": (0x116498, 0x1164A8),
         "charset/title/palette.dat": (0x1164A8, 0x1164B8),
+    },
+    # The official iQue version has a large 0x4F000-byte 16x16 Chinese
+    # glyph bank. Do not reuse the 0x5300-byte Latin ROM ranges from US/PAL.
+    "ique": {
+        "charset/standard.dat": (0x10E120, 0x15D120),
+        "charset/standard/palette.dat": (0x15D120, 0x15D620),
+        "charset/title.dat": (0x15D620, 0x15E580),
+        "charset/subtitle.dat": (0x15E580, 0x15F108),
+        "charset/subtitle/palette.dat": (0x15F120, 0x15F130),
+        "charset/title/palette.dat": (0x15F130, 0x15F140),
     },
 }
 

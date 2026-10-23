@@ -48,4 +48,22 @@ static inline uint32_t pm3ds_addr_rom_offset(uintptr_t a, size_t n) {
     return (uint32_t)-1;
 }
 
+/* RDP texture/palette source addresses are data pointers, not display-list
+ * pointers. They may be only halfword-aligned (TLUT entries are 16-bit), and
+ * valid sources include tagged cart ROM addresses as well as host image, heap
+ * and linear-memory pointers. Do not reuse gfx_translate.c's addr_plausible(),
+ * whose 4-byte alignment and host-only policy is correct for command lists but
+ * silently drops valid CI4/CI8 palette loads. */
+static inline int pm3ds_addr_is_texture_source(uintptr_t a) {
+    if (pm3ds_addr_is_rom_tagged(a)) return 1;
+    if (a >= 0x00100000u && a < PM3DS_IMAGE_END) return 1;
+    if (a >= 0x08000000u && a < 0x10000000u) return 1;
+    if (a >= 0x14000000u && a < 0x1C000000u) return 1;
+    if (a >= 0x30000000u && a < 0x38000000u) return 1;
+    /* Legacy untagged ROM offsets are still accepted by pm3ds_pi_read(). */
+    if (a >= 0x1000u && a < 0x04000000u) return 1;
+    if (a >= 0x80000000u) return 1; /* legacy N64 KSEG address */
+    return 0;
+}
+
 #endif
