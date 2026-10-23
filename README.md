@@ -9,6 +9,14 @@ on the 3DS; nothing is emulated.
   <img src="port/3ds/docs/screenshots/battle.png" width="380" alt="A battle, with Mario's commands as big icon tiles on the bottom screen">
 </p>
 
+<p align="center">
+  <a href="https://youtu.be/P1md4pz01cY">
+    <img src="https://img.youtube.com/vi/P1md4pz01cY/maxresdefault.jpg" width="640" alt="Video: Paper Mario 64 runs natively on 3DS now!!">
+  </a>
+  <br>
+  <a href="https://youtu.be/P1md4pz01cY">▶ Watch Star Haven running on a 3DS</a>
+</p>
+
 **Star Haven contains no game data.** You need your own Paper Mario ROM (EU or US).
 
 ## Install
