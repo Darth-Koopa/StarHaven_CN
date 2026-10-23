@@ -373,9 +373,11 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
                         clear_player_data();
                         clear_saved_variables();
 #ifdef _3DS
-                        {   // 3DS port: roll a randomizer seed if the option is on
+                        {   // 3DS port: roll a randomizer seed if the option is on; cheats if allowed
                             extern void pm3ds_rando_new_game(void);
+                            extern void pm3ds_cheats_new_game(void);
                             pm3ds_rando_new_game();
+                            pm3ds_cheats_new_game();
                         }
 #endif
                         gGameStatusPtr->areaID = AREA_KMR;

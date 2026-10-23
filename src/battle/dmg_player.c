@@ -1071,6 +1071,12 @@ bool dispatch_damage_event_player(s32 damageAmount, s32 event, bool noHitSound) 
     player->hpChangeCounter -= temp;
     battleStatus->lastAttackDamage = 0;
     player->curHP -= temp;
+#ifdef _3DS
+    {   // 3DS port: the infinite HP cheat (cheats.c)
+        extern s32 pm3ds_cheats_player_hp(s32 hp);
+        player->curHP = pm3ds_cheats_player_hp(player->curHP);
+    }
+#endif
     battleStatus->damageTaken += temp;
 
     oldPlayerHP = player->curHP;

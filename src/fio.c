@@ -380,9 +380,11 @@ void fio_deserialize_state(void) {
 
     gSaveSlotMetadata[gGameStatusPtr->saveSlot] = saveData->metadata;
 #ifdef _3DS
-    {   // 3DS port: the randomizer seed lives in the save's unused tail
+    {   // 3DS port: the randomizer seed and the cheats live in the save's unused tail
         extern void pm3ds_rando_deserialize(const void* src);
+        extern void pm3ds_cheats_deserialize(const void* tail);
         pm3ds_rando_deserialize(saveData->unk_1304);
+        pm3ds_cheats_deserialize(saveData->unk_1304);
     }
 #endif
 }
@@ -424,7 +426,9 @@ void fio_serialize_state(void) {
 #ifdef _3DS
     {
         extern void pm3ds_rando_serialize(void* dst);
+        extern void pm3ds_cheats_serialize(void* tail);
         pm3ds_rando_serialize(saveData->unk_1304);
+        pm3ds_cheats_serialize(saveData->unk_1304);
     }
 #endif
 }

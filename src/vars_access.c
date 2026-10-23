@@ -2,9 +2,11 @@
 
 void clear_saved_variables(void) {
 #ifdef _3DS
-    {   // 3DS port: a fresh state is not randomized (new file / demo; see rando.c)
+    {   // 3DS port: a fresh state is not randomized and has no cheats (new file / demo; see rando.c, cheats.c)
         extern void pm3ds_rando_off(void);
+        extern void pm3ds_cheats_off(void);
         pm3ds_rando_off();
+        pm3ds_cheats_off();
     }
 #endif
     SaveData* saveFile = &gCurrentSaveFile;

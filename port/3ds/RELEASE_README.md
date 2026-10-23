@@ -70,6 +70,9 @@ The tabs run down the left side:
 - **Found**: for each area, how many star pieces, badges, hidden blocks and panels, and item
   spots you have collected; the area you are in is highlighted (gifts from characters are not
   counted; a randomizer file shows only the totals).
+- **Recipes**: every dish Tayce T. can cook, and how many you have had her cook. Dishes you
+  haven't made yet show as *???* until you tap *Show all*. Tap a dish to see what it restores,
+  its description and every way to cook it (two ingredients need the Cookbook).
 - **Save** on the Stats tab, tapped twice, saves the game wherever the pause menu could open.
   Loading puts you back on the spot on a map with a save block, and at the entrance you came
   in by anywhere else.
@@ -80,7 +83,7 @@ The tabs run down the left side:
   To choose a target, tap the enemy in the picture of the stage (each one has a number) or its
   numbered tile, which shows its HP once Goombario has tattled it.
 - **Fast >>** turns fast-forward on and off.
-- **Options** (with its own tabs: Settings, Controls, Debug):
+- **Options** (with its own tabs: Settings, Controls, Cheats on a cheat file, Debug):
   - **Screen**: *Original* (4:3), *Fill* or *Wide*.
   - **3D depth**: how deep the 3D slider goes, from *Low* to *Deepest*.
   - **Frame rate**: 60 fps (in-between frames are added) or the original 30 fps. With the 3D
@@ -113,6 +116,14 @@ When you pick an empty file, Star Haven asks how you want to play:
 
 Each randomized game writes a spoiler log to `/3ds/StarHaven/spoiler_<seed>.txt` listing
 where everything went. The seed is shown on the Stats tab.
+
+## Cheats
+
+The new-file screen also has a **Cheats** switch. Turn it on and that file gets a **Cheats** tab
+under Options, where you switch each one on or off: infinite HP (Mario can't be knocked out),
+infinite FP, infinite Star Power, 999 coins and unlimited BP (equip any badges). The switches
+are saved with the file. This is only chosen when the file is made: a file started with the
+switch off never shows cheats and can't turn them on later.
 
 ## Bringing an N64 save
 

@@ -103,6 +103,12 @@ void step_game_loop(void) {
     }
 
     PM3DS_PH("post stepDelay gate");
+#ifdef _3DS
+    {   // 3DS port: cheats top up HP, FP, star power, coins (cheats.c)
+        extern void pm3ds_cheats_step(void);
+        pm3ds_cheats_step();
+    }
+#endif
     mdl_reset_transform_flags();
     npc_iter_no_op();
     update_workers();
