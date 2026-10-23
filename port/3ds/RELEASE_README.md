@@ -77,6 +77,8 @@ The tabs run down the left side:
 - In battle the side shows your HP, FP, Star Power and coins, next to the battle menus to tap
   or an A/B pad for action commands. Mario's commands are big tiles with the game's icons: Jump and Hammer along the
   bottom, Strategies, Items and Star Spirits above them. Every list shows each entry's icon.
+  To choose a target, tap the enemy in the picture of the stage (each one has a number) or its
+  numbered tile, which shows its HP once Goombario has tattled it.
 - **Fast >>** turns fast-forward on and off.
 - **Options** (with its own tabs: Settings, Controls, Debug):
   - **Screen**: *Original* (4:3), *Fill* or *Wide*.

@@ -151,7 +151,11 @@ static void set_entry(s32 i, s32 msgID, bool enabled, s32 cost, s32 costKind) {
     sMenu.e[i].cost_kind = costKind;
     sMenu.e[i].attack = false;
     sMenu.e[i].icon = nullptr;
+    sMenu.e[i].pr = 0;
+    sMenu.e[i].enemy = false;
 }
+
+static void target_place(pm3ds_tm_entry_t* e, Actor* t, SelectableTarget* target);
 
 /* the battle's current wheel option names the open submenu */
 static void wheel_title(void) {
@@ -269,6 +273,7 @@ static void publish(s32 kind) {
                     sMenu.e[i].max_hp = t->maxHP;
                     sMenu.e[i].cost_kind = PM3DS_TM_COST_HP;
                 }
+                target_place(&sMenu.e[i], t, target);
             }
             sMenu.cursor = actor->selectedTargetIndex;
             sMenu.all_targets = !(gBattleStatus.curTargetListFlags & TARGET_FLAG_SELECT_ONE);
@@ -279,6 +284,49 @@ static void publish(s32 kind) {
     }
     sMenu.count = n < PM3DS_TM_MAX ? n : PM3DS_TM_MAX;
     sStamp = gGameStatusPtr->frameCounter;
+}
+
+/* ---- target positions ---------------------------------------------------------- */
+/* Where a target stands on the top screen: the part's middle and its height,
+ * through the battle camera, so the bottom screen can cut the stage around the
+ * targets from the top screen's last frame. */
+static void target_place(pm3ds_tm_entry_t* e, Actor* t, SelectableTarget* target) {
+    extern void pm3ds_gfx_n64_to_top(float x, float y, float* tx, float* ty);
+    ActorPart* part = t != nullptr ? get_actor_part(t, target->partID) : nullptr;
+    f32 x, y, z, w, h;
+    s32 sx, sy, sz, tx_, ty_, tz;
+    float cx, cy, topx, topy;
+
+    e->pr = 0;
+    if (t == nullptr) {
+        return;
+    }
+    e->enemy = (target->actorID & ACTOR_CLASS_MASK) == ACTOR_CLASS_ENEMY;
+    if (part != nullptr && part->size.y != 0) {
+        x = part->absolutePos.x; y = part->absolutePos.y; z = part->absolutePos.z;
+        w = part->size.x; h = part->size.y;
+    } else {
+        x = t->curPos.x; y = t->curPos.y; z = t->curPos.z;
+        w = t->size.x; h = t->size.y;
+    }
+    if (t->flags & ACTOR_FLAG_UPSIDE_DOWN) {
+        y -= h;   /* hangs down from its position */
+    }
+    get_screen_coords(CAM_BATTLE, x, y + h * 0.5f, z, &sx, &sy, &sz);
+    get_screen_coords(CAM_BATTLE, x, y + h, z, &tx_, &ty_, &tz);
+    pm3ds_gfx_n64_to_top(sx, sy, &cx, &cy);
+    pm3ds_gfx_n64_to_top(tx_, ty_, &topx, &topy);
+    {
+        float half = fabsf(cy - topy);   /* half its height on screen, and its width */
+        float hw = (w * 0.5f) * (half / (h * 0.5f > 1.0f ? h * 0.5f : 1.0f));
+        if (hw > half) half = hw;
+        half *= 1.35f;            /* some room around it */
+        if (half < 14.0f) half = 14.0f;
+        if (half > 90.0f) half = 90.0f;
+        e->px = (int16_t)cx;
+        e->py = (int16_t)cy;
+        e->pr = (int16_t)half;
+    }
 }
 
 /* ---- icons ------------------------------------------------------------------ */

@@ -29,6 +29,10 @@ typedef struct {
     uint8_t enabled;
     uint8_t attack;     /* WHEEL: opens Jump or Hammer (the bottom row of the tiles) */
     const void *icon;   /* the game's HudScript for the entry's icon, or NULL */
+    /* TARGET: where it stands on the top screen (pixels, the current view mode),
+     * for the stage picture cut from the top screen; r = 0 when unknown */
+    int16_t px, py, pr;
+    uint8_t enemy;      /* TARGET: an enemy (not Mario or the partner) */
 } pm3ds_tm_entry_t;
 
 typedef struct {
@@ -47,6 +51,10 @@ void pm3ds_tm_pick(int kind, int index);     /* choose entry index (as if moved 
 /* the first image of an entry's icon as RGBA8, row 0 on top, into out (32x32
  * at most, larger ones are shrunk): 1 with its size, 0 if it has none */
 int pm3ds_tm_icon_rgba(const void *script, uint8_t *out, int *w, int *h);
+
+/* the renderer's copy of the last top-screen frame, for the target portraits
+ * (n64_shim/gfx_present.c): ask every frame it is wanted */
+void pm3ds_gfx_request_top_copy(void);
 
 /* N64 buttons and stick held from the bottom screen's pad, OR'd into the
  * controller (n64_shim/os_cont.c) */

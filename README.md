@@ -52,7 +52,7 @@ Console? Keep playing it on the 3DS:
   - **Tattle**: every enemy Goombario has tattled so far; tap one to read the whole tattle
   - **Found**: star pieces, badges, hidden blocks and panels and item spots collected in each area
   - plus Items, and in battle your HP, FP and Star Power down the side and the menus to tap:
-    Mario's commands as big tiles with the game's icons
+    Mario's commands as big tiles with the game's icons, and targets picked on a live picture of the stage
 - A randomizer, chosen when you start a new file, with a seed you can share
 - Imports N64 saves (Project64, RetroArch, Wii U Virtual Console and others), and a
   [web converter](https://secondarylifer.github.io/StarHaven/converter/) for both directions,

@@ -29,7 +29,7 @@ void set_battle_formation(Battle* battle);
     defined(PM3DS_STORY_SWEEP) || defined(PM3DS_FX_SWEEP) || defined(PM3DS_NO_BATTLES) || \
     defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST) || defined(PM3DS_ENC_TEST) || \
     defined(PM3DS_JOURNAL_TEST) || defined(PM3DS_NO_TITLE_DEMO) || defined(PM3DS_QUICKSAVE_EVERY) || \
-    defined(PM3DS_SHOP_DIALOG) || defined(PM3DS_MODEL_DUMP)
+    defined(PM3DS_SHOP_DIALOG) || defined(PM3DS_MODEL_DUMP) || defined(PM3DS_TOUR)
 /* make_cia.sh refuses to publish a binary containing this string */
 __attribute__((used)) const char pm3ds_debug_build_marker[] = "PM3DS-DEBUG-BUILD";
 #endif
@@ -97,6 +97,83 @@ static void pm3ds_map_sweep_tick(u32 frame) {
     set_map_transition_effect(TRANSITION_STANDARD);
     set_game_mode(GAME_MODE_CHANGE_MAP);
     nextFrame = frame + PM3DS_MAP_SWEEP;
+}
+#endif
+
+#ifdef PM3DS_TOUR
+/* Debug: a scenic tour for the showcase video, PM3DS_TOUR frames per map, battles off.
+ * Once Mario has walked in, he is steered around: forward along the way he came in
+ * (away from the exit), to either side and forward again, with a hop in each leg.
+ * Logs "TOUR <i> <map>" so the recording can be cut per map. */
+extern uint16_t pm3ds_debug_pad_or;
+extern int8_t pm3ds_debug_stick_x, pm3ds_debug_stick_y;
+
+static void tour_steer(f32 worldYaw) {   /* the stick is camera-relative (player_input_to_move_vector) */
+    f32 a = (worldYaw - gCameras[CAM_DEFAULT].curYaw) * (3.14159265f / 180.0f);
+    pm3ds_debug_stick_x = (int8_t)(80.0f * sinf(a));
+    pm3ds_debug_stick_y = (int8_t)(80.0f * cosf(a));
+}
+
+static void pm3ds_tour_tick(u32 frame) {
+    static const char* const maps[] = { "mac_01", "nok_01", "mim_01", "obk_01", "dro_02", "isk_01", "omo_03",
+                                        "jan_00", "kzn_02", "flo_00", "sam_01", "pra_02", "hos_01", "hos_03" };
+    static s32 i = -1, nextFrame, startFrame, moved = -1;
+    static f32 inYaw;
+    if (gGameStatusPtr == nullptr) {
+        return;
+    }
+    if (i < 0 && nextFrame == 0) {   /* not the title demo: wait for the New Game's own start map */
+        if (gGameStatusPtr->demoState != 0 || get_game_mode() != GAME_MODE_WORLD ||
+            gGameStatusPtr->areaID != PM3DS_START_AREA || gGameStatusPtr->mapID != PM3DS_START_MAP) {
+            return;
+        }
+        nextFrame = frame + PM3DS_TOUR;
+        return;
+    }
+    pm3ds_debug_pad_or = 0;
+    pm3ds_debug_stick_x = pm3ds_debug_stick_y = 0;
+    if (i >= 0 && i < (s32)ARRAY_COUNT(maps) && get_game_mode() == GAME_MODE_WORLD) {
+        s32 t = (s32)frame - startFrame;
+        if (moved != i && t >= 70 && !(gPlayerStatus.flags & PS_FLAG_INPUT_DISABLED)) {
+            moved = i;   /* walked in and in control: remember which way is into the map */
+            inYaw = gPlayerStatus.targetYaw;
+            startFrame = frame - 70;
+            t = 70;
+        }
+        if (moved == i) {
+            if (t < 110) tour_steer(inYaw);
+            else if (t < 145) tour_steer(inYaw + 70.0f);
+            else if (t < 180) tour_steer(inYaw - 70.0f);
+            else if (t < 215) tour_steer(inYaw);
+            if ((t >= 95 && t < 99) || (t >= 130 && t < 134) || (t >= 165 && t < 169) || (t >= 200 && t < 204)) {
+                pm3ds_debug_pad_or = 0x8000;   /* A: hop */
+            }
+        }
+    }
+    if (i >= (s32)ARRAY_COUNT(maps) || get_game_mode() != GAME_MODE_WORLD || (s32)frame < nextFrame) {
+        return;
+    }
+    if (++i >= (s32)ARRAY_COUNT(maps)) {
+        pm3ds_log(2, "TOUR DONE");
+        return;
+    }
+    for (s32 a = 0; gAreas[a].maps != nullptr; a++) {
+        for (s32 m = 0; m < gAreas[a].mapCount; m++) {
+            if (strcmp(gAreas[a].maps[m].id, maps[i]) == 0) {
+                gOverrideFlags |= GLOBAL_OVERRIDES_DISABLE_BATTLES;
+                pm3ds_log(2, "TOUR %d %s", (int)i, maps[i]);
+                gGameStatusPtr->areaID = a;
+                gGameStatusPtr->mapID = m;
+                gGameStatusPtr->entryID = 0;
+                set_map_transition_effect(TRANSITION_STANDARD);
+                set_game_mode(GAME_MODE_CHANGE_MAP);
+                nextFrame = frame + PM3DS_TOUR;
+                startFrame = frame;
+                return;
+            }
+        }
+    }
+    pm3ds_log(2, "TOUR %d %s not found", (int)i, maps[i]);
 }
 #endif
 
@@ -428,7 +505,7 @@ void pm3ds_game_debug_tick(u32 frame) {
     defined(PM3DS_STORY_SWEEP) || defined(PM3DS_FX_SWEEP) || defined(PM3DS_NO_BATTLES) || \
     defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST) || defined(PM3DS_ENC_TEST) || \
     defined(PM3DS_JOURNAL_TEST) || defined(PM3DS_NO_TITLE_DEMO) || defined(PM3DS_QUICKSAVE_EVERY) || \
-    defined(PM3DS_SHOP_DIALOG) || defined(PM3DS_MODEL_DUMP)
+    defined(PM3DS_SHOP_DIALOG) || defined(PM3DS_MODEL_DUMP) || defined(PM3DS_TOUR)
     if (frame == 1) {
         pm3ds_log(2, "%s", pm3ds_debug_build_marker);   /* keeps the marker linked */
     }
@@ -468,6 +545,9 @@ void pm3ds_game_debug_tick(u32 frame) {
     }
 #ifdef PM3DS_MAP_SWEEP
     pm3ds_map_sweep_tick(frame);
+#endif
+#ifdef PM3DS_TOUR
+    pm3ds_tour_tick(frame);
 #endif
 #ifdef PM3DS_FX_SWEEP
     pm3ds_fx_sweep_tick(frame);
@@ -591,8 +671,8 @@ void pm3ds_game_debug_tick(u32 frame) {
 #ifdef PM3DS_JOURNAL_TEST
     {   /* debug: something for the Tattle and Found tabs: the first 40 actor types tattled, a few pickups */
         static s32 done;
-        if (!done && gGameStatusPtr != nullptr && get_game_mode() == GAME_MODE_WORLD) {
-            done = 1;
+        if (!done && gGameStatusPtr != nullptr && get_game_mode() == GAME_MODE_WORLD && gGameStatusPtr->demoState == 0) {
+            done = 1;   /* not in the title demo: New Game would clear it again */
             for (s32 i = 0; i < 5; i++) {
                 set_global_byte(EVT_INDEX_OF_GAME_BYTE(GB_Tattles_00) + i, 0xFF);
             }

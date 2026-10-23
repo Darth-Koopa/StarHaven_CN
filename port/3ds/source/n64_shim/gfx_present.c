@@ -198,6 +198,27 @@ static uint16_t *g_prev_req;                 /* asked for by this game step */
 static uint32_t g_prev_addr, g_prev_bytes;   /* the N64 image it stands for */
 static int      g_prev_ttl;                  /* presents it stays mapped (60 fps in-between frames) */
 
+/* Top screen for the bottom screen (the target picker's stage picture): the
+ * same copy as g_prev_tex while pm3ds_gfx_request_top_copy() keeps asking, every
+ * frame on a New 3DS and every 4th on an Old 3DS (its bottom screen redraws that
+ * often). In VRAM when there is room (the fast copy), else linear memory;
+ * allocated the first time it is asked for. */
+static C3D_Tex  g_top_tex;
+static bool     g_top_ok, g_top_tried, g_top_valid;
+static int      g_top_want;
+
+void pm3ds_gfx_request_top_copy(void) { g_top_want = 3; }
+
+/* the last frame's top screen (left eye), or NULL: 240x400 rotated in a
+ * 256x512 texture, top-screen pixel (X, Y) at u = (240 - Y) / 256, v = (512 - X) / 512 */
+C3D_Tex *pm3ds_gfx_top_copy(void) { return g_top_valid ? &g_top_tex : NULL; }
+
+/* N64 screen pixel -> top-screen pixel, as the current view mode places it */
+void pm3ds_gfx_n64_to_top(float x, float y, float *tx, float *ty) {
+    *tx = g_view_s * x + g_view_ox;
+    *ty = g_view_s * y + g_view_oy;
+}
+
 /* per-frame stats */
 static unsigned g_stat_draws, g_stat_verts;
 extern unsigned pm3ds_tstat_ops, pm3ds_tstat_tris, pm3ds_tstat_rects, pm3ds_tstat_culled;
@@ -1348,6 +1369,28 @@ static void render_lists(const void *const *lists, int nlists) {
         g_prev_req = NULL;
     } else if (g_prev_ttl > 0 && --g_prev_ttl == 0) {
         g_prev_bytes = 0;
+    }
+    if (g_top_want > 0) {   /* also before the clear: the last frame's top screen */
+        g_top_want--;
+        if (!g_top_tried) {
+            g_top_tried = true;
+            bool vram = C3D_TexInitVRAM(&g_top_tex, SCR_W, SCR_H, GPU_RGBA8);
+            g_top_ok = vram || C3D_TexInit(&g_top_tex, SCR_W, SCR_H, GPU_RGBA8);
+            pm3ds_log(PM3DS_LOG_INFO, "gfx: top-screen copy for the bottom screen in %s",
+                      !g_top_ok ? "nothing (no memory)" : vram ? "VRAM" : "linear memory");
+            if (g_top_ok) {
+                C3D_TexSetFilter(&g_top_tex, GPU_LINEAR, GPU_LINEAR);
+                C3D_TexSetWrap(&g_top_tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+            }
+        }
+        if (g_top_ok && (!g_skip_auto || !g_top_valid || (g_frame_no & 3) == 0)) {
+            GX_TextureCopy((u32 *)g_target->frameBuf.colorBuf, GX_BUFFER_DIM(30 * 256 / 16, 0),
+                           (u32 *)g_top_tex.data, GX_BUFFER_DIM(30 * 256 / 16, 2 * 256 / 16),
+                           30 * 256 * 50, GX_TRANSFER_RAW_COPY(1));
+            g_top_valid = true;
+        }
+    } else {
+        g_top_valid = false;
     }
     C3D_RenderTargetClear(g_target, C3D_CLEAR_ALL, 0x000000FFu, 0);
     C3D_FrameDrawOn(g_target); g_fx_epoch++;

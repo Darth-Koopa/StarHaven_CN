@@ -58,6 +58,7 @@ int osContInit(void *mq, uint8_t *bitpattern, void *status) {
 }
 
 uint16_t pm3ds_debug_pad_or;
+int8_t pm3ds_debug_stick_x, pm3ds_debug_stick_y;   /* debug: steer Mario (the showcase tour) */
 
 void osContStartReadData(void *mq) {
     (void)mq;
@@ -94,6 +95,10 @@ void osContStartReadData(void *mq) {
     {   /* debug sweeps hold buttons here (always 0 otherwise) */
         extern uint16_t pm3ds_debug_pad_or;
         b |= pm3ds_debug_pad_or;
+        if (pm3ds_debug_stick_x || pm3ds_debug_stick_y) {
+            sx = pm3ds_debug_stick_x;
+            sy = pm3ds_debug_stick_y;
+        }
     }
     {   /* the bottom screen's battle pad (platform/bottom_screen.c) */
         extern uint16_t pm3ds_touch_pad;
