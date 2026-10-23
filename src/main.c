@@ -138,6 +138,12 @@ void gfxRetrace_Callback(s32 gfxTaskNum) {
                 gfx_task_background();
                 gfx_draw_frame();
             }
+#ifdef _3DS
+            else if (!(gOverrideFlags & GLOBAL_OVERRIDES_DISABLE_DRAW_FRAME)) {
+                void pm3ds_tick_windows(void);
+                pm3ds_tick_windows();   // windows animate per drawn frame; keep them in step
+            }
+#endif
         }
     }
 }

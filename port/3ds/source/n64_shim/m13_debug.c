@@ -688,6 +688,9 @@ void pm3ds_game_debug_tick(u32 frame) {
             done = 1;
             start_script(&EVS_ShopOwnerDialog, EVT_PRIORITY_1, 0);
             pm3ds_log(2, "SHOPDLG started, coins=%d", (int)gPlayerData.coins);
+#ifdef PM3DS_SHOP_FF   /* fast-forward from here: undrawn steps, as on an Old 3DS (the sell crash) */
+            { extern bool pm3ds_ff_button_on; pm3ds_ff_button_on = true; }
+#endif
         }
     }
 #endif

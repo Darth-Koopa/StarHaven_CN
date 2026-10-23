@@ -217,6 +217,14 @@ void main_menu_window_update(s32 windowID, s32* flags, s32* posX, s32* posY, s32
     }
 }
 
+#ifdef _3DS
+// A game step the port does not draw (Old 3DS catch-up, fast-forward) still has to
+// move the windows on: their open/close animations count drawn frames, and the game
+// times frees by steps (a shop frees the sell popup's coin icon 15 steps after hiding
+// it; the cost window, 10 drawn frames from gone, then drew the freed icon: crash).
+static s32 WindowsTickOnly;
+#endif
+
 void render_windows(s32* windowsArray, s32 parent, s32 flags, s32 baseX, s32 baseY, s32 opacity, s32 darkening, f32 (*rotScaleMtx)[4]) {
     Window* window;
     Window* childWindow;
@@ -337,6 +345,20 @@ void render_windows(s32* windowsArray, s32 parent, s32 flags, s32 baseX, s32 bas
             boxFlags |= DRAW_FLAG_ANIMATED_BACKGROUND;
         }
 
+#ifdef _3DS
+        if (WindowsTickOnly) {
+            // draw_box's own early outs, so the same children are walked
+            if (width <= 0 || height <= 0 || (u8)childOpacity == 0 || posX <= -768 || posY <= -768 ||
+                posX >= SCREEN_WIDTH || posY >= SCREEN_HEIGHT ||
+                posX + width >= 768 || posY + height >= 768 || posX + width <= 0 || posY + height <= 0) {
+                continue;
+            }
+            if (childWindow->flags & WINDOW_FLAG_HAS_CHILDREN) {
+                render_windows(windowsArray, childWindowIdCopy, childFlags, posX, posY, childOpacity, childDarkening, nullptr);
+            }
+            continue;
+        }
+#endif
         if (draw_box(boxFlags, windowStyle, posX, posY, posZ, width, height, childOpacity, childDarkening,
                     scaleX, scaleY, rotX, rotY, rotZ, fpDrawContents, drawContentsArg0, rotScaleMtx,
                     boxTranslateX, boxTranslateY, outMtx) == 0) {
@@ -377,6 +399,25 @@ void render_window_root(void) {
     gDPPipeSync(gMainGfxPos++);
     render_windows(priorityArray, WIN_NONE, 0, 0, 0, 255, 0, nullptr);
 }
+
+#ifdef _3DS
+void pm3ds_tick_windows(void) {
+    s32 priorityArray[ARRAY_COUNT(gWindows)];
+    s32 i;
+
+    for (i = 0; i < ARRAY_COUNT(gWindows); i++) {
+        priorityArray[i] = -1;
+    }
+    for (i = 0; i < ARRAY_COUNT(gWindows); i++) {
+        if (gWindows[i].flags != 0) {
+            priorityArray[gWindows[i].priority] = i;
+        }
+    }
+    WindowsTickOnly = true;
+    render_windows(priorityArray, WIN_NONE, 0, 0, 0, 255, 0, nullptr);
+    WindowsTickOnly = false;
+}
+#endif
 
 void set_window_properties(s32 windowID, s32 posX, s32 posY, s32 width, s32 height, u8 priority, void* fpDrawContents, void* drawContentsArg0, s8 parent) {
     Window* window = &gWindows[windowID];
