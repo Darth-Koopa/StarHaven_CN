@@ -158,14 +158,19 @@ def make_jingle(path, rate=32000):
 
 
 def make_emblem(cgfx):
-    """the paper star in the 3D banner's emblem texture; its quad is 1.844:1 and stretches
-    the square texture across it, so the star is drawn that much narrower"""
+    """the paper star in the 3D banner's emblem texture (its quad is 1.844:1 and stretches
+    the square texture across it, so the star is drawn that much narrower), and the model
+    sized to the banner area"""
     import cgfx_texture
     star = paper_star(220)
     star = star.resize((round(star.width / 1.844), star.height), Image.LANCZOS)
     img = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
     img.alpha_composite(star, ((256 - star.width) // 2, 4))
     d = cgfx_texture.replace(bytearray(open(cgfx, "rb").read()), "PaperMarioLogo", img)
+    # the model is about 2.2 x 1.2 units around y = 1.715 (with its animation); the HOME Menu's
+    # banner area is about 26 x 13 at z = -1, so scale it up through the root bone and centre it
+    scale = 9.5
+    d = cgfx_texture.place_root(d, scale, 0.0, -1.715 * scale, -1.0)
     open(cgfx, "wb").write(d)
 
 

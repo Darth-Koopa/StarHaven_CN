@@ -163,8 +163,8 @@ back. Paperboat is the US version, so this goes with the US ROM.
 
 ## Credits
 
-- The 3D HOME Menu banner is by [Velvii](https://github.com/Velvii): their model and animation,
-  with Star Haven's star and jingle. Its title uses the Hey Gorgeous font, free for personal use.
+- The 3D HOME Menu banner is by [Velvii](https://github.com/Velvii). Its title uses the Hey
+  Gorgeous font, free for personal use.
 - Star Haven itself is by SecondaryLifer.
 
 ## Legal

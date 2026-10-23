@@ -88,8 +88,8 @@ devkitARM, libctru and citro3d, and needs your own ROMs in `ver/pal/` and `ver/u
 
 ## Credits
 
-- 3D HOME Menu banner by [Velvii](https://github.com/Velvii) (model and animation; the star
-  and the jingle are Star Haven's own). The title is in the Hey Gorgeous font, free for personal use.
+- 3D HOME Menu banner by [Velvii](https://github.com/Velvii). The title is in the Hey Gorgeous
+  font, free for personal use.
 
 ## License
 

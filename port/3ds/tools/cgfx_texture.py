@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
 """List, dump and replace the textures of a CGFX model (the 3D HOME-menu banner,
-cia/banner.cgfx). Replacing keeps the texture's size and format and leaves every
-other byte alone, so the model and its animations are untouched.
+cia/banner.cgfx), and place its root bone. Replacing keeps the texture's size and
+format and leaves every other byte alone, so the model and its animations are untouched.
 
 usage: cgfx_texture.py list <model.cgfx>
        cgfx_texture.py dump <model.cgfx> <outdir>
        cgfx_texture.py replace <model.cgfx> <texture name> <image> <out.cgfx>
+       cgfx_texture.py root <model.cgfx> <scale> <x> <y> <z> <out.cgfx>
 
 Layout (image TXOB, offsets from the object): +0x1C width, +0x34 PICA format,
 +0x44 data size, +0x48 self-relative pointer to the pixels. Pixels are 8x8
 Morton-ordered tiles, rows stored bottom-up. Names are not changed in place:
 CGFX dictionaries are Patricia trees keyed on the names' bits.
+
+Bone (offsets from the bone): +0 self-relative name pointer, +4 flags, +8 index,
++0xC parent index (-1 for the root), +0x20 scale, +0x2C rotation, +0x38 translation
+(vec3 each), then the local, world and inverse-world 3x4 matrices (row-major) at
++0x44, +0x74 and +0xA4. The HOME Menu's banner area is about 26 x 13 units at z = -1
+(the quad of bannertool's flat-banner template).
 """
 import struct
 import sys
@@ -103,6 +110,29 @@ def replace(d, name, image):
     return d
 
 
+def root_bone(d):
+    """offset of the skeleton's root bone (parent index -1)"""
+    for o in range(0, len(d) - 0x10, 4):
+        name = rel(d, o)
+        if (0 < name < len(d) and u32(d, o + 8) == 0 and struct.unpack_from("<i", d, o + 12)[0] == -1
+                and d[name:name + 11] == b"Scene root\0"):
+            return o
+    raise ValueError("no root bone named 'Scene root'")
+
+
+def place_root(d, scale, x, y, z):
+    """d (bytearray) with the root bone scaled uniformly and moved, so every bone under it follows"""
+    o = root_bone(bytes(d))
+    struct.pack_into("<I", d, o + 4, 0x1D0)   # uniform scale, local + world matrix calculated, rendered
+    struct.pack_into("<9f", d, o + 0x20, scale, scale, scale, 0, 0, 0, x, y, z)
+    m = (scale, 0, 0, x, 0, scale, 0, y, 0, 0, scale, z)
+    inv = (1 / scale, 0, 0, -x / scale, 0, 1 / scale, 0, -y / scale, 0, 0, 1 / scale, -z / scale)
+    struct.pack_into("<12f", d, o + 0x44, *m)
+    struct.pack_into("<12f", d, o + 0x74, *m)
+    struct.pack_into("<12f", d, o + 0xA4, *inv)
+    return d
+
+
 def main(argv):
     if len(argv) >= 2 and argv[0] == "list":
         for t in textures(open(argv[1], "rb").read()):
@@ -115,6 +145,9 @@ def main(argv):
     elif len(argv) == 5 and argv[0] == "replace":
         d = replace(bytearray(open(argv[1], "rb").read()), argv[2], Image.open(argv[3]))
         open(argv[4], "wb").write(d)
+    elif len(argv) == 7 and argv[0] == "root":
+        d = place_root(bytearray(open(argv[1], "rb").read()), *map(float, argv[2:6]))
+        open(argv[6], "wb").write(d)
     else:
         sys.exit(__doc__)
 
