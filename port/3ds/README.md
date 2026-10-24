@@ -63,12 +63,15 @@ patched ROM into a different region's `ver/<version>/` directory.
 ### Build iQue with GitHub Actions
 
 `.github/workflows/ique-3ds.yml` runs source/config consistency checks on pushes and pull requests.
-A manual **Actions → StarHaven iQue 3DS build → Run workflow** dispatch also builds the `.3dsx`.
-Because ROMs must not be committed or uploaded with source, configure repository secret
-`IQUE_ROM_URL` with a private direct-download URL that returns the original uncompressed iQue
-`.z64` ROM. The workflow verifies its SHA-1 before extracting assets, building, and packaging;
-only `StarHaven_iQue.3dsx` and its ROM-data *mapping table* are uploaded as the artifact, not the ROM.
-The build requires a GitHub runner that can fetch that URL without an interactive login.
+A manual **Actions → StarHaven iQue 3DS build → Run workflow** dispatch builds both `.3dsx`
+and `.cia`, then packages the two files and an installation README into
+`StarHaven_iQue_3DS.zip`. Because ROMs must not be committed or uploaded with source, configure
+repository secret `IQUE_ROM_URL` with a private direct-download URL that returns the original
+uncompressed iQue `.z64` ROM. The workflow verifies its SHA-1 before extracting assets, building,
+and packaging; no ROM image or loose `romdata_ique.bin` is published as a standalone file.
+The small ROM-data mapping table is still embedded in the executable RomFS because the program
+needs it at startup; it contains metadata, not the game ROM. The build requires a GitHub runner
+that can fetch the private URL without an interactive login.
 
 ### Universal launcher
 

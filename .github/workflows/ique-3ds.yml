@@ -38,7 +38,7 @@ jobs:
           ! grep -Fq 'dkp-pacman -Syyu' port/3ds/Dockerfile
 
   build-ique:
-    name: Build and package iQue .3dsx
+    name: Build and package iQue .3dsx + CIA
     if: github.event_name == 'workflow_dispatch'
     needs: source-checks
     runs-on: ubuntu-latest
@@ -57,7 +57,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential curl git ninja-build pkg-config \
+            build-essential curl git ninja-build pkg-config unzip zip \
             python3-dev python3-venv libyaml-dev zlib1g-dev
 
       - name: Install Python build dependencies
@@ -186,20 +186,43 @@ jobs:
               -c /project/port/3ds/universal/starter.c \
               -o /tmp/starhaven_universal_starter.o'
 
-      - name: Strip ROM-derived blobs and package the .3dsx
+      - name: Install makerom for CIA packaging
+        shell: bash
         run: |
-          PM3DS_VERSION=ique NAME=StarHaven_iQue \
-            bash port/3ds/tools/package.sh \
-              port/3ds/PaperMario3DS_ique.elf dist 3dsx
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/makerom-download" "$RUNNER_TEMP/bin"
+          curl --fail --location --silent --show-error --retry 3 \
+            "https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.19.0/makerom-v0.19.0-ubuntu_x86_64.zip" \
+            -o "$RUNNER_TEMP/makerom-download/makerom.zip"
+          unzip -q "$RUNNER_TEMP/makerom-download/makerom.zip" -d "$RUNNER_TEMP/makerom-download/unpacked"
+          test -s "$RUNNER_TEMP/makerom-download/unpacked/makerom"
+          install -m 0755 "$RUNNER_TEMP/makerom-download/unpacked/makerom" "$RUNNER_TEMP/bin/makerom"
+          "$RUNNER_TEMP/bin/makerom" -h > "$RUNNER_TEMP/makerom-help.txt" 2>&1 || true
+          test -s "$RUNNER_TEMP/bin/makerom"
 
-      - name: Validate the stripped release package
+      - name: Build .3dsx and .cia, then create the release ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          PM3DS_VERSION=ique NAME=StarHaven_iQue MAKEROM="$RUNNER_TEMP/bin/makerom" \
+            bash port/3ds/tools/package.sh port/3ds/PaperMario3DS_ique.elf dist 3dsx cia
+          test -s dist/StarHaven_iQue.3dsx
+          test -s dist/StarHaven_iQue.cia
+          mkdir -p dist/release
+          cp dist/StarHaven_iQue.3dsx dist/StarHaven_iQue.cia dist/release/
+          cp port/3ds/IQUE_RELEASE_README.md dist/release/README.txt
+          (cd dist/release && zip -9 -q ../StarHaven_iQue_3DS.zip StarHaven_iQue.3dsx StarHaven_iQue.cia README.txt)
+
+      - name: Validate the release package (no ROM, no loose romdata table)
         shell: bash
         run: |
           set -euo pipefail
           test -s dist/StarHaven_iQue.3dsx
+          test -s dist/StarHaven_iQue.cia
           test -s dist/romfs/romdata_ique.bin
           python3 - <<'PY'
           import struct
+          import zipfile
           from pathlib import Path
 
           app = Path("dist/StarHaven_iQue.3dsx").read_bytes()[:4]
@@ -222,22 +245,31 @@ jobs:
               raise SystemExit(f"romdata table length {len(romdata)} != expected {expected_len}")
           if name.rstrip(b"\0") != b"Paper Mario (iQue China)":
               raise SystemExit(f"unexpected ROM label {name!r}")
+          if Path("dist/StarHaven_iQue.cia").stat().st_size < 1024 * 1024:
+              raise SystemExit("CIA is unexpectedly small; packaging likely failed")
           rom_exts = {".z64", ".n64", ".v64"}
-          rom_files = [p for p in Path("dist").rglob("*") if p.is_file() and p.suffix.lower() in rom_exts]
+          rom_files = [p for p in Path("dist/release").rglob("*") if p.is_file() and p.suffix.lower() in rom_exts]
           if rom_files:
-              raise SystemExit(f"refusing to publish a package containing ROM images: {rom_files}")
+              raise SystemExit(f"refusing to package ROM images: {rom_files}")
+          with zipfile.ZipFile("dist/StarHaven_iQue_3DS.zip") as zf:
+              names = sorted(zf.namelist())
+              expected_names = ["README.txt", "StarHaven_iQue.3dsx", "StarHaven_iQue.cia"]
+              if names != expected_names:
+                  raise SystemExit(f"unexpected release ZIP contents: {names}")
+              bad = [n for n in names if "romdata_ique.bin" in n.lower() or n.lower().endswith((".z64", ".n64", ".v64"))]
+              if bad:
+                  raise SystemExit(f"release ZIP contains forbidden loose file(s): {bad}")
           print(
-              f"release package OK: {n_blobs} ROM-data blobs, {n_ptrs} relocations; "
-              f"iQue CRC32={rom_crc:08X}; no ROM images present"
+              f"release ZIP OK: .3dsx and .cia packaged; mapping metadata checked "
+              f"({n_blobs} blobs, {n_ptrs} relocations); no ROM or loose romdata file"
           )
           PY
+          unzip -t dist/StarHaven_iQue_3DS.zip
 
-      - name: Upload iQue build (no ROM included)
+      - name: Upload iQue 3DS packages (ROM excluded)
         uses: actions/upload-artifact@v4
         with:
           name: StarHaven-iQue-3DS
-          path: |
-            dist/StarHaven_iQue.3dsx
-            dist/romfs/romdata_ique.bin
+          path: dist/StarHaven_iQue_3DS.zip
           if-no-files-found: error
           retention-days: 14

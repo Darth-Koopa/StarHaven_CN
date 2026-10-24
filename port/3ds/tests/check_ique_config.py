@@ -206,7 +206,15 @@ if "check_ique_texture_wiring.py" not in workflow or "test_pm3ds_addr" not in wo
     fail("workflow must run texture address wiring and TLUT host regression tests")
 if not isinstance(workflow_doc, dict) or not isinstance(workflow_doc.get("jobs"), dict):
     fail("GitHub Actions workflow YAML does not define jobs")
-
+for token in ("Install makerom for CIA packaging", "StarHaven_iQue.cia",
+              "StarHaven_iQue_3DS.zip", "dist/StarHaven_iQue_3DS.zip"):
+    if token not in workflow:
+        fail(f"workflow is missing dual-format release packaging: {token}")
+artifact_step = workflow.split("      - name: Upload iQue 3DS packages (ROM excluded)", 1)[-1]
+if "path: dist/StarHaven_iQue_3DS.zip" not in artifact_step:
+    fail("only the release ZIP should be uploaded as the build artifact")
+if "romdata_ique.bin" in artifact_step:
+    fail("the ROM-data mapping table must not be uploaded as a loose artifact")
 dockerfile = (ROOT / "port/3ds/Dockerfile").read_text()
 if "FROM devkitpro/devkitarm:20260610" not in dockerfile:
     fail("Dockerfile must use the pinned official devkitpro/devkitarm image")
@@ -215,7 +223,7 @@ if "dkp-pacman -Syyu" in dockerfile or "dkp-pacman -S --" in dockerfile:
 for token in ("$DEVKITARM/3ds_rules", "3dsxtool", "libctru/include/3ds.h"):
     if token not in dockerfile:
         fail(f"Dockerfile toolchain preflight missing: {token}")
-for token in ("docker build --pull --progress=plain", "Validate the stripped release package",
+for token in ("docker build --pull --progress=plain", "Validate the release package (no ROM, no loose romdata table)",
               "romdata_ique.bin", "actions/upload-artifact@v4"):
     if token not in workflow:
         fail(f"workflow is missing CI preflight/package validation: {token}")
