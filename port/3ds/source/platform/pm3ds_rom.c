@@ -32,6 +32,9 @@
 #include "pm3ds_log.h"
 #include "pm3ds_rom_layout.h"
 #include "pm3ds_rom_stream.h"
+#if VERSION_IQUE
+#include "../../gen/ui_translations_zh_CN.h"
+#endif
 
 #define ROM_DIR      PM3DS_SD_DIR
 #define ROM_SHOWN    PM3DS_SD_DIR_SHOWN "/baserom.z64"
@@ -134,7 +137,7 @@ typedef struct {
     char path[256];
     int order;                   /* of the accepted file */
     char reason[48];             /* why the last candidate was refused */
-    char detail[48];
+    char detail[128];
 } rom_status_t;
 
 /* Read one candidate through (ROM_SIZE bytes), converting to .z64 order and
@@ -203,8 +206,16 @@ static bool load_candidate(const char *path, rom_status_t *st) {
     }
     if (other_game) {
         snprintf(st->reason, sizeof st->reason, "This is not the right ROM");
+#if VERSION_IQUE
+        /* Unlike the static error heading, this detail is dynamically formatted;
+         * translate both its format string and the iQue-specific expected field. */
+        snprintf(st->detail, sizeof st->detail,
+                 pm3ds_ui_translate("game ID %.4s, expected %s"), game_id,
+                 pm3ds_ui_translate("the blank iQue game-ID field"));
+#else
         snprintf(st->detail, sizeof st->detail, "game ID %.4s, expected %s",
                  game_id, PM3DS_ROM_GAME_ID_LABEL);
+#endif
         pm3ds_log(PM3DS_LOG_WARN, "rom: %s has game ID %.4s, expected %s", path, game_id, PM3DS_ROM_GAME_ID_LABEL);
         return false;
     }
@@ -338,7 +349,7 @@ static bool dev_download(void) {
 
 /* ---- error screen --------------------------------------------------------- */
 static void show_problem(const rom_status_t *st) {
-    char l_reason[48], l_detail[48];
+    char l_reason[48], l_detail[128];
     snprintf(l_reason, sizeof l_reason, "%s", st->reason[0] ? st->reason : "No ROM found");
     snprintf(l_detail, sizeof l_detail, "%s", st->detail);
     /* the package runs whichever version the ROM is (universal/starter.c) */

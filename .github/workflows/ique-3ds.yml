@@ -26,7 +26,7 @@ jobs:
             --csv port/3ds/localization/ui_translations_zh_CN.csv \
             --out "$RUNNER_TEMP/ui_translations_zh_CN.h" --strict
           python3 port/3ds/tools/generate_small_text_font.py \
-            --font port/3ds/fonts/FusionPixel-10px-Mono-zh-Hans.ttf \
+            --font port/3ds/fonts/FusionPixel-10px-Prop-zh-Hans.ttf \
             --csv port/3ds/localization/ui_translations_zh_CN.csv \
             --out "$RUNNER_TEMP/ui_small_font.h" --size 10
           bash -n port/3ds/tools/package.sh
@@ -39,6 +39,10 @@ jobs:
           python3 port/3ds/tools/check_bottom_screen_translation_glyphs.py \
             --report "$RUNNER_TEMP/ui_translation_glyph_audit.md"
           python3 port/3ds/tests/test_ui_translation_generator.py
+          python3 port/3ds/tests/test_small_font_generator.py
+          test -f port/3ds/fonts/FusionPixel-10px-Prop-zh-Hans.ttf
+          test ! -e port/3ds/docs/ique-bottom-screen-translation-review.csv
+          ! grep -Fq 'FusionPixel-10px-Mono-zh-Hans.ttf' port/3ds/Makefile .github/workflows/ique-3ds.yml
           python3 port/3ds/tests/test_check_undef_syms.py
           python3 port/3ds/tests/test_make_default_goal.py
           make -C port/3ds/tests test_pm3ds_addr
@@ -87,7 +91,7 @@ jobs:
       - name: Generate localized small-font atlas
         run: |
           .venv/bin/python port/3ds/tools/generate_small_text_font.py \
-            --font port/3ds/fonts/FusionPixel-10px-Mono-zh-Hans.ttf \
+            --font port/3ds/fonts/FusionPixel-10px-Prop-zh-Hans.ttf \
             --csv port/3ds/localization/ui_translations_zh_CN.csv \
             --out port/3ds/gen/ui_small_font.h --size 10
 

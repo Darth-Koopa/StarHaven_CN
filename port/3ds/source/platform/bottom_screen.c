@@ -360,10 +360,9 @@ static void build_small_font(void) {
 }
 
 #if VERSION_IQUE
-/* Build a small-font atlas from the generated TTF raster subset. Each character
- * occupies one 16x16 atlas cell; the visible ink is 10x10 at the selected size.
- * This renderer is independent of the game's ROM font and works before ROM
- * assets have been decoded. */
+/* Build a small-font atlas from the generated proportional TTF subset. Each
+ * character occupies one 16x16 cell; bitmap metrics determine its ink bounds
+ * and pen advance. This works before ROM font assets have been decoded. */
 static void build_ui_small_font(void) {
     if (s_ui_small_ok) return;
     u8 *canvas = (u8 *)calloc((size_t)PM3DS_SMALL_FONT_ATLAS_W * PM3DS_SMALL_FONT_ATLAS_H, 4);
@@ -372,11 +371,11 @@ static void build_ui_small_font(void) {
         int gx = (slot % PM3DS_SMALL_FONT_ATLAS_COLS) * PM3DS_SMALL_FONT_CELL;
         int gy = (slot / PM3DS_SMALL_FONT_ATLAS_COLS) * PM3DS_SMALL_FONT_CELL;
         const unsigned char *bits = s_pm3ds_small_font_pixels[slot];
-        for (int yy = 0; yy < PM3DS_SMALL_FONT_SIZE; yy++) {
-            for (int xx = 0; xx < PM3DS_SMALL_FONT_SIZE; xx++) {
+        for (int yy = 0; yy < PM3DS_SMALL_FONT_CELL; yy++) {
+            for (int xx = 0; xx < PM3DS_SMALL_FONT_CELL; xx++) {
                 u8 *pixel = canvas + ((size_t)(gy + yy) * PM3DS_SMALL_FONT_ATLAS_W + gx + xx) * 4;
                 pixel[0] = pixel[1] = pixel[2] = 255;
-                pixel[3] = bits[yy * PM3DS_SMALL_FONT_SIZE + xx];
+                pixel[3] = bits[yy * PM3DS_SMALL_FONT_CELL + xx];
             }
         }
     }
@@ -629,15 +628,86 @@ static int ui_small_slot_for_char(int glyph, unsigned char ch) {
 
 static void draw_ui_small_glyph(int slot, float x, float y, float scale, u32 c) {
     if (!s_ui_small_ok || slot < 0 || slot >= PM3DS_SMALL_FONT_SLOT_COUNT) return;
+    int width = s_pm3ds_small_font_width[slot];
+    int height = s_pm3ds_small_font_height[slot];
+    if (width <= 0 || height <= 0) return;
+    int cell_x = (PM3DS_SMALL_FONT_CELL - width) / 2;
+    int cell_y = s_pm3ds_small_font_top[slot];
     float gx = (float)(slot % PM3DS_SMALL_FONT_ATLAS_COLS) * PM3DS_SMALL_FONT_CELL;
     float gy = (float)(slot / PM3DS_SMALL_FONT_ATLAS_COLS) * PM3DS_SMALL_FONT_CELL;
-    float size = (float)PM3DS_SMALL_FONT_SIZE;
-    quad2(&s_ui_small, x, y, x + size * scale, y + size * scale,
-          gx / PM3DS_SMALL_FONT_ATLAS_W, gy / PM3DS_SMALL_FONT_ATLAS_H,
-          (gx + size) / PM3DS_SMALL_FONT_ATLAS_W,
-          (gy + size) / PM3DS_SMALL_FONT_ATLAS_H, c, c);
+    float sw = (float)width, sh = (float)height;
+    float pen_advance = (float)s_pm3ds_small_font_advance[slot];
+    float x0 = x + (pen_advance - sw) * scale * 0.5f;
+    float y0 = y + (float)cell_y * scale;
+    quad2(&s_ui_small, x0, y0, x0 + sw * scale, y0 + sh * scale,
+          (gx + cell_x) / PM3DS_SMALL_FONT_ATLAS_W,
+          (gy + cell_y) / PM3DS_SMALL_FONT_ATLAS_H,
+          (gx + cell_x + width) / PM3DS_SMALL_FONT_ATLAS_W,
+          (gy + cell_y + height) / PM3DS_SMALL_FONT_ATLAS_H, c, c);
+}
+
+static float ui_small_advance(int slot) {
+    if (slot < 0 || slot >= PM3DS_SMALL_FONT_SLOT_COUNT) return (float)PM3DS_SMALL_FONT_SIZE;
+    return (float)s_pm3ds_small_font_advance[slot];
+}
+
+static float ui_small_text_width_raw(const char *str, float scale) {
+    float width = 0.0f;
+    while (str && *str) {
+        int glyph = ui_private_glyph(str);
+        unsigned char ch = (unsigned char)*str;
+        int slot = ui_small_slot_for_char(glyph, ch);
+        width += ui_small_advance(slot) * scale;
+        str += glyph >= 0 ? 3 : 1;
+    }
+    return width;
+}
+
+static float ui_small_text_draw_raw(float x, float y, const char *str, float scale, u32 c) {
+    while (str && *str) {
+        int glyph = ui_private_glyph(str);
+        unsigned char ch = (unsigned char)*str;
+        int slot = ui_small_slot_for_char(glyph, ch);
+        draw_ui_small_glyph(slot, x, y, scale, c);
+        x += ui_small_advance(slot) * scale;
+        str += glyph >= 0 ? 3 : 1;
+    }
+    return x;
 }
 #endif
+
+/* Draw menu labels with the generated proportional font when available.
+ * scale is relative to its nominal 10px height; max_width <= 0 disables fitting. */
+static float ui_bitmap_text(float x, float y, const char *str, float scale, float max_width, u32 c) {
+    str = ui_text(str);
+    if (!str) return x;
+#if VERSION_IQUE
+    if (s_ui_small_ok) {
+        float width = ui_small_text_width_raw(str, scale);
+        if (max_width > 0.0f && width > max_width && width > 0.0f) scale *= max_width / width;
+        return ui_small_text_draw_raw(x, y, str, scale, c);
+    }
+#endif
+    /* The fallback is the 16px game font; keep roughly the intended pixel height. */
+    return text(x, y, str, scale * 0.625f, 0, c);
+}
+
+static void ui_bitmap_text_center(float cx, float y, const char *str, float scale, float max_width, u32 c) {
+    str = ui_text(str);
+    if (!str) return;
+#if VERSION_IQUE
+    if (s_ui_small_ok) {
+        float width = ui_small_text_width_raw(str, scale);
+        if (max_width > 0.0f && width > max_width && width > 0.0f) {
+            scale *= max_width / width;
+            width = ui_small_text_width_raw(str, scale);
+        }
+        ui_small_text_draw_raw(cx - width / 2.0f, y, str, scale, c);
+        return;
+    }
+#endif
+    text_center(cx, y, str, scale * 0.625f, 0, c);
+}
 
 /* Small text uses the generated TTF subset on iQue builds; other targets and
  * failed texture allocation retain the original 8x8 console-font fallback. */
@@ -646,24 +716,24 @@ static float small_text(float x, float y, const char *str, int max_cols, u32 c) 
 #if VERSION_IQUE
     if (s_ui_small_ok) {
         if (!str) return y + PM3DS_SMALL_FONT_SIZE + 1;
-        int max_units = (max_cols * 8) / PM3DS_SMALL_FONT_SIZE;
-        if (max_units < 1) max_units = 1;
-        int col = 0;
-        float x0 = x;
+        const float max_width = (float)max_cols * 8.0f;
+        const float indent = 2.0f * PM3DS_SMALL_FONT_SIZE;
+        const float x0 = x;
+        float line_width = 0.0f;
         while (*str) {
-            if (col >= max_units) {
-                col = 0;
-                x = x0 + 2 * PM3DS_SMALL_FONT_SIZE;
-                y += PM3DS_SMALL_FONT_SIZE + 1;
-            }
             int glyph = ui_private_glyph(str);
             unsigned char ch = (unsigned char)*str;
             int slot = ui_small_slot_for_char(glyph, ch);
-            if (glyph >= 0) str += 3;
-            else str++;
+            float advance = ui_small_advance(slot);
+            if (line_width > 0.0f && line_width + advance > max_width) {
+                x = x0 + indent;
+                y += PM3DS_SMALL_FONT_SIZE + 1;
+                line_width = indent;
+            }
             draw_ui_small_glyph(slot, x, y, 1.0f, c);
-            x += PM3DS_SMALL_FONT_SIZE;
-            col++;
+            x += advance;
+            line_width += advance;
+            str += glyph >= 0 ? 3 : 1;
         }
         return y + PM3DS_SMALL_FONT_SIZE + 1;
     }
@@ -740,6 +810,8 @@ static void button(const float x[2], const char *label);
 static bool draw_ui_icon(int id, float x, float y, float size, u32 c);
 static bool in(int px, int py, float x0, float y0, float x1, float y1);
 static void small_text_center(float cx, float y, const char *str, float scale, u32 c);
+static float ui_bitmap_text(float x, float y, const char *str, float scale, float max_width, u32 c);
+static void ui_bitmap_text_center(float cx, float y, const char *str, float scale, float max_width, u32 c);
 
 /* shortcut for the game (src/world/menus.c): 1 = item menu, 2 = quick save, 0x100 + id = switch partner */
 volatile int pm3ds_touch_req;
@@ -898,7 +970,8 @@ static void draw_rail(const rail_tab_t *tabs, int n, int active) {
             float s = r.w > 16 ? 20.0f / r.w : 1.0f;
             image(tabs[i].img, cx - r.w * s / 2, y0 + 3 + (20 - r.h * s) / 2, s, COL_WHITE);
         }
-        text_center(cx, y0 + 22, tabs[i].name, strlen(tabs[i].name) < 7 ? 0.62f : 0.55f, 0, COL_WHITE);
+        /* The Chinese tab labels were tiny at the old 0.55-0.62 game-font scale. */
+        ui_bitmap_text_center(cx, y0 + 22, tabs[i].name, 1.3f, x1 - x0 - 6, COL_WHITE);
     }
 }
 
@@ -1096,7 +1169,8 @@ static void draw_map(void) {
         chip(MAP_CENTRE_X0, MAP_CENTRE_Y0, vx1 - 4, vy1 - 4, "Centre", COL_SEL, 0.75f);
     } else {
         round_rect(vx0 + 4, vy1 - 24, vx0 + 112, vy1 - 4, 7, COL_DARK_CHIP);
-        text(vx0 + 10, vy1 - 22, "Drag to look", 0.7f, 1, COL_WHITE);
+        /* Center inside the chip; use the bitmap font so Chinese is legible. */
+        ui_bitmap_text_center(vx0 + 58, vy1 - 20, "Drag to look", 1.25f, 100, COL_WHITE);
     }
 }
 
@@ -1332,7 +1406,7 @@ static void draw_log(void) {
         float x0, y0, x1, y1;
         log_entry_rect(slot, &x0, &y0, &x1, &y1);
         tile(x0, y0, x1, y1, 6, COL_TAB_ON);
-        text(x0 + 7, y0 + 1, s_log.name[i], fit(s_log.name[i], x1 - x0 - 14, 0.8f, 0.55f), 0, COL_WHITE);
+        ui_bitmap_text(x0 + 7, y0 + 2, s_log.name[i], 1.35f, x1 - x0 - 14, COL_WHITE);
     }
 }
 
@@ -1392,7 +1466,9 @@ static void draw_found(void) {
             x = CX0 + 18;
         }
         float avail = (f->rando ? 262 : 158) - x;
-        text(x, y0 + 1, a->name, fit(a->name, avail, 0.75f, 0.55f), 0, done ? COL_DONE : COL_WHITE);
+        /* Area names are button labels too; keep them readable without crossing
+         * the fixed collection counters on the non-randomizer page. */
+        ui_bitmap_text(x, y0 + 2, a->name, 1.35f, avail - 4, done ? COL_DONE : COL_WHITE);
         if (!f->rando) {
             count_cell(178, y0 + 1, a->sp_found, a->sp_total, 0.72f);
             count_cell(212, y0 + 1, a->badge_found, a->badge_total, 0.72f);
@@ -1881,8 +1957,11 @@ static const char *const s_text_names[TEXT_SPEEDS] = { "Normal", "Fast", "Instan
 static void opt_row(int i, const char *label, const char *value) {
     float y = OPT_Y0 + i * OPT_ROW_H;
     tile(CX0, y, CX1, y + OPT_ROW_H - 3, 6, COL_TAB_ON);
-    text(CX0 + 7, y + 1, label, fit(label, 150, 0.82f, 0.6f), 0, COL_WHITE);
-    chip(226, y + 2, CX1 - 4, y + OPT_ROW_H - 5, value, COL_SEL, fit(value, 70, 0.75f, 0.5f));
+    ui_bitmap_text(CX0 + 7, y + 3, label, 1.35f, 150, COL_WHITE);
+    float bx0 = 226, by0 = y + 2, bx1 = CX1 - 4, by1 = y + OPT_ROW_H - 5;
+    round_rect(bx0, by0, bx1, by1, 7, COL_PANEL_EDGE);
+    round_rect(bx0 + 2, by0 + 2, bx1 - 2, by1 - 2, 5, COL_SEL);
+    ui_bitmap_text_center((bx0 + bx1) / 2, (by0 + by1) / 2 - 6.5f, value, 1.3f, bx1 - bx0 - 8, COL_WHITE);
 }
 
 static void draw_options(void) {
@@ -2626,26 +2705,14 @@ static void small_text_center(float cx, float y, const char *str, float scale, u
     if (!str) return;
 #if VERSION_IQUE
     if (s_ui_small_ok) {
-        int units = 0;
-        for (const char *p = str; *p; p = ui_char_next(p)) units++;
-        float unit_size = (float)PM3DS_SMALL_FONT_SIZE * scale;
-        float width = units * unit_size;
+        float width = ui_small_text_width_raw(str, scale);
         /* Keep long boot/status lines inside the screen without clipping. */
-        float max_width = 304.0f;
+        const float max_width = 304.0f;
         if (width > max_width && width > 0.0f) {
             scale *= max_width / width;
-            unit_size = (float)PM3DS_SMALL_FONT_SIZE * scale;
+            width = ui_small_text_width_raw(str, scale);
         }
-        float x = cx - units * unit_size / 2.0f;
-        while (*str) {
-            int glyph = ui_private_glyph(str);
-            unsigned char ch = (unsigned char)*str;
-            int slot = ui_small_slot_for_char(glyph, ch);
-            if (glyph >= 0) str += 3;
-            else str++;
-            draw_ui_small_glyph(slot, x, y, scale, c);
-            x += unit_size;
-        }
+        ui_small_text_draw_raw(cx - width / 2.0f, y, str, scale, c);
         return;
     }
 #endif
@@ -2699,7 +2766,11 @@ static void message_panel(float w, const char *const *lines, int n) {
     panel(10, 10, w - 10, 230, COL_PANEL);
     small_text_center(cx, 22, PM3DS_APP_NAME_CAPS, 2.0f, COL_PANEL_EDGE);
     for (int i = 0; i < n && i < 14; i++) {
-        float s = (i == 0 && strlen(lines[i]) * 16.0f <= w - 40) ? 2.0f : 1.0f;
+        float headline_width_at_2x = (float)strlen(lines[i]) * 16.0f;
+#if VERSION_IQUE
+        if (s_ui_small_ok) headline_width_at_2x = ui_small_text_width_raw(ui_text(lines[i]), 2.0f);
+#endif
+        float s = (i == 0 && headline_width_at_2x <= w - 40) ? 2.0f : 1.0f;
         small_text_center(cx, y, lines[i], s, COL_PANEL_EDGE);
         y += 4 + 8 * s;
     }

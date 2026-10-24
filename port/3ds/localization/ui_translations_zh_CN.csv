@@ -231,3 +231,5 @@ Battle touch UI,bottom_screen.c,FP,FP,Flower Points 的游戏缩写；是否译�
 Update,bottom_screen.c, v%d.%d.%d is out.,发现更新 v%d.%d.%d。,源码前面会拼接 Star Haven 应用名；三个 %d 必须保留。前导空格是原始拼接格式的一部分。
 Tracker area name,journal.c,Tubba's Castle,图巴城堡,按用户指定统一译为图巴城堡；实际用于收集/追踪列表的源码键。
 Tracker area name,journal.c,Castle Grounds,城堡庭园,实际用于追踪列表的名称；不同于 HUD 中 Peach’s Castle Grounds。
+ROM error,pm3ds_rom.c,"game ID %.4s, expected %s",游戏 ID %.4s，应为%s,动态格式串；必须保留两个 printf 格式占位符。
+ROM error,pm3ds_rom.c,the blank iQue game-ID field,神游 iQue 的空白游戏 ID,用于“错误 ROM”详情中动态说明 iQue ROM 的空白游戏 ID 字段。

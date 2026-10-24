@@ -421,7 +421,7 @@ else
 ifeq ($(PM3DS_VERSION),ique)
 UI_TRANSLATION_HEADER := $(TOPDIR)/gen/ui_translations_zh_CN.h
 UI_SMALL_FONT_HEADER := $(TOPDIR)/gen/ui_small_font.h
-UI_SMALL_FONT_TTF := $(TOPDIR)/fonts/FusionPixel-10px-Mono-zh-Hans.ttf
+UI_SMALL_FONT_TTF := $(TOPDIR)/fonts/FusionPixel-10px-Prop-zh-Hans.ttf
 $(UI_TRANSLATION_HEADER): $(TOPDIR)/localization/ui_translations_zh_CN.csv \
                           $(TOPDIR)/tools/generate_bottom_screen_translations.py \
                           $(TOPDIR)/../../tools/splat_ext/pm_msg.py \
