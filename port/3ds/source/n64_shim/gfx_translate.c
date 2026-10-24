@@ -131,12 +131,23 @@ static void mtx_from_port(float m[4][4], const int32_t *src) {
  * segment has a non-zero base; everything the port builds is a host pointer
  * (image 0x001xxxxx-0x00Dxxxxx, linear/heap 0x08+/0x14+/0x30+), and with
  * VIRTUAL_TO_PHYSICAL now the identity, segment bases are host pointers too. */
+#ifdef PM3DS_HACK_RUNTIME
+/* The hack runtime: display lists live in the emulated RDRAM, in the N64's
+ * byte order. The RSP's rule applies: segment (addr >> 24 & 0xF) base plus
+ * the low 24 bits, a physical address, here a host pointer into RDRAM. */
+extern uint8_t *rdram;
+uint32_t gfx_seg_resolve(const gfx_state_t *st, uint32_t addr) {
+    uint32_t phys = st->segments[(addr >> 24) & 0xF] + (addr & 0x00FFFFFFu);
+    return (uint32_t)(uintptr_t)(rdram + (phys & 0x7FFFFFu));
+}
+#else
 uint32_t gfx_seg_resolve(const gfx_state_t *st, uint32_t addr) {
     unsigned seg = (addr >> 24) & 0xFF;
     if (seg == 0 || seg > 0x0F) return addr;
     if (st->segments[seg] == 0) return addr;
     return st->segments[seg] + (addr & 0x00FFFFFFu);
 }
+#endif
 
 /* Host memory a display list may legitimately point into: the 3DSX image,
  * the app heap, and the linear heaps (old and New 3DS). Anything else is a
@@ -144,6 +155,9 @@ uint32_t gfx_seg_resolve(const gfx_state_t *st, uint32_t addr) {
 extern char __end__[];
 static inline int addr_plausible(uint32_t a) {
     if ((a & 3) != 0) return 0;
+#ifdef PM3DS_HACK_RUNTIME
+    return a - (uint32_t)(uintptr_t)rdram < 0x800000u;
+#endif
     if (a >= 0x00100000u && a < (uint32_t)(uintptr_t)__end__) return 1;
     if (a >= 0x08000000u && a < 0x10000000u) return 1;
     if (a >= 0x14000000u && a < 0x1C000000u) return 1;
@@ -294,6 +308,14 @@ static void handle_vtx(gfx_state_t *st, const gfx_cmd_t *g) {
 
     for (int i = 0; i < n; i++) {
         const n64_vtx_t *v = &src[i];
+#ifdef PM3DS_HACK_RUNTIME
+        n64_vtx_t be = *v;
+        for (int k = 0; k < 3; k++) be.ob[k] = (int16_t)__builtin_bswap16((uint16_t)be.ob[k]);
+        be.flag = __builtin_bswap16(be.flag);
+        be.tc[0] = (int16_t)__builtin_bswap16((uint16_t)be.tc[0]);
+        be.tc[1] = (int16_t)__builtin_bswap16((uint16_t)be.tc[1]);
+        v = &be;
+#endif
         gfx_vtx_t *d = &st->vtx[v0 + i];
         d->serial = ++gfx_vtx_serial;
         float x = v->ob[0], y = v->ob[1], z = v->ob[2];
@@ -304,6 +326,16 @@ static void handle_vtx(gfx_state_t *st, const gfx_cmd_t *g) {
         /* N64 viewport: screen y is flipped by the RSP. */
         d->px =  d->cx * vsx + d->cw * vtx_;
         d->py = -d->cy * vsy + d->cw * vty;
+#if defined(PM3DS_HACK_RUNTIME) && defined(PM3DS_DRAWLOG_FRAME)
+        {   /* debug: what the first vertices of each load become */
+            extern uint32_t pm3ds_gfx_frame_number(void);
+            extern uint32_t pm3ds_drawlog_frame;
+            if (i < 2 && pm3ds_gfx_frame_number() == pm3ds_drawlog_frame)
+                pm3ds_log(PM3DS_LOG_INFO, "VTX ob=%d,%d,%d clip=%.1f,%.1f,%.1f,%.1f px=%.1f,%.1f vp=%d,%d/%d,%d",
+                          v->ob[0], v->ob[1], v->ob[2], d->cx, d->cy, d->cz, d->cw, d->px, d->py,
+                          st->vp_scale[0], st->vp_scale[1], st->vp_trans[0], st->vp_trans[1]);
+        }
+#endif
         if (stereo != 0.0f && d->cw != 1.0f) {
             d->px += stereo * (d->cw - PM3DS_STEREO_CONV);   /* homogeneous */
         }
@@ -475,9 +507,37 @@ static void handle_mtx(gfx_state_t *st, const gfx_cmd_t *g) {
     uint32_t addr = gfx_seg_resolve(st, g->w1);
     if (!addr_plausible(addr)) { log_bad_addr("G_MTX", g->w1, g); return; }
     float m[4][4];
+#ifdef PM3DS_HACK_RUNTIME
+    {   /* the N64 layout: 16 big-endian integer halves, then the 16 fraction halves */
+        const uint16_t *h = (const uint16_t *)(uintptr_t)addr;
+        int32_t fixed[16];
+        for (int k = 0; k < 16; k++)
+            fixed[k] = (int32_t)((uint32_t)__builtin_bswap16(h[k]) << 16 | __builtin_bswap16(h[16 + k]));
+        mtx_from_port(m, fixed);
+#ifdef PM3DS_DRAWLOG_FRAME
+        {   /* debug */
+            extern uint32_t pm3ds_gfx_frame_number(void);
+            extern uint32_t pm3ds_drawlog_frame;
+            if (pm3ds_gfx_frame_number() == pm3ds_drawlog_frame) {
+                const uint32_t *w = (const uint32_t *)h;
+                pm3ds_log(PM3DS_LOG_INFO, "MTXRAW p=%02X %08X %08X %08X %08X %08X %08X %08X %08X | %08X %08X",
+                          (unsigned)param, (unsigned)__builtin_bswap32(w[0]), (unsigned)__builtin_bswap32(w[1]),
+                          (unsigned)__builtin_bswap32(w[2]), (unsigned)__builtin_bswap32(w[3]),
+                          (unsigned)__builtin_bswap32(w[4]), (unsigned)__builtin_bswap32(w[5]),
+                          (unsigned)__builtin_bswap32(w[6]), (unsigned)__builtin_bswap32(w[7]),
+                          (unsigned)__builtin_bswap32(w[8]), (unsigned)__builtin_bswap32(w[9]));
+                pm3ds_log(PM3DS_LOG_INFO, "MTX p=%02X [%.3f %.3f %.3f %.3f | %.3f %.3f %.3f %.3f | %.3f %.3f %.3f %.3f | %.1f %.1f %.1f %.3f]",
+                          (unsigned)param, m[0][0], m[0][1], m[0][2], m[0][3], m[1][0], m[1][1], m[1][2], m[1][3],
+                          m[2][0], m[2][1], m[2][2], m[2][3], m[3][0], m[3][1], m[3][2], m[3][3]);
+            }
+        }
+#endif
+    }
+#else
     mtx_from_port(m, (const int32_t *)(uintptr_t)addr);
 #ifndef PM3DS_HOST_TEST
     gfx_interp_matrix(g, (param & 0x04) != 0, m);   /* 60 fps: the in-between frame */
+#endif
 #endif
     if (pm3ds_gfx_dbg_vtx > 0) {
         pm3ds_log(PM3DS_LOG_INFO, "gfx: MTX p=%02X [%.3f %.3f %.3f %.3f | %.3f %.3f %.3f %.3f | %.3f %.3f %.3f %.3f | %.1f %.1f %.1f %.3f]",
@@ -583,7 +643,14 @@ static void handle_movemem(gfx_state_t *st, const gfx_cmd_t *g) {
     if (!addr_plausible(addr)) return;
     if (index == MV_VIEWPORT) {
         const int16_t *vp = (const int16_t *)(uintptr_t)addr;
+#ifdef PM3DS_HACK_RUNTIME
+        for (int i = 0; i < 4; i++) {
+            st->vp_scale[i] = (int16_t)__builtin_bswap16((uint16_t)vp[i]);
+            st->vp_trans[i] = (int16_t)__builtin_bswap16((uint16_t)vp[4 + i]);
+        }
+#else
         for (int i = 0; i < 4; i++) { st->vp_scale[i] = vp[i]; st->vp_trans[i] = vp[4 + i]; }
+#endif
     } else if (index == MV_LIGHT) {
         /* Light_t: u8 col[3], pad, u8 colc[3], pad, s8 dir[3], pad */
         const uint8_t *l = (const uint8_t *)(uintptr_t)addr;
@@ -898,6 +965,15 @@ int gfx_walk_dl(gfx_state_t *st, const void *dl) {
             break;
         }
         if (!addr_plausible((uint32_t)(uintptr_t)g)) break;
+        const gfx_cmd_t *gmem = g;      /* the command in memory; g is how it reads */
+#ifdef PM3DS_HACK_RUNTIME
+        gfx_cmd_t dec[3];              /* big-endian words; texrect reads two more */
+        for (int k = 0; k < 3; k++) {
+            dec[k].w0 = __builtin_bswap32(gmem[k].w0);
+            dec[k].w1 = __builtin_bswap32(gmem[k].w1);
+        }
+        g = dec;
+#endif
         uint32_t op = g->w0 >> 24;
         PROF_OP(op);
         PROF_PHASE(PH_WALK);
@@ -930,9 +1006,9 @@ int gfx_walk_dl(gfx_state_t *st, const void *dl) {
                 if (!addr_plausible(addr)) { log_bad_addr("G_DL", g->w1, g); break; }
                 if (bf(g->w0, 16, 8) == 0) {          /* G_DL_PUSH: call */
                     if (sp >= DL_STACK) break;
-                    stack[sp++] = g + 1;
+                    stack[sp++] = gmem + 1;
                 }
-                s_last_dl_from = g;
+                s_last_dl_from = gmem;
                 s_last_dl_to = addr;
                 g = (const gfx_cmd_t *)(uintptr_t)addr;
                 continue;
@@ -1065,7 +1141,7 @@ int gfx_walk_dl(gfx_state_t *st, const void *dl) {
             case OP_TEXRECTFLIP:
                 handle_texrect(st, g, op == OP_TEXRECTFLIP);
                 pm3ds_tstat_rects++;
-                g += 3;
+                g = gmem + 3;
                 continue;
             default: {
                 static uint32_t warned[8];
@@ -1085,7 +1161,7 @@ int gfx_walk_dl(gfx_state_t *st, const void *dl) {
                 break;
             }
         }
-        g++;
+        g = gmem + 1;
     }
     if (st->mv_sp != 0) {   /* harmless now (reset per list), but worth knowing */
         static int noted;

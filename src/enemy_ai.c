@@ -47,6 +47,15 @@ void spawn_drops(Enemy* enemy) {
     angleMult = 0;
     pickupDelay = 0;
 
+#ifdef PM3DS_DROP_DBG
+    {   // debug: which drop table a defeated enemy uses (GitHub #35)
+        extern EnemyDrops DefaultEnemyDrops;
+        extern void pm3ds_log(int, const char*, ...);
+        pm3ds_log(2, "DROPDBG npc %d table %s chance %d first item %d", (int)enemy->npcID,
+                  enemy->drops == &DefaultEnemyDrops ? "DEFAULT" : "own", (int)drops->itemDropChance,
+                  (int)drops->itemDrops[0]);
+    }
+#endif
     dropCount = drops->itemDropChance;
     if (drops->itemDropChance > rand_int(100)) {
         tempMax = 0;

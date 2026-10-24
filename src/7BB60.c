@@ -2,6 +2,16 @@
 #include "world/partners.h"
 #include "sprite/player.h"
 
+#ifdef _3DS
+// 3DS port: the N64 reads partnerActionState..actingPartner as one big-endian s32 and
+// masks the first and last bytes. Test the fields themselves so it works little-endian.
+#define PM3DS_HIDING_WITH_BOW(ps) \
+    ((ps)->partnerActionState == PARTNER_ACTION_USE && (ps)->actingPartner == PARTNER_BOW)
+#else
+#define PM3DS_HIDING_WITH_BOW(ps) \
+    ((*(s32*)(&(ps)->partnerActionState) & 0xFF0000FF) == 0x01000009)
+#endif
+
 CollisionStatus gCollisionStatus;
 f32 D_8010C928;
 f32 JumpedOnSwitchX;
@@ -348,7 +358,7 @@ void player_handle_floor_collider_type(s32 colliderID) {
                 set_action_state(ACTION_STATE_LAND);
                 break;
             case SURFACE_TYPE_LAVA:
-                if ((*(s32*)(&partnerStatus->partnerActionState) & 0xFF0000FF) != 0x01000009) {
+                if (!PM3DS_HIDING_WITH_BOW(partnerStatus)) {
                     if (playerStatus->blinkTimer == 0) {
                         if (playerStatus->actionState != ACTION_STATE_HIT_LAVA) {
                             playerStatus->hazardType = HAZARD_TYPE_LAVA;
@@ -360,7 +370,7 @@ void player_handle_floor_collider_type(s32 colliderID) {
                 }
                 break;
             case SURFACE_TYPE_SPIKES:
-                if ((*(s32*)(&partnerStatus->partnerActionState) & 0xFF0000FF) != 0x01000009) {
+                if (!PM3DS_HIDING_WITH_BOW(partnerStatus)) {
                     if (playerStatus->blinkTimer == 0) {
                         if (playerStatus->actionState != ACTION_STATE_HIT_FIRE) {
                             playerStatus->hazardType = HAZARD_TYPE_SPIKES;

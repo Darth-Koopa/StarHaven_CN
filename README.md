@@ -30,8 +30,8 @@ news about new versions and to report bugs. Bug reports here on GitHub are welco
    Scan QR Code** and scan the code on the right. It always installs the newest release.
    You can also download `StarHaven.cia` or `StarHaven.3dsx` from
    [Releases](../../releases/latest).
-2. Copy your ROM to the SD card as `/3ds/StarHaven/baserom.z64` (`.z64`, `.n64` and `.v64`
-   all work).
+2. Copy your ROM into `/3ds/StarHaven/` on the SD card. Any file name works, and so do
+   `.z64`, `.n64` and `.v64` dumps.
 3. Start Star Haven from the HOME menu.
 
 Full instructions: [the player readme](port/3ds/RELEASE_README.md).

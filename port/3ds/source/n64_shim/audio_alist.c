@@ -87,6 +87,34 @@ static inline int16_t clamp16(int32_t v) {
 #endif
 }
 static inline int16_t *dm16(uint32_t off) { return (int16_t *)(s_dmem + (off & 0xFFE)); }
+#ifdef PM3DS_HACK_RUNTIME
+/* The hack runtime: DRAM is the emulated RDRAM in the N64's byte order and
+ * addresses are physical. DMEM stays in native 16-bit order: buffers swap
+ * each halfword on the way in and out, so a byte (the ADPCM input stream)
+ * sits at its address ^ 1. Only what the CPU or the ROM wrote needs swapping
+ * when read directly: the codebook and the ADPCM loop state. */
+extern uint8_t *rdram;
+static inline uint8_t *dm8(uint32_t off) { return s_dmem + ((off ^ 1) & 0xFFF); }
+static inline void *host(uint32_t addr) { return rdram + (addr & 0x7FFFFF); }
+uint32_t pm3ds_alist_fix_addr(uint32_t a24) { return a24; }
+static void swap16(int16_t *p, uint32_t n) {
+    for (uint32_t i = 0; i < n; i++) p[i] = (int16_t)__builtin_bswap16((uint16_t)p[i]);
+}
+
+static void dmem_copy_in(uint32_t dmem, uint32_t addr, uint32_t count) {
+    if (dmem >= 0x1000 || addr == 0) return;
+    if (dmem + count > 0x1000) count = 0x1000 - dmem;
+    memcpy(s_dmem + dmem, host(addr), count);
+    swap16((int16_t *)(s_dmem + dmem), count / 2);
+}
+static void dmem_copy_out(uint32_t addr, uint32_t dmem, uint32_t count) {
+    if (dmem >= 0x1000 || addr == 0) return;
+    if (dmem + count > 0x1000) count = 0x1000 - dmem;
+    uint16_t *d = host(addr);
+    const uint16_t *src = (const uint16_t *)(s_dmem + dmem);
+    for (uint32_t i = 0; i < count / 2; i++) d[i] = __builtin_bswap16(src[i]);
+}
+#else
 static inline uint8_t *dm8(uint32_t off) { return s_dmem + (off & 0xFFF); }
 static inline void *host(uint32_t addr) { return (void *)(uintptr_t)addr; }
 
@@ -108,6 +136,7 @@ static void dmem_copy_out(uint32_t addr, uint32_t dmem, uint32_t count) {
     if (dmem + count > 0x1000) count = 0x1000 - dmem;
     memcpy(host(addr), s_dmem + dmem, count);
 }
+#endif
 
 /* (sum over j < n of x[j] * y[n-1-j]) — the in-frame prediction term */
 static int32_t rdot(int n, const int16_t *x, const int16_t *y) {
@@ -130,7 +159,12 @@ static void cmd_adpcm_ref(uint32_t w0, uint32_t w1) {
     count = (count + 31) & ~31u;
 
     if (flags & A_INIT) memset(last, 0, sizeof(last));
-    else memcpy(last, host((flags & A_LOOP) ? s_loop : state), sizeof(last));
+    else {
+        memcpy(last, host((flags & A_LOOP) ? s_loop : state), sizeof(last));
+#ifdef PM3DS_HACK_RUNTIME
+        if (flags & A_LOOP) swap16(last, 16);
+#endif
+    }
 
     for (int i = 0; i < 16; i++, out += 2) *dm16(out) = last[i];
 
@@ -213,7 +247,12 @@ static void cmd_adpcm(uint32_t w0, uint32_t w1) {
     count = (count + 31) & ~31u;
 
     if (flags & A_INIT) memset(last, 0, sizeof(last));
-    else memcpy(last, host((flags & A_LOOP) ? s_loop : state), sizeof(last));
+    else {
+        memcpy(last, host((flags & A_LOOP) ? s_loop : state), sizeof(last));
+#ifdef PM3DS_HACK_RUNTIME
+        if (flags & A_LOOP) swap16(last, 16);
+#endif
+    }
 
     for (int i = 0; i < 16; i++, out += 2) *dm16(out) = last[i];
 
@@ -601,6 +640,9 @@ void pm3ds_alist_run(const uint32_t *cmds, int nwords) {
                 uint32_t c = w0 & 0xFFFF;
                 if (c > sizeof(s_table)) c = sizeof(s_table);
                 if (w1) memcpy(s_table, host(w1), c);
+#ifdef PM3DS_HACK_RUNTIME
+                swap16(s_table, c / 2);
+#endif
                 break;
             }
             case 12: {                                                      /* MIXER */

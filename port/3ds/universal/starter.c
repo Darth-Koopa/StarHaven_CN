@@ -51,27 +51,26 @@ static char rom_region(const char *path) {
     return (h[0x3E] == 'P' || h[0x3E] == 'E') ? (char)h[0x3E] : 0;
 }
 
-static bool has_rom_ext(const char *name) {
-    size_t l = strlen(name);
-    if (l < 4 || name[l - 4] != '.') return false;
-    const char *e = name + l - 3;
-    return !strcasecmp(e, "z64") || !strcasecmp(e, "n64") || !strcasecmp(e, "v64");
-}
-
-/* which versions are on the card, as the copies look for them (pm3ds_rom.c) */
+/* which versions are on the card, as the copies look for them (pm3ds_rom.c):
+ * by header, in the folders of PM3DS_ROM_DIRS, whatever the files are called */
 static void find_versions(bool *eu, bool *us) {
-    DIR *d = opendir(PM3DS_SD_DIR);
-    if (!d) return;
-    struct dirent *e;
-    char path[300];
-    while ((e = readdir(d)) != NULL) {
-        if (!has_rom_ext(e->d_name)) continue;
-        snprintf(path, sizeof path, PM3DS_SD_DIR "/%s", e->d_name);
-        char r = rom_region(path);
-        *eu |= r == 'P';
-        *us |= r == 'E';
+    static const char *const dirs[] = { PM3DS_ROM_DIRS };
+    for (size_t i = 0; i < sizeof dirs / sizeof dirs[0]; i++) {
+        DIR *d = opendir(dirs[i]);
+        if (!d) continue;
+        size_t l = strlen(dirs[i]);
+        const char *sep = l && dirs[i][l - 1] == '/' ? "" : "/";
+        struct dirent *e;
+        char path[300];
+        while ((e = readdir(d)) != NULL) {
+            if (e->d_type == DT_DIR) continue;
+            snprintf(path, sizeof path, "%s%s%s", dirs[i], sep, e->d_name);
+            char r = rom_region(path);
+            *eu |= r == 'P';
+            *us |= r == 'E';
+        }
+        closedir(d);
     }
-    closedir(d);
 }
 
 /* ---- the top screen while asking: the boot screens' look, drawn by hand ---- */

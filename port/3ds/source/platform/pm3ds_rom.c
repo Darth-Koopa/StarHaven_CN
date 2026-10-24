@@ -2,10 +2,11 @@
  * pm3ds_rom.c — the player's ROM: find it, check it, load it, and put back
  * the game data that a release build leaves out of the program.
  *
- * The ROM goes on the SD card as /3ds/StarHaven/baserom.z64 (pm3ds_brand.h).
- * .n64 and .v64 dumps (other byte orders) are converted while loading, and
- * any *.z64/*.n64/*.v64 in that folder is tried too. Dev builds may still
- * carry it in romfs. The ROM is checked here once, then read on demand
+ * The ROM goes on the SD card in /3ds/StarHaven under any name; baserom.z64
+ * there is tried first, then every Paper Mario ROM in the folders of
+ * PM3DS_ROM_DIRS (pm3ds_brand.h), told apart by its header, not its name.
+ * .n64 and .v64 dumps (other byte orders) are converted while loading. Dev
+ * builds may still carry it in romfs. The ROM is checked here once, then read on demand
  * (n64_shim/rom_stream.c): it no longer has to fit in RAM. Only the game's data is kept (pm3ds_rom_layout.h: 48 MB
  * for Europe, whose 64 MB dumps repeat 0x2000000-0x3000000 after it; 40 MB
  * for the US), and a CRC32 of it in .z64 order must match the version the
@@ -34,7 +35,6 @@
 #include "pm3ds_rom_stream.h"
 
 #define ROM_DIR      PM3DS_SD_DIR
-#define ROM_SHOWN    PM3DS_SD_DIR_SHOWN "/baserom.z64"
 #define ROM_SIZE     ((uint32_t)PM3DS_ROM_DATA_SIZE)
 #define ROM_CRC32    ((uint32_t)PM3DS_ROM_CRC32)     /* 0: not checked (romdata.bin has the real one) */
 #define ROM_MAX_FILE 0x4000000u      /* larger dumps: the tail is a mirror or padding */
@@ -238,19 +238,41 @@ static bool has_rom_ext(const char *name) {
     return !strcmp(e, "z64") || !strcmp(e, "n64") || !strcmp(e, "v64");
 }
 
+/* the file starts with Paper Mario's header (any version, any byte order) */
+static bool is_paper_mario(const char *path) {
+    uint32_t h[0x40 / 4];
+    FILE *f = fopen(path, "rb");
+    if (!f) return false;
+    size_t n = fread(h, 1, sizeof h, f);
+    fclose(f);
+    int order = n == sizeof h ? detect_order((const uint8_t *)h) : ORDER_UNKNOWN;
+    if (order == ORDER_UNKNOWN) return false;
+    to_z64((uint8_t *)h, sizeof h, order);
+    return !memcmp((const uint8_t *)h + 0x3B, "NMQ", 3);
+}
+
 static bool find_rom(rom_status_t *st) {
     static const char *const fixed[] = {
         ROM_DIR "/baserom.z64", ROM_DIR "/baserom.n64", ROM_DIR "/baserom.v64",
     };
+    static const char *const dirs[] = { PM3DS_ROM_DIRS };
     for (size_t i = 0; i < sizeof fixed / sizeof fixed[0]; i++)
         if (load_candidate(fixed[i], st)) return true;
-    DIR *d = opendir(ROM_DIR);
-    if (d) {
+    for (size_t i = 0; i < sizeof dirs / sizeof dirs[0]; i++) {
+        DIR *d = opendir(dirs[i]);
+        if (!d) continue;
+        size_t l = strlen(dirs[i]);
+        const char *sep = l && dirs[i][l - 1] == '/' ? "" : "/";
         struct dirent *e;
-        char path[256];
+        char path[300];
         while ((e = readdir(d)) != NULL) {
-            if (!has_rom_ext(e->d_name) || !strncmp(e->d_name, "baserom.", 8)) continue;
-            snprintf(path, sizeof path, ROM_DIR "/%s", e->d_name);
+            if (e->d_type == DT_DIR) continue;
+            bool rom_name = has_rom_ext(e->d_name);
+            if (i == 0 && rom_name && !strncmp(e->d_name, "baserom.", 8)) continue;   /* tried above */
+            snprintf(path, sizeof path, "%s%s%s", dirs[i], sep, e->d_name);
+            /* a .z64/.n64/.v64 in our folder is checked whatever it holds, so a bad
+             * dump says why on screen; anything else only if it is Paper Mario */
+            if (!(i == 0 && rom_name) && !is_paper_mario(path)) continue;
             if (load_candidate(path, st)) {
                 closedir(d);
                 return true;
@@ -350,8 +372,8 @@ static void show_problem(const rom_status_t *st) {
         l_detail,
         "",
         "Put your own Paper Mario ROM",
-        "(USA or Europe) on the SD card as",
-        ROM_SHOWN,
+        "(USA or Europe) on the SD card",
+        "in " PM3DS_SD_DIR_SHOWN ", any file name",
         "(.z64, .n64 or .v64)",
         "",
         "Press START to exit",

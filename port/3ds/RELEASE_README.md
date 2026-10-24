@@ -26,8 +26,9 @@ your ROM from the SD card when it starts.
 
 1. Install `StarHaven.cia` with FBI (or put `StarHaven.3dsx` in `/3ds/` for the Homebrew
    Launcher).
-2. Copy your ROM to the SD card as `/3ds/StarHaven/baserom.z64`. Any file ending in
-   `.z64`, `.n64` or `.v64` in that folder works too.
+2. Copy your ROM into `/3ds/StarHaven/` on the SD card. The file name doesn't matter, and
+   `.z64`, `.n64` and `.v64` dumps all work. Star Haven also finds it in `/roms/n64/`,
+   `/roms/`, `/n64/`, `/3ds/` or the top of the SD card.
 3. Start Star Haven. Loading the ROM takes a few seconds.
 
 If the ROM is missing, unreadable or a version Star Haven doesn't know, both screens say
@@ -149,7 +150,7 @@ back. Paperboat is the US version, so this goes with the US ROM.
 
 | File | |
 |---|---|
-| `baserom.z64` | your ROM |
+| your ROM | any name, e.g. `Paper Mario (USA).z64` |
 | `save.fla` | your save files (`save_us.fla` with the US version) |
 | `save.fla.bak` | your saves from before an N64 save import |
 | `import.fla`, `import.srm` | an N64 save to import at the next start (see above) |
