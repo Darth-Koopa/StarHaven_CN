@@ -19,6 +19,9 @@ on the 3DS; nothing is emulated.
 
 **Star Haven contains no game data.** You need your own Paper Mario ROM (EU or US).
 
+**Join the Star Haven 3DS Discord: [discord.gg/zHq9tH49Z](https://discord.gg/zHq9tH49Z)** for help,
+news about new versions and to report bugs. Bug reports here on GitHub are welcome too.
+
 ## Install
 
 <img src="port/3ds/docs/screenshots/install-qr.png" align="right" width="180" alt="QR code for the latest StarHaven.cia">

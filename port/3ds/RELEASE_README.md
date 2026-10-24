@@ -157,6 +157,13 @@ back. Paperboat is the US version, so this goes with the US ROM.
 | `spoiler_<seed>.txt` | randomizer spoiler logs |
 | `log.txt` | warnings, useful in bug reports |
 
+## Help and bug reports
+
+Join the Star Haven 3DS Discord: https://discord.gg/zHq9tH49Z
+Ask for help there, hear about new versions first, or report a bug. Bug reports on GitHub
+(https://github.com/SecondaryLifer/StarHaven/issues) are welcome too. A photo of the crash
+screen and your `log.txt` help a lot.
+
 ## Known issues
 
 - A few N64 graphics effects are approximations.
