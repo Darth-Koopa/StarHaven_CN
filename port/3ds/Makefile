@@ -404,6 +404,21 @@ clean:
 else
 #---------------------------------------------------------------------------------
 
+# Chinese UI strings are generated from the reviewable UTF-8 CSV. Make the
+# generated header a real compile dependency so local builds regenerate it when
+# either the translations or CHARSET_IQUE mapping changes (CI also validates it
+# explicitly before cross-compiling).
+ifeq ($(PM3DS_VERSION),ique)
+UI_TRANSLATION_HEADER := $(TOPDIR)/gen/ui_translations_zh_CN.h
+$(UI_TRANSLATION_HEADER): $(TOPDIR)/localization/ui_translations_zh_CN.csv \
+                          $(TOPDIR)/tools/generate_bottom_screen_translations.py \
+                          $(TOPDIR)/../../tools/splat_ext/pm_msg.py \
+                          $(TOPDIR)/../../include/enums.h
+	python3 $(TOPDIR)/tools/generate_bottom_screen_translations.py \
+		--csv $(TOPDIR)/localization/ui_translations_zh_CN.csv --out $@ --strict
+$(OFILES_SOURCES): $(UI_TRANSLATION_HEADER)
+endif
+
 DEPENDS := $(OFILES:.o=.d)
 
 # Milestone-3 romfs embedding. The default $(OUTPUT).3dsx recipe lives

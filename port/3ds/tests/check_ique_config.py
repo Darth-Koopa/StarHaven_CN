@@ -207,12 +207,15 @@ if "check_ique_texture_wiring.py" not in workflow or "test_pm3ds_addr" not in wo
 if not isinstance(workflow_doc, dict) or not isinstance(workflow_doc.get("jobs"), dict):
     fail("GitHub Actions workflow YAML does not define jobs")
 for token in ("Install makerom for CIA packaging", "StarHaven_iQue.cia",
-              "StarHaven_iQue_3DS.zip", "dist/StarHaven_iQue_3DS.zip"):
+              "dist/StarHaven_iQue.3dsx", "dist/README.txt"):
     if token not in workflow:
-        fail(f"workflow is missing dual-format release packaging: {token}")
+        fail(f"workflow is missing direct .3dsx/.cia release artifacts: {token}")
+if "StarHaven_iQue_3DS.zip" in workflow or "zip -9" in workflow:
+    fail("workflow must not create a release ZIP inside the GitHub artifact")
 artifact_step = workflow.split("      - name: Upload iQue 3DS packages (ROM excluded)", 1)[-1]
-if "path: dist/StarHaven_iQue_3DS.zip" not in artifact_step:
-    fail("only the release ZIP should be uploaded as the build artifact")
+for path in ("dist/StarHaven_iQue.3dsx", "dist/StarHaven_iQue.cia", "dist/README.txt"):
+    if path not in artifact_step:
+        fail(f"release artifact is missing {path}")
 if "romdata_ique.bin" in artifact_step:
     fail("the ROM-data mapping table must not be uploaded as a loose artifact")
 dockerfile = (ROOT / "port/3ds/Dockerfile").read_text()
@@ -223,7 +226,7 @@ if "dkp-pacman -Syyu" in dockerfile or "dkp-pacman -S --" in dockerfile:
 for token in ("$DEVKITARM/3ds_rules", "3dsxtool", "libctru/include/3ds.h"):
     if token not in dockerfile:
         fail(f"Dockerfile toolchain preflight missing: {token}")
-for token in ("docker build --pull --progress=plain", "Validate the release package (no ROM, no loose romdata table)",
+for token in ("docker build --pull --progress=plain", "Validate release files (no loose ROM or romdata table)",
               "romdata_ique.bin", "actions/upload-artifact@v4"):
     if token not in workflow:
         fail(f"workflow is missing CI preflight/package validation: {token}")

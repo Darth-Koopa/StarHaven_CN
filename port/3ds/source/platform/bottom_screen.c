@@ -37,6 +37,10 @@
 #include "pm3ds_save_import.h"
 #include "pm3ds_update.h"
 
+#if VERSION_IQUE
+#include "../../gen/ui_translations_zh_CN.h"
+#endif
+
 extern void pm3ds_set_view_mode(int mode);   /* 0 Original, 1 Fill, 2 Wide */
 extern int pm3ds_view_mode(void);
 static const char *const s_view_names[3] = { "Original", "Fill", "Wide" };
@@ -108,6 +112,17 @@ static u8 s_glyph_w[1024];
 static int s_glyphs;
 static C3D_Tex s_small;      /* libctru's 8x8 console font: crisp small text */
 static bool s_small_ok;
+
+/* The native font is only ready after the iQue ROM data has been loaded. Keep
+ * early boot/error screens readable in ASCII until that font becomes usable. */
+static const char *ui_text(const char *source) {
+#if VERSION_IQUE
+    if (!source || !s_font_ok) return source;
+    return pm3ds_ui_translate(source);
+#else
+    return source;
+#endif
+}
 
 /* ---- state --------------------------------------------------------------- */
 enum { TAB_STATS, TAB_MAP, TAB_PARTY, TAB_LOG, TAB_FOUND, TAB_DEBUG, TAB_OPTIONS, TAB_CONTROLS };
@@ -488,7 +503,28 @@ static const char *font_text_unit(const char *s, int *glyph, int *width, int *sp
     return s + 1;
 }
 
+/* Return the native iQue glyph for a private-use marker, or -1 for ordinary
+ * ASCII. These markers are generated from CHARSET_IQUE at build time. */
+static int ui_private_glyph(const char *s) {
+#if VERSION_IQUE
+    const unsigned char *p = (const unsigned char *)s;
+    if (p[0] == 0xEE && p[1] && p[2] && (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80) {
+        unsigned int cp = ((unsigned int)(p[0] & 0x0F) << 12) |
+                          ((unsigned int)(p[1] & 0x3F) << 6) |
+                          ((unsigned int)(p[2] & 0x3F));
+        if (cp >= PM3DS_CJK_PRIVATE_BASE && cp < PM3DS_CJK_PRIVATE_BASE + PM3DS_IQUE_GLYPH_COUNT)
+            return (int)(cp - PM3DS_CJK_PRIVATE_BASE);
+    }
+#endif
+    return -1;
+}
+
+static const char *ui_char_next(const char *s) {
+    return ui_private_glyph(s) >= 0 ? s + 3 : s + 1;
+}
+
 static float text_width(const char *s, float scale) {
+    s = ui_text(s);
     float w = 0;
     while (*s) {
         int glyph, unit_width, is_space;
@@ -501,6 +537,7 @@ static float text_width(const char *s, float scale) {
 /* white = 1 picks the white palette; c tints the result */
 static float text(float x, float y, const char *s, float scale, int white, u32 c) {
     if (!s_font_ok) return x;
+    s = ui_text(s);
     while (*s) {
         int glyph, unit_width, is_space;
         s = font_text_unit(s, &glyph, &unit_width, &is_space);
@@ -523,15 +560,25 @@ static void text_center(float cx, float y, const char *s, float scale, int white
 
 /* 8x8 console-font text, 1:1; wraps at max_cols, returns the next line's y */
 static float small_text(float x, float y, const char *str, int max_cols, u32 c) {
-    if (!s_small_ok) return y + 9;
+    str = ui_text(str);
+    if (!s_small_ok && !s_font_ok) return y + 9;
     int col = 0;
     float x0 = x;
-    for (; *str; str++) {
-        unsigned char ch = (unsigned char)*str;
-        if (col >= max_cols) { col = 0; x = x0 + 16; y += 9; }   /* continuation lines indented */
-        if (ch > 32 && ch < 128) {
-            float gx = (ch % 16) * 8.0f, gy = (ch / 16) * 8.0f;
-            quad2(&s_small, x, y, x + 8, y + 8, gx / 128.0f, gy / 64.0f, (gx + 8) / 128.0f, (gy + 8) / 64.0f, c, c);
+    while (str && *str) {
+        if (col >= max_cols) { col = 0; x = x0 + 16; y += 9; } /* continuation lines indented */
+        int glyph = ui_private_glyph(str);
+        if (glyph >= 0) {
+            /* Fit this 16x16 iQue glyph into one console-font cell. */
+            char glyph_text[4] = { str[0], str[1], str[2], '\0' };
+            text(x, y, glyph_text, 0.5f, 0, c);
+            str += 3;
+        } else {
+            unsigned char ch = (unsigned char)*str++;
+            if (s_small_ok && ch > 32 && ch < 128) {
+                float gx = (ch % 16) * 8.0f, gy = (ch / 16) * 8.0f;
+                quad2(&s_small, x, y, x + 8, y + 8, gx / 128.0f, gy / 64.0f,
+                      (gx + 8) / 128.0f, (gy + 8) / 64.0f, c, c);
+            }
         }
         x += 8; col++;
     }
@@ -810,7 +857,7 @@ static void draw_area_card(float x0, float y0, float x1, float y1) {
     bar(x0 + 8, y0 + 20, x1 - x0 - 16, 6, a->found, a->total, COL_GOLD);
     if (f->rando) {
         extern unsigned int pm3ds_rando_seed(void);
-        snprintf(buf, sizeof buf, "Randomizer seed %08X", pm3ds_rando_seed());
+        snprintf(buf, sizeof buf, ui_text("Randomizer seed %08X"), pm3ds_rando_seed());
         text(x0 + 8, y0 + 33, buf, 0.8f, 0, COL_WHITE);
         text(x0 + 8, y0 + 51, "The spots hold shuffled items:", 0.72f, 0, COL_SUB);
         text(x0 + 8, y0 + 64, "only the totals count.", 0.72f, 0, COL_SUB);
@@ -831,7 +878,7 @@ static void draw_area_card(float x0, float y0, float x1, float y1) {
     }
     if (f->room_total == 0) snprintf(buf, sizeof buf, "Nothing to find in this room");
     else if (f->room_found == f->room_total) snprintf(buf, sizeof buf, "This room: all found");
-    else snprintf(buf, sizeof buf, "This room: %d of %d still here", f->room_total - f->room_found, f->room_total);
+    else snprintf(buf, sizeof buf, ui_text("This room: %d of %d still here"), f->room_total - f->room_found, f->room_total);
     text_center((x0 + x1) / 2, y1 - 16, buf, 0.75f, 0, COL_SUB);
 }
 
@@ -924,7 +971,7 @@ static void draw_map(void) {
         const pm3ds_tracker_area_t *a = &f->area[f->here];
         float y = vy0 + 21;
         if (f->rando) {
-            snprintf(buf, sizeof buf, "Checked %d/%d", a->found, a->total);
+            snprintf(buf, sizeof buf, ui_text("Checked %d/%d"), a->found, a->total);
             text(vx0 + 10, y, buf, 0.7f, 1, COL_WHITE);
         } else {
             image(UI_IMG_STAR_PIECE, vx0 + 9, y, 0.75f, COL_WHITE);
@@ -963,7 +1010,7 @@ static void draw_party(void) {
         "Goombario", "Kooper", "Bombette", "Parakarry", "Bow", "Watt", "Sushie", "Lakilester",
     };
     char sub[40];
-    if (h->partner) snprintf(sub, sizeof sub, "%s is with you", h->partner_name);
+    if (h->partner) snprintf(sub, sizeof sub, ui_text("%s is with you"), ui_text(h->partner_name));
     else snprintf(sub, sizeof sub, "No partner yet");
     page_title("Party", sub);
     for (int i = 0; i < PM3DS_HUD_PARTNERS; i++) {
@@ -1012,6 +1059,7 @@ static void draw_debug(void) {
 static pm3ds_tattle_list_t s_log;
 static int s_log_page, s_log_open = -1, s_log_text_page;   /* s_log_open: s_log index shown in full */
 static char s_log_text[2048];
+static char s_log_display[4096]; /* includes translated inline stat labels */
 static int s_log_hp, s_log_atk, s_log_def;                 /* from the open tattle, -1 if it has none */
 #define LOG_ROWS 7
 #define LOG_PER_PAGE (LOG_ROWS * 2)
@@ -1062,9 +1110,50 @@ static void log_open(int i) {
     s_log_hp = tattle_stat(s_log_text, "Max HP:");
     s_log_atk = tattle_stat(s_log_text, "Attack Power:");
     s_log_def = tattle_stat(s_log_text, "Defense Power:");
+    build_tattle_display_text();
 }
 
 static bool log_has_stats(void) { return s_log_hp >= 0 && s_log_atk >= 0 && s_log_def >= 0; }
+
+/* Translate only the three ASCII labels that are parsed from a Tattle body.
+ * Leave the original buffer untouched because tattle_stat() needs its English
+ * keys to extract numeric values. Other game text already carries native
+ * iQue glyph markers and is copied as-is. */
+static void build_tattle_display_text(void) {
+    static const char *const keys[] = { "Max HP:", "Attack Power:", "Defense Power:" };
+    char *out = s_log_display;
+    size_t left = sizeof(s_log_display) - 1;
+    const char *in = s_log_text;
+    while (*in && left) {
+        const char *replacement = NULL;
+        size_t matched = 0;
+        for (size_t k = 0; k < sizeof(keys) / sizeof(keys[0]); k++) {
+            size_t n = strlen(keys[k]);
+            if (strncmp(in, keys[k], n) == 0) {
+                replacement = ui_text(keys[k]);
+                matched = n;
+                break;
+            }
+        }
+        if (replacement) {
+            size_t n = strlen(replacement);
+            if (n > left) n = left;
+            memcpy(out, replacement, n);
+            out += n;
+            left -= n;
+            in += matched;
+        } else {
+            const char *next = ui_char_next(in);
+            size_t n = (size_t)(next - in);
+            if (n > left) break;
+            memcpy(out, in, n);
+            out += n;
+            left -= n;
+            in = next;
+        }
+    }
+    *out = '\0';
+}
 
 static void log_entry_rect(int slot, float *x0, float *y0, float *x1, float *y1) {
     *x0 = CX0 + (slot / LOG_ROWS) * 126;
@@ -1079,7 +1168,7 @@ static void draw_log(void) {
         static short starts[48], lens[48];
         float ty0 = log_has_stats() ? 66 : 38;
         int per = (int)((LOG_TEXT_Y1 - ty0 - 8) / LOG_LINE_H);
-        int lines = wrap_text(s_log_text, LOG_TEXT_SCALE, CX1 - CX0 - 16, starts, lens, 48);
+        int lines = wrap_text(s_log_display, LOG_TEXT_SCALE, CX1 - CX0 - 16, starts, lens, 48);
         int pages = pages_of(lines, per);
         if (s_log_text_page >= pages) s_log_text_page = 0;
         chip(CX0, HEAD_Y - 1, CX0 + 50, HEAD_Y + 19, "Back", COL_SEL, 0.85f);
@@ -1108,7 +1197,7 @@ static void draw_log(void) {
             if (k >= lines) break;
             char line[96];
             int n = lens[k] < (int)sizeof line - 1 ? lens[k] : (int)sizeof line - 1;
-            memcpy(line, s_log_text + starts[k], n);
+            memcpy(line, s_log_display + starts[k], n);
             line[n] = '\0';
             text(CX0 + 8, ty0 + 6 + l * LOG_LINE_H, line, LOG_TEXT_SCALE, 0, COL_WHITE);
         }
@@ -1117,7 +1206,7 @@ static void draw_log(void) {
     s_log_open = -1;
     int pages = pages_of(s_log.known, LOG_PER_PAGE);
     if (s_log_page >= pages) s_log_page = 0;
-    snprintf(buf, sizeof buf, "%d of %d enemies", s_log.known, s_log.total);
+    snprintf(buf, sizeof buf, ui_text("%d of %d enemies"), s_log.known, s_log.total);
     page_title("Tattle Log", buf);
     pager(s_log_page, pages);
     bar(CX0 + 2, BODY_Y, CX1 - CX0 - 2, 5, s_log.known, s_log.total, COL_GOLD);
@@ -1166,7 +1255,7 @@ static void draw_found(void) {
     char buf[48];
     int pages = pages_of(f->count, FOUND_ROWS);
     if (s_found_page >= pages) s_found_page = 0;
-    snprintf(buf, sizeof buf, "%d of %d item spots", f->found, f->total);
+    snprintf(buf, sizeof buf, ui_text("%d of %d item spots"), f->found, f->total);
     page_title("Found", buf);
     pager(s_found_page, pages);
     bar(CX0 + 2, BODY_Y, CX1 - CX0 - 2, 5, f->found, f->total, COL_GOLD);
@@ -1510,7 +1599,7 @@ static void draw_targets(void) {
         float right = x1 - 5;
         if (n <= 2 && e->enemy) {   /* room for the HP: known once tattled */
             bool known = e->cost_kind == PM3DS_TM_COST_HP;
-            if (known) snprintf(buf, sizeof buf, "HP %d/%d", e->cost, e->max_hp);
+            if (known) snprintf(buf, sizeof buf, ui_text("HP %d/%d"), e->cost, e->max_hp);
             else strcpy(buf, "HP ?");
             text_right(right, y0 + 9, buf, 0.62f, known ? RGBA(200, 40, 40, 255) : COL_SUB);
             right -= 52;
@@ -1590,10 +1679,10 @@ static void draw_tmenu(void) {
         float right = x1 - 6;
         buf[0] = 0;
         switch (e->cost_kind) {
-            case PM3DS_TM_COST_FP: snprintf(buf, sizeof buf, "%d FP", e->cost); break;
-            case PM3DS_TM_COST_SP: snprintf(buf, sizeof buf, "%d SP", e->cost); break;
+            case PM3DS_TM_COST_FP: snprintf(buf, sizeof buf, ui_text("%d FP"), e->cost); break;
+            case PM3DS_TM_COST_SP: snprintf(buf, sizeof buf, ui_text("%d SP"), e->cost); break;
             case PM3DS_TM_COST_COINS: snprintf(buf, sizeof buf, "%d c", e->cost); break;
-            case PM3DS_TM_COST_STAR_PIECES: snprintf(buf, sizeof buf, "%d sp", e->cost); break;
+            case PM3DS_TM_COST_STAR_PIECES: snprintf(buf, sizeof buf, ui_text("%d sp"), e->cost); break;
             case PM3DS_TM_COST_HP: snprintf(buf, sizeof buf, "%d/%d", e->cost, e->max_hp); break;
         }
         u32 tc = e->enabled ? COL_WHITE : RGBA(255, 255, 255, 120);
@@ -1935,18 +2024,25 @@ static void ng_touch(int px, int py) {
 
 /* console-font text word-wrapped to 36 columns, each line centred on cx */
 static void ng_help(float cx, float y, const char *str) {
-    char line[40];
-    while (*str) {
-        int n = (int)strlen(str), cut = n;
-        if (n > 36) {
-            for (cut = 36; cut > 0 && str[cut] != ' '; cut--) {}
-            if (cut == 0) cut = 36;
+    char line[112]; /* 36 three-byte private-use glyphs + NUL */
+    str = ui_text(str);
+    while (str && *str) {
+        int units = 0;
+        const char *p = str, *last_space = NULL;
+        while (*p && units < 36) {
+            if (*p == ' ') last_space = p;
+            p = ui_char_next(p);
+            units++;
         }
-        memcpy(line, str, cut);
-        line[cut] = 0;
+        const char *cut_ptr = p;
+        if (*p && last_space && last_space > str) cut_ptr = last_space;
+        size_t bytes = (size_t)(cut_ptr - str);
+        if (bytes >= sizeof line) bytes = sizeof line - 1;
+        memcpy(line, str, bytes);
+        line[bytes] = '\0';
         small_text_center(cx, y, line, 1.0f, COL_PANEL_EDGE);
         y += 10;
-        str += cut;
+        str = cut_ptr;
         while (*str == ' ') str++;
     }
 }
@@ -2034,14 +2130,15 @@ static void draw_update_notice(void) {
     fill(0, 0, 320, 240, RGBA(40, 20, 0, 150));
     panel(10, 28, 310, 200, COL_PANEL);
     text_center(160, 38, "Update available", 1.2f, 0, COL_WHITE);
-    snprintf(line, sizeof line, PM3DS_APP_NAME " v%d.%d.%d is out.", v / 10000, v / 100 % 100, v % 100);
+    snprintf(line, sizeof line, ui_text(" v%d.%d.%d is out."), v / 10000, v / 100 % 100, v % 100);
     small_text_center(160, 70, line, 1.0f, COL_PANEL_EDGE);
-    small_text_center(160, 82, "You have v" PM3DS_VERSION_STR ".", 1.0f, COL_PANEL_EDGE);
+    snprintf(line, sizeof line, "%s%s", ui_text("You have v"), PM3DS_VERSION_STR);
+    small_text_center(160, 82, line, 1.0f, COL_PANEL_EDGE);
     small_text_center(160, 104, "Get it on GitHub:", 1.0f, COL_PANEL_EDGE);
     small_text_center(160, 116, "github.com/" PM3DS_GITHUB_REPO, 1.0f, COL_PANEL_EDGE);
     small_text_center(160, 136, "FBI can install it from the", 1.0f, COL_PANEL_EDGE);
     small_text_center(160, 148, "QR code on that page.", 1.0f, COL_PANEL_EDGE);
-    snprintf(skip, sizeof skip, "Skip v%d.%d.%d", v / 10000, v / 100 % 100, v % 100);
+    snprintf(skip, sizeof skip, ui_text("Skip v%d.%d.%d"), v / 10000, v / 100 % 100, v % 100);
     ng_button(UPD_SKIP_X0, UPD_BTN_Y0, UPD_SKIP_X1, UPD_BTN_Y1, skip, false);
     ng_button(UPD_OK_X0, UPD_BTN_Y0, UPD_OK_X1, UPD_BTN_Y1, "OK", false);
 }
@@ -2059,7 +2156,12 @@ static void draw_import_notice(void) {
     panel(10, 28, 310, 200, COL_PANEL);
     if (n > 0) {
         text_center(160, 38, "Save imported", 1.2f, 0, COL_WHITE);
-        snprintf(line, sizeof line, "%d save file%s converted from your", n, n == 1 ? "" : "s");
+        if (s_font_ok) {
+            /* The Chinese translation has no plural suffix placeholder. */
+            snprintf(line, sizeof line, ui_text("%d save file%s converted from your"), n);
+        } else {
+            snprintf(line, sizeof line, "%d save file%s converted from your", n, n == 1 ? "" : "s");
+        }
         small_text_center(160, 74, line, 1.0f, COL_PANEL_EDGE);
         small_text_center(160, 86, "N64 save (now named import.*.done).", 1.0f, COL_PANEL_EDGE);
         if (pm3ds_save_import_backup()[0]) {
@@ -2401,15 +2503,27 @@ void pm3ds_bottom_screen_render(C3D_RenderTarget *top, C3D_RenderTarget *top_rig
 
 /* 8x8 console-font text at an integer scale, centred on cx */
 static void small_text_center(float cx, float y, const char *str, float scale, u32 c) {
-    if (!s_small_ok) return;
-    float x = cx - strlen(str) * 4.0f * scale;
-    for (; *str; str++, x += 8 * scale) {
-        unsigned char ch = (unsigned char)*str;
-        if (ch > 32 && ch < 128) {
-            float gx = (ch % 16) * 8.0f, gy = (ch / 16) * 8.0f;
-            quad2(&s_small, x, y, x + 8 * scale, y + 8 * scale,
-                  gx / 128.0f, gy / 64.0f, (gx + 8) / 128.0f, (gy + 8) / 64.0f, c, c);
+    str = ui_text(str);
+    if (!str || (!s_small_ok && !s_font_ok)) return;
+    int units = 0;
+    for (const char *p = str; *p; p = ui_char_next(p)) units++;
+    float x = cx - units * 4.0f * scale;
+    while (*str) {
+        int glyph = ui_private_glyph(str);
+        if (glyph >= 0) {
+            char glyph_text[4] = { str[0], str[1], str[2], '\0' };
+            text(x, y, glyph_text, 0.5f * scale, 0, c);
+            str += 3;
+        } else {
+            unsigned char ch = (unsigned char)*str++;
+            if (s_small_ok && ch > 32 && ch < 128) {
+                float gx = (ch % 16) * 8.0f, gy = (ch / 16) * 8.0f;
+                quad2(&s_small, x, y, x + 8 * scale, y + 8 * scale,
+                      gx / 128.0f, gy / 64.0f, (gx + 8) / 128.0f,
+                      (gy + 8) / 64.0f, c, c);
+            }
         }
+        x += 8 * scale;
     }
 }
 

@@ -22,6 +22,9 @@ jobs:
       - name: Check Python and shell syntax
         run: |
           python -m py_compile port/3ds/tools/*.py port/3ds/tests/*.py tools/splat_ext/*.py
+          python3 port/3ds/tools/generate_bottom_screen_translations.py \
+            --csv port/3ds/localization/ui_translations_zh_CN.csv \
+            --out "$RUNNER_TEMP/ui_translations_zh_CN.h" --strict
           bash -n port/3ds/tools/package.sh
           bash -n port/3ds/tools/gen_version_headers.sh
           bash -n install_compilers.sh
@@ -29,6 +32,9 @@ jobs:
         run: |
           python port/3ds/tests/check_ique_config.py
           python port/3ds/tests/check_ique_texture_wiring.py
+          python3 port/3ds/tools/check_bottom_screen_translation_glyphs.py \
+            --report "$RUNNER_TEMP/ui_translation_glyph_audit.md"
+          python3 port/3ds/tests/test_ui_translation_generator.py
           make -C port/3ds/tests test_pm3ds_addr
           port/3ds/tests/test_pm3ds_addr
           rm -f port/3ds/tests/test_pm3ds_addr
@@ -50,6 +56,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      - name: Validate translations and generate native glyph strings
+        run: |
+          python3 port/3ds/tools/generate_bottom_screen_translations.py \
+            --csv port/3ds/localization/ui_translations_zh_CN.csv \
+            --out port/3ds/gen/ui_translations_zh_CN.h --strict
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -200,7 +212,7 @@ jobs:
           "$RUNNER_TEMP/bin/makerom" -h > "$RUNNER_TEMP/makerom-help.txt" 2>&1 || true
           test -s "$RUNNER_TEMP/bin/makerom"
 
-      - name: Build .3dsx and .cia, then create the release ZIP
+      - name: Build .3dsx and .cia
         shell: bash
         run: |
           set -euo pipefail
@@ -208,27 +220,25 @@ jobs:
             bash port/3ds/tools/package.sh port/3ds/PaperMario3DS_ique.elf dist 3dsx cia
           test -s dist/StarHaven_iQue.3dsx
           test -s dist/StarHaven_iQue.cia
-          mkdir -p dist/release
-          cp dist/StarHaven_iQue.3dsx dist/StarHaven_iQue.cia dist/release/
-          cp port/3ds/IQUE_RELEASE_README.md dist/release/README.txt
-          (cd dist/release && zip -9 -q ../StarHaven_iQue_3DS.zip StarHaven_iQue.3dsx StarHaven_iQue.cia README.txt)
+          cp port/3ds/IQUE_RELEASE_README.md dist/README.txt
 
-      - name: Validate the release package (no ROM, no loose romdata table)
+      - name: Validate release files (no loose ROM or romdata table)
         shell: bash
         run: |
           set -euo pipefail
           test -s dist/StarHaven_iQue.3dsx
           test -s dist/StarHaven_iQue.cia
+          test -s dist/README.txt
           test -s dist/romfs/romdata_ique.bin
           python3 - <<'PY'
           import struct
-          import zipfile
           from pathlib import Path
 
           app = Path("dist/StarHaven_iQue.3dsx").read_bytes()[:4]
           if app != b"3DSX":
               raise SystemExit(f"invalid .3dsx magic: {app!r}")
-          romdata = Path("dist/romfs/romdata_ique.bin").read_bytes()
+          romdata_path = Path("dist/romfs/romdata_ique.bin")
+          romdata = romdata_path.read_bytes()
           if len(romdata) < 64:
               raise SystemExit("romdata_ique.bin is shorter than its 64-byte header")
           magic, version, rom_size, rom_crc, anchor, n_blobs, n_ptrs, data_crc, name = struct.unpack(
@@ -247,29 +257,34 @@ jobs:
               raise SystemExit(f"unexpected ROM label {name!r}")
           if Path("dist/StarHaven_iQue.cia").stat().st_size < 1024 * 1024:
               raise SystemExit("CIA is unexpectedly small; packaging likely failed")
-          rom_exts = {".z64", ".n64", ".v64"}
-          rom_files = [p for p in Path("dist/release").rglob("*") if p.is_file() and p.suffix.lower() in rom_exts]
-          if rom_files:
-              raise SystemExit(f"refusing to package ROM images: {rom_files}")
-          with zipfile.ZipFile("dist/StarHaven_iQue_3DS.zip") as zf:
-              names = sorted(zf.namelist())
-              expected_names = ["README.txt", "StarHaven_iQue.3dsx", "StarHaven_iQue.cia"]
-              if names != expected_names:
-                  raise SystemExit(f"unexpected release ZIP contents: {names}")
-              bad = [n for n in names if "romdata_ique.bin" in n.lower() or n.lower().endswith((".z64", ".n64", ".v64"))]
-              if bad:
-                  raise SystemExit(f"release ZIP contains forbidden loose file(s): {bad}")
+
+          # The upload step below explicitly names only these three files. Keep
+          # romdata_ique.bin inside packaged RomFS; never upload it separately.
+          release_files = [
+              Path("dist/StarHaven_iQue.3dsx"),
+              Path("dist/StarHaven_iQue.cia"),
+              Path("dist/README.txt"),
+          ]
+          expected_names = {"StarHaven_iQue.3dsx", "StarHaven_iQue.cia", "README.txt"}
+          if {p.name for p in release_files} != expected_names or any(not p.is_file() for p in release_files):
+              raise SystemExit("unexpected release file list")
+          forbidden = [p.name for p in release_files if "romdata_ique.bin" in p.name.lower()
+                       or p.suffix.lower() in {".z64", ".n64", ".v64", ".zip"}]
+          if forbidden:
+              raise SystemExit(f"release list contains forbidden files: {forbidden}")
           print(
-              f"release ZIP OK: .3dsx and .cia packaged; mapping metadata checked "
-              f"({n_blobs} blobs, {n_ptrs} relocations); no ROM or loose romdata file"
+              f"release files OK: .3dsx, .cia, README; iQue mapping metadata checked "
+              f"({n_blobs} blobs, {n_ptrs} relocations); no standalone ROM or romdata table"
           )
           PY
-          unzip -t dist/StarHaven_iQue_3DS.zip
 
       - name: Upload iQue 3DS packages (ROM excluded)
         uses: actions/upload-artifact@v4
         with:
           name: StarHaven-iQue-3DS
-          path: dist/StarHaven_iQue_3DS.zip
+          path: |
+            dist/StarHaven_iQue.3dsx
+            dist/StarHaven_iQue.cia
+            dist/README.txt
           if-no-files-found: error
           retention-days: 14
