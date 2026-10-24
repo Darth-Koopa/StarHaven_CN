@@ -382,10 +382,14 @@ endif
 .PHONY: all clean
 
 #---------------------------------------------------------------------------------
+# Name the build target explicitly. The iQue translation-header rule is parsed
+# before the devkitPro .3dsx rules in the recursive make context; without an
+# explicit target it can become make's implicit default and skip compilation.
 all: $(BUILD) $(DEPSDIR)
-	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
+	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile $(OUTPUT).3dsx
+	@test -s $(OUTPUT).elf || { echo "FAIL: expected linked ELF missing after .3dsx build: $(OUTPUT).elf" >&2; exit 2; }
 	@echo "checking undefined symbols..."
-	@python3 $(TOPDIR)/tools/check_undef_syms.py $(TARGET).elf
+	@python3 $(TOPDIR)/tools/check_undef_syms.py $(OUTPUT).elf
 
 $(BUILD):
 	@mkdir -p $@
@@ -403,6 +407,12 @@ clean:
 #---------------------------------------------------------------------------------
 else
 #---------------------------------------------------------------------------------
+
+# The recursive make runs in build_ique/build_us/build. Translation-generation
+# rules appear before the standard devkitPro output rules below, so pin the
+# default target to the executable even when make is invoked without an explicit
+# goal. The outer `all` recipe also names this target explicitly as a second guard.
+.DEFAULT_GOAL := $(OUTPUT).3dsx
 
 # Chinese UI strings are generated from the reviewable UTF-8 CSV. Make the
 # generated header a real compile dependency so local builds regenerate it when

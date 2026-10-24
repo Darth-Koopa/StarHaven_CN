@@ -36,6 +36,7 @@ jobs:
             --report "$RUNNER_TEMP/ui_translation_glyph_audit.md"
           python3 port/3ds/tests/test_ui_translation_generator.py
           python3 port/3ds/tests/test_check_undef_syms.py
+          python3 port/3ds/tests/test_make_default_goal.py
           make -C port/3ds/tests test_pm3ds_addr
           port/3ds/tests/test_pm3ds_addr
           rm -f port/3ds/tests/test_pm3ds_addr
@@ -166,6 +167,10 @@ jobs:
             fi
             if grep -Eq '^FAIL: (Could not read ELF symbol table|[0-9]+ unresolved libultra-like symbols:)' "$build_log"; then
               echo "Post-link undefined-symbol audit failed; this is not an overlay-symbol discovery failure, so retrying symbol generation would not help." >&2
+              exit 1
+            fi
+            if grep -Eq '^FAIL: expected linked ELF missing after \.3dsx build:' "$build_log"; then
+              echo "The .3dsx target completed without producing its prerequisite ELF; this is a make-target/configuration error, not an overlay-symbol discovery failure." >&2
               exit 1
             fi
             # The symbol-discovery retry is only valid for linker errors of the
