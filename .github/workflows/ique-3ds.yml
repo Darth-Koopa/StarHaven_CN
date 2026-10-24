@@ -40,6 +40,7 @@ jobs:
             --report "$RUNNER_TEMP/ui_translation_glyph_audit.md"
           python3 port/3ds/tests/test_ui_translation_generator.py
           python3 port/3ds/tests/test_small_font_generator.py
+          python3 port/3ds/tests/test_ui_native_glyph_labels.py
           test -f port/3ds/fonts/FusionPixel-10px-Prop-zh-Hans.ttf
           test ! -e port/3ds/docs/ique-bottom-screen-translation-review.csv
           ! grep -Fq 'FusionPixel-10px-Mono-zh-Hans.ttf' port/3ds/Makefile .github/workflows/ique-3ds.yml

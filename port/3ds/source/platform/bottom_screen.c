@@ -676,37 +676,56 @@ static float ui_small_text_draw_raw(float x, float y, const char *str, float sca
 }
 #endif
 
-/* Draw menu labels with the generated proportional font when available.
- * scale is relative to its nominal 10px height; max_width <= 0 disables fitting. */
-static float ui_bitmap_text(float x, float y, const char *str, float scale, float max_width, u32 c) {
+/* These tab, tracker, and option labels use the original iQue/game charset.
+ * Preserve the original scale conversion and character advances, but expand
+ * only the drawn glyph quads slightly. This increases visible ink without
+ * changing the nominal font size, font face, or text layout. */
+#define UI_NATIVE_GLYPH_INK_SCALE 1.08f
+static float ui_native_glyph_text(float x, float y, const char *str, float scale, u32 c) {
+    if (!str || !s_font_ok) return x;
     str = ui_text(str);
-    if (!str) return x;
-#if VERSION_IQUE
-    if (s_ui_small_ok) {
-        float width = ui_small_text_width_raw(str, scale);
-        if (max_width > 0.0f && width > max_width && width > 0.0f) scale *= max_width / width;
-        return ui_small_text_draw_raw(x, y, str, scale, c);
+    while (*str) {
+        int glyph, unit_width, is_space;
+        str = font_text_unit(str, &glyph, &unit_width, &is_space);
+        if (glyph >= 0 && glyph < FONT_ATLAS_SLOTS) {
+            float gx = (glyph % FONT_ATLAS_COLS) * 16.0f;
+            float gy = (glyph / FONT_ATLAS_COLS) * 16.0f;
+            float cw = s_glyph_w[glyph] + 2 < 16 ? s_glyph_w[glyph] + 2 : 16;
+            float cell_w = unit_width * scale;
+            float draw_w = cw * scale * UI_NATIVE_GLYPH_INK_SCALE;
+            float draw_h = 15.0f * scale * UI_NATIVE_GLYPH_INK_SCALE;
+            float base_h = 15.0f * scale;
+            float x0 = x + (cell_w - draw_w) * 0.5f;
+            float y0 = y + 0.5f * scale - (draw_h - base_h) * 0.5f;
+            quad2(&s_font, x0, y0, x0 + draw_w, y0 + draw_h,
+                  gx / FONT_ATLAS_W, (gy + 0.5f) / FONT_ATLAS_H,
+                  (gx + cw) / FONT_ATLAS_W, (gy + 15.5f) / FONT_ATLAS_H, c, c);
+        }
+        /* Leave advance widths untouched: only the glyph's ink quad grows. */
+        x += unit_width * scale;
     }
-#endif
-    /* The fallback is the 16px game font; keep roughly the intended pixel height. */
-    return text(x, y, str, scale * 0.625f, 0, c);
+    return x;
+}
+
+static float ui_bitmap_text(float x, float y, const char *str, float scale, float max_width, u32 c) {
+    if (!str || !s_font_ok) return x;
+    float render_scale = scale * 0.625f; /* unchanged nominal 10px-size mapping */
+    float width = text_width(str, render_scale);
+    if (max_width > 0.0f && width > max_width && width > 0.0f) {
+        render_scale *= max_width / width;
+    }
+    return ui_native_glyph_text(x, y, str, render_scale, c);
 }
 
 static void ui_bitmap_text_center(float cx, float y, const char *str, float scale, float max_width, u32 c) {
-    str = ui_text(str);
-    if (!str) return;
-#if VERSION_IQUE
-    if (s_ui_small_ok) {
-        float width = ui_small_text_width_raw(str, scale);
-        if (max_width > 0.0f && width > max_width && width > 0.0f) {
-            scale *= max_width / width;
-            width = ui_small_text_width_raw(str, scale);
-        }
-        ui_small_text_draw_raw(cx - width / 2.0f, y, str, scale, c);
-        return;
+    if (!str || !s_font_ok) return;
+    float render_scale = scale * 0.625f; /* unchanged nominal 10px-size mapping */
+    float width = text_width(str, render_scale);
+    if (max_width > 0.0f && width > max_width && width > 0.0f) {
+        render_scale *= max_width / width;
+        width = text_width(str, render_scale);
     }
-#endif
-    text_center(cx, y, str, scale * 0.625f, 0, c);
+    ui_native_glyph_text(cx - width / 2.0f, y, str, render_scale, c);
 }
 
 /* Small text uses the generated TTF subset on iQue builds; other targets and
