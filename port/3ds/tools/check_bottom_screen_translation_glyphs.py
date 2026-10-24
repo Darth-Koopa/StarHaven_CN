@@ -162,12 +162,13 @@ def markdown_report(rows, charmap, csv_path) -> tuple[str, bool]:
         "2. 构建时从 `tools/splat_ext/pm_msg.py` 解析 `CHARSET_IQUE`，并使用 `include/enums.h` 的原生编码常量计算字形编号。",
         "3. 所有目标字符通过严格字库检查后，才把中文转换为当前 3DS 字体渲染器识别的私用区字形标记（U+E000 + 字形编号）；ASCII 与 `%d`、`%s`、`%08X` 等占位符保持原样。",
         "4. 不把转换后的不可读字节硬编码到手写 C 源码；由 Python 生成头文件，使修改翻译后能在 CI 自动检查和重建。",
-        "5. 主字号和 8×8 小字号绘制入口都识别私用区字形标记；小字号以 0.5 倍比例绘制游戏字库中的 16×16 汉字，并按字符单元换行。",
-        "6. 含运行时参数的格式串由调用点先按翻译键查表，再传给 `snprintf`；不在最终绘制阶段猜测动态字符串的含义。",
+        "5. 主字号仍使用游戏自己的字库；小字号使用从 Fusion Pixel 10px TTF 构建时栅格化出的独立位图贴图，ASCII 与中文统一绘制，不依赖 ROM 字体是否已加载。",
+        "6. `generate_small_text_font.py` 只打包译文实际用到的中文原生字形和可打印 ASCII；运行时不解析 TTF，字体像素以生成的 C 头文件编译进程序。",
+        "7. 含运行时参数的格式串由调用点先按翻译键查表，再传给 `snprintf`；不在最终绘制阶段猜测动态字符串的含义。",
         "",
         "## 重要提醒",
         "",
-        "本工具只生成字库审计报告；实际 C 翻译表由 `tools/generate_bottom_screen_translations.py` 生成。正式构建必须运行该生成器的 `--strict` 检查。游戏字体尚未加载时（例如找不到 ROM 的早期错误画面）会回退英文，因为此时运行时没有可读取的 iQue 字库。",
+        "本工具只生成字库审计报告；实际 C 翻译表由 `tools/generate_bottom_screen_translations.py` 生成，小字号位图由 `tools/generate_small_text_font.py` 生成。正式构建必须运行翻译生成器的 `--strict` 检查及小字字体生成器。10×10 字体可在 ROM 未加载时显示译文；主字号游戏字库仍要等 ROM 字体资源可用后才能绘制。",
     ]
     return "\n".join(lines) + "\n", bool(missing_occurrences or conflicts or duplicate_glyphs)
 

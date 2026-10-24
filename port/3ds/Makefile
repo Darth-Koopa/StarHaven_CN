@@ -420,13 +420,23 @@ else
 # explicitly before cross-compiling).
 ifeq ($(PM3DS_VERSION),ique)
 UI_TRANSLATION_HEADER := $(TOPDIR)/gen/ui_translations_zh_CN.h
+UI_SMALL_FONT_HEADER := $(TOPDIR)/gen/ui_small_font.h
+UI_SMALL_FONT_TTF := $(TOPDIR)/fonts/FusionPixel-10px-Mono-zh-Hans.ttf
 $(UI_TRANSLATION_HEADER): $(TOPDIR)/localization/ui_translations_zh_CN.csv \
                           $(TOPDIR)/tools/generate_bottom_screen_translations.py \
                           $(TOPDIR)/../../tools/splat_ext/pm_msg.py \
                           $(TOPDIR)/../../include/enums.h
 	python3 $(TOPDIR)/tools/generate_bottom_screen_translations.py \
 		--csv $(TOPDIR)/localization/ui_translations_zh_CN.csv --out $@ --strict
-$(OFILES_SOURCES): $(UI_TRANSLATION_HEADER)
+$(UI_SMALL_FONT_HEADER): $(TOPDIR)/localization/ui_translations_zh_CN.csv \
+                         $(TOPDIR)/tools/generate_small_text_font.py \
+                         $(UI_SMALL_FONT_TTF) \
+                         $(TOPDIR)/../../tools/splat_ext/pm_msg.py \
+                         $(TOPDIR)/../../include/enums.h
+	python3 $(TOPDIR)/tools/generate_small_text_font.py \
+		--font $(UI_SMALL_FONT_TTF) \
+		--csv $(TOPDIR)/localization/ui_translations_zh_CN.csv --out $@ --size 10
+$(OFILES_SOURCES): $(UI_TRANSLATION_HEADER) $(UI_SMALL_FONT_HEADER)
 endif
 
 DEPENDS := $(OFILES:.o=.d)

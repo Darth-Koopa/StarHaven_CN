@@ -39,6 +39,7 @@
 
 #if VERSION_IQUE
 #include "../../gen/ui_translations_zh_CN.h"
+#include "../../gen/ui_small_font.h"
 #endif
 
 extern void pm3ds_set_view_mode(int mode);   /* 0 Original, 1 Fill, 2 Wide */
@@ -110,14 +111,20 @@ static rect_t s_img[UI_IMG_COUNT];
 static rect_t s_white, s_circle;
 static u8 s_glyph_w[1024];
 static int s_glyphs;
-static C3D_Tex s_small;      /* libctru's 8x8 console font: crisp small text */
+static C3D_Tex s_small;      /* libctru's 8x8 console font: fallback small text */
 static bool s_small_ok;
+#if VERSION_IQUE
+static C3D_Tex s_ui_small;   /* small-font atlas generated from the selected TTF */
+static bool s_ui_small_ok;
+#endif
 
-/* The native font is only ready after the iQue ROM data has been loaded. Keep
- * early boot/error screens readable in ASCII until that font becomes usable. */
+/* Main game-font assets become available after ROM loading, but localized
+ * small text uses the generated bitmap subset from initialization onward. */
 static const char *ui_text(const char *source) {
 #if VERSION_IQUE
-    if (!source || !s_font_ok) return source;
+    /* Translation lookup is independent of ROM font initialization. The small
+     * bitmap font can render these native-glyph tokens during the boot screen. */
+    if (!source) return NULL;
     return pm3ds_ui_translate(source);
 #else
     return source;
@@ -352,6 +359,37 @@ static void build_small_font(void) {
     free(canvas);
 }
 
+#if VERSION_IQUE
+/* Build a small-font atlas from the generated TTF raster subset. Each character
+ * occupies one 16x16 atlas cell; the visible ink is 10x10 at the selected size.
+ * This renderer is independent of the game's ROM font and works before ROM
+ * assets have been decoded. */
+static void build_ui_small_font(void) {
+    if (s_ui_small_ok) return;
+    u8 *canvas = (u8 *)calloc((size_t)PM3DS_SMALL_FONT_ATLAS_W * PM3DS_SMALL_FONT_ATLAS_H, 4);
+    if (!canvas) return;
+    for (int slot = 0; slot < PM3DS_SMALL_FONT_SLOT_COUNT; slot++) {
+        int gx = (slot % PM3DS_SMALL_FONT_ATLAS_COLS) * PM3DS_SMALL_FONT_CELL;
+        int gy = (slot / PM3DS_SMALL_FONT_ATLAS_COLS) * PM3DS_SMALL_FONT_CELL;
+        const unsigned char *bits = s_pm3ds_small_font_pixels[slot];
+        for (int yy = 0; yy < PM3DS_SMALL_FONT_SIZE; yy++) {
+            for (int xx = 0; xx < PM3DS_SMALL_FONT_SIZE; xx++) {
+                u8 *pixel = canvas + ((size_t)(gy + yy) * PM3DS_SMALL_FONT_ATLAS_W + gx + xx) * 4;
+                pixel[0] = pixel[1] = pixel[2] = 255;
+                pixel[3] = bits[yy * PM3DS_SMALL_FONT_SIZE + xx];
+            }
+        }
+    }
+    if (C3D_TexInit(&s_ui_small, PM3DS_SMALL_FONT_ATLAS_W, PM3DS_SMALL_FONT_ATLAS_H, GPU_RGBA8)) {
+        upload_rgba8(&s_ui_small, canvas, PM3DS_SMALL_FONT_ATLAS_W, PM3DS_SMALL_FONT_ATLAS_H);
+        C3D_TexSetFilter(&s_ui_small, GPU_NEAREST, GPU_NEAREST);
+        C3D_TexSetWrap(&s_ui_small, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+        s_ui_small_ok = true;
+    }
+    free(canvas);
+}
+#endif
+
 /* ---- primitives ---------------------------------------------------------- */
 static void upload_font_if_dirty(void) {
     if (s_font_ok && s_font_canvas && s_font_dirty) {
@@ -554,13 +592,82 @@ static float text(float x, float y, const char *s, float scale, int white, u32 c
     return x;
 }
 
+/* Draw a literal label without the global translation table. Used where the
+ * same English source word has a different grammatical role (e.g. the Start
+ * controller button versus the New Game action). */
+static float text_raw(float x, float y, const char *s, float scale, int white, u32 c) {
+    if (!s_font_ok || !s) return x;
+    while (*s) {
+        int glyph, unit_width, is_space;
+        s = font_text_unit(s, &glyph, &unit_width, &is_space);
+        if (glyph >= 0 && glyph < FONT_ATLAS_SLOTS) {
+            float gx = (glyph % FONT_ATLAS_COLS) * 16.0f;
+            float gy = (white ? (FONT_ATLAS_H / 2.0f) : 0.0f) + (glyph / FONT_ATLAS_COLS) * 16.0f;
+            float cw = s_glyph_w[glyph] + 2 < 16 ? s_glyph_w[glyph] + 2 : 16;
+            quad2(&s_font, x, y + 0.5f * scale, x + cw * scale, y + 15.5f * scale,
+                  gx / FONT_ATLAS_W, (gy + 0.5f) / FONT_ATLAS_H, (gx + cw) / FONT_ATLAS_W,
+                  (gy + 15.5f) / FONT_ATLAS_H, c, c);
+        }
+        x += unit_width * scale;
+    }
+    return x;
+}
+
 static void text_center(float cx, float y, const char *s, float scale, int white, u32 c) {
     text(cx - text_width(s, scale) / 2, y, s, scale, white, c);
 }
 
-/* 8x8 console-font text, 1:1; wraps at max_cols, returns the next line's y */
+#if VERSION_IQUE
+static int ui_small_slot_for_char(int glyph, unsigned char ch) {
+    if (glyph >= 0 && glyph < PM3DS_SMALL_FONT_IQUE_GLYPH_COUNT) {
+        unsigned int slot = s_pm3ds_ique_small_font_slots[glyph];
+        if (slot < PM3DS_SMALL_FONT_SLOT_COUNT) return (int)slot;
+    }
+    if (glyph < 0 && ch >= 32 && ch <= 126) return (int)ch;
+    return '?';
+}
+
+static void draw_ui_small_glyph(int slot, float x, float y, float scale, u32 c) {
+    if (!s_ui_small_ok || slot < 0 || slot >= PM3DS_SMALL_FONT_SLOT_COUNT) return;
+    float gx = (float)(slot % PM3DS_SMALL_FONT_ATLAS_COLS) * PM3DS_SMALL_FONT_CELL;
+    float gy = (float)(slot / PM3DS_SMALL_FONT_ATLAS_COLS) * PM3DS_SMALL_FONT_CELL;
+    float size = (float)PM3DS_SMALL_FONT_SIZE;
+    quad2(&s_ui_small, x, y, x + size * scale, y + size * scale,
+          gx / PM3DS_SMALL_FONT_ATLAS_W, gy / PM3DS_SMALL_FONT_ATLAS_H,
+          (gx + size) / PM3DS_SMALL_FONT_ATLAS_W,
+          (gy + size) / PM3DS_SMALL_FONT_ATLAS_H, c, c);
+}
+#endif
+
+/* Small text uses the generated TTF subset on iQue builds; other targets and
+ * failed texture allocation retain the original 8x8 console-font fallback. */
 static float small_text(float x, float y, const char *str, int max_cols, u32 c) {
     str = ui_text(str);
+#if VERSION_IQUE
+    if (s_ui_small_ok) {
+        if (!str) return y + PM3DS_SMALL_FONT_SIZE + 1;
+        int max_units = (max_cols * 8) / PM3DS_SMALL_FONT_SIZE;
+        if (max_units < 1) max_units = 1;
+        int col = 0;
+        float x0 = x;
+        while (*str) {
+            if (col >= max_units) {
+                col = 0;
+                x = x0 + 2 * PM3DS_SMALL_FONT_SIZE;
+                y += PM3DS_SMALL_FONT_SIZE + 1;
+            }
+            int glyph = ui_private_glyph(str);
+            unsigned char ch = (unsigned char)*str;
+            int slot = ui_small_slot_for_char(glyph, ch);
+            if (glyph >= 0) str += 3;
+            else str++;
+            draw_ui_small_glyph(slot, x, y, 1.0f, c);
+            x += PM3DS_SMALL_FONT_SIZE;
+            col++;
+        }
+        return y + PM3DS_SMALL_FONT_SIZE + 1;
+    }
+#endif
     if (!s_small_ok && !s_font_ok) return y + 9;
     int col = 0;
     float x0 = x;
@@ -1809,7 +1916,12 @@ static void draw_controls(void) {
         const char *key = pm3ds_settings_key_name(k), *act = pm3ds_settings_action_name(pm3ds_cfg.keymap[k]);
         round_rect(x + 3, y + 2, x + 47, y + CTL_ROW_H - 4, 6, RGBA(90, 70, 60, 255));
         text_center(x + 25, y + 2, key, fit(key, 40, 0.7f, 0.45f), 1, COL_WHITE);
-        text(x + 52, y + 2, act, fit(act, 66, 0.75f, 0.5f), 0, COL_WHITE);
+        if (strcmp(act, "Start") == 0) {
+            /* This is the controller button name, not the verb “Start game”. */
+            text_raw(x + 52, y + 2, act, fit(act, 66, 0.75f, 0.5f), 0, COL_WHITE);
+        } else {
+            text(x + 52, y + 2, act, fit(act, 66, 0.75f, 0.5f), 0, COL_WHITE);
+        }
     }
     button(s_btn_opt, "Defaults");
     button(s_btn_ff, "Back");
@@ -2420,6 +2532,9 @@ void pm3ds_bottom_screen_init(void) {
     build_atlas();
     build_map();
     build_small_font();
+#if VERSION_IQUE
+    build_ui_small_font();
+#endif
     pm3ds_update_check_start();
 }
 
@@ -2505,10 +2620,36 @@ void pm3ds_bottom_screen_render(C3D_RenderTarget *top, C3D_RenderTarget *top_rig
     end_ui();
 }
 
-/* 8x8 console-font text at an integer scale, centred on cx */
+/* Small text at a scale, centred on cx. */
 static void small_text_center(float cx, float y, const char *str, float scale, u32 c) {
     str = ui_text(str);
-    if (!str || (!s_small_ok && !s_font_ok)) return;
+    if (!str) return;
+#if VERSION_IQUE
+    if (s_ui_small_ok) {
+        int units = 0;
+        for (const char *p = str; *p; p = ui_char_next(p)) units++;
+        float unit_size = (float)PM3DS_SMALL_FONT_SIZE * scale;
+        float width = units * unit_size;
+        /* Keep long boot/status lines inside the screen without clipping. */
+        float max_width = 304.0f;
+        if (width > max_width && width > 0.0f) {
+            scale *= max_width / width;
+            unit_size = (float)PM3DS_SMALL_FONT_SIZE * scale;
+        }
+        float x = cx - units * unit_size / 2.0f;
+        while (*str) {
+            int glyph = ui_private_glyph(str);
+            unsigned char ch = (unsigned char)*str;
+            int slot = ui_small_slot_for_char(glyph, ch);
+            if (glyph >= 0) str += 3;
+            else str++;
+            draw_ui_small_glyph(slot, x, y, scale, c);
+            x += unit_size;
+        }
+        return;
+    }
+#endif
+    if (!s_small_ok && !s_font_ok) return;
     int units = 0;
     for (const char *p = str; *p; p = ui_char_next(p)) units++;
     float x = cx - units * 4.0f * scale;
@@ -2537,8 +2678,8 @@ static const char *s_loading_label;
 void pm3ds_bottom_screen_loading_label(const char *label) { s_loading_label = label; }
 
 /* Boot screens, drawn on both screens so the top one is never just black.
- * The game's font comes from the ROM, so these use the console font.
- * w: 400 (top) or 320 (bottom). */
+ * The generated iQue small-font atlas makes localized text available before
+ * the game's ROM font is initialized. w: 400 (top) or 320 (bottom). */
 static void loading_panel(float w, int permille) {
     float cx = w / 2, dx = (w - 320) / 2;
     gradient(0, 0, w, 240, COL_BG_TOP, COL_BG_BOTTOM);

@@ -1,4 +1,4 @@
-﻿category,source_file,english_source,proposed_simplified_chinese,review_notes
+category,source_file,english_source,proposed_simplified_chinese,review_notes
 Navigation,bottom_screen.c,Stats,状态,
 Navigation,bottom_screen.c,Map,地图,
 Navigation,bottom_screen.c,Party,同伴,“同伴”一词请确认是否采用神游版用语
@@ -229,3 +229,5 @@ HUD partner name,bottom_screen.c,???,？？？,未获得同伴时的占位符。
 Battle touch UI,bottom_screen.c,HP,HP,战斗触控 HUD 缩写；建议与原版/神游版术语保持一致。
 Battle touch UI,bottom_screen.c,FP,FP,Flower Points 的游戏缩写；是否译为“花朵点数”等请校对。
 Update,bottom_screen.c, v%d.%d.%d is out.,发现更新 v%d.%d.%d。,源码前面会拼接 Star Haven 应用名；三个 %d 必须保留。前导空格是原始拼接格式的一部分。
+Tracker area name,journal.c,Tubba's Castle,图巴城堡,按用户指定统一译为图巴城堡；实际用于收集/追踪列表的源码键。
+Tracker area name,journal.c,Castle Grounds,城堡庭园,实际用于追踪列表的名称；不同于 HUD 中 Peach’s Castle Grounds。

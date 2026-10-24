@@ -18,13 +18,17 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install YAML parser
-        run: python -m pip install --disable-pip-version-check PyYAML
+        run: python -m pip install --disable-pip-version-check PyYAML Pillow
       - name: Check Python and shell syntax
         run: |
           python -m py_compile port/3ds/tools/*.py port/3ds/tests/*.py tools/splat_ext/*.py
           python3 port/3ds/tools/generate_bottom_screen_translations.py \
             --csv port/3ds/localization/ui_translations_zh_CN.csv \
             --out "$RUNNER_TEMP/ui_translations_zh_CN.h" --strict
+          python3 port/3ds/tools/generate_small_text_font.py \
+            --font port/3ds/fonts/FusionPixel-10px-Mono-zh-Hans.ttf \
+            --csv port/3ds/localization/ui_translations_zh_CN.csv \
+            --out "$RUNNER_TEMP/ui_small_font.h" --size 10
           bash -n port/3ds/tools/package.sh
           bash -n port/3ds/tools/gen_version_headers.sh
           bash -n install_compilers.sh
@@ -79,7 +83,13 @@ jobs:
           python -m venv .venv
           echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
           .venv/bin/python -m pip install --upgrade pip setuptools wheel
-          .venv/bin/python -m pip install -r tools/configure/requirements.txt
+          .venv/bin/python -m pip install -r tools/configure/requirements.txt Pillow
+      - name: Generate localized small-font atlas
+        run: |
+          .venv/bin/python port/3ds/tools/generate_small_text_font.py \
+            --font port/3ds/fonts/FusionPixel-10px-Mono-zh-Hans.ttf \
+            --csv port/3ds/localization/ui_translations_zh_CN.csv \
+            --out port/3ds/gen/ui_small_font.h --size 10
 
       - name: Install asset tools
         run: |

@@ -1,55 +1,32 @@
-# 下屏中文化：实现方式与当前审查结果
+# 下屏中文化与小字字体
 
-## 建议采用编译时转换器，不直接把转码后的字节写进手工维护的 C 源码
+## 翻译数据与生成步骤
 
-- `ui_translations_zh_CN.csv` 是唯一的可读翻译源，保留 UTF-8 方便校对和版本管理。
-- `tools/splat_ext/pm_msg.py` 的 `CHARSET_IQUE` 是字符映射的权威来源。构建时由 Python 解析它和 `include/enums.h` 的编码常量，得到每个已支持 Unicode 字符的 iQue 字形编号。
-- 在生成资源前先严格检查全部译文：任何不在 `CHARSET_IQUE` 中的字符都要报告具体文案和码位，不能猜测一个字形编号，也不能无声地显示问号。
-- 全部通过后，Python 将中文转换为当前 3DS 字体渲染器已经识别的私用区标记 U+E000 + 字形编号，输出生成头文件。英文和 `%d`、`%s`、`%08X` 等格式占位符保持不变。
-- C 代码只消费生成的头文件；翻译仍以 CSV 编辑。每次 Actions 构建都会重新校验、转码，保证翻译和生成文件一致。
+- `ui_translations_zh_CN.csv` 是翻译源，使用 UTF-8，便于校对和维护。
+- `tools/splat_ext/pm_msg.py` 中的 `CHARSET_IQUE` 与 `include/enums.h` 是 iQue 字形映射的权威来源。严格生成器会校验译文字符映射、源码键和格式占位符。
+- `tools/generate_bottom_screen_translations.py` 将中文转为 U+E000 私用区字形标记，生成 `port/3ds/gen/ui_translations_zh_CN.h`。
+- 小字号字体选择 **Fusion Pixel 10px Mono zh-Hans**（10×10）；TTF 与 SIL Open Font License 1.1 文本放在 `port/3ds/fonts/`。
+- `tools/generate_small_text_font.py` 从译文实际使用的汉字/标点及可打印 ASCII 构建紧凑位图贴图，生成 `port/3ds/gen/ui_small_font.h`。运行时不读取 TTF、不需要 FreeType；字形位图随 C 程序编译。
+- `small_text()` 与 `small_text_center()` 在 iQue 版统一使用该位图字体渲染英文和中文，因此启动页、ROM 加载进度页等主游戏字库尚不可用的阶段也能显示译文。主字号 `text()` 仍然使用游戏的原生字体资源。
 
-## 渲染路径审查
+## 本地检查命令
 
-| 路径 | 当前实现 | 中文支持情况 |
-|---|---|---|
-| `text()`、`text_center()`、`page_title()`、`fit()` | 3DS 下屏使用游戏字库图集 | `text()` 的底层已能解析 U+E000 私用区字形标记并按需载入 iQue 字形；但仍需接上翻译查表，并检查所有格式化字符串的调用点 |
-| `wrap_text()`（Tattle 正文） | 使用 `font_text_unit()`，按 UTF-8 单元推进 | 已能理解先前动态消息解码出的私用区字形标记；记录的起止位置以字节为单位，切行时会沿字形单元前进 |
-| `small_text()`、`small_text_center()` | libctru 8×8 console font，直接逐字节处理，只画 ASCII | **当前不能显示中文**。要在这两处识别完整私用区标记，并以 0.5 倍比例走游戏字库；ASCII 仍保留 console font，避免整体改变小字外观 |
-| `ng_help()` | 用 `strlen`、固定字节数 `memcpy` 切行 | **必须改为按 UTF-8 码点/私用区字形单元切行**，否则可能截断三字节标记 |
-| `snprintf()` 生成的菜单文案 | 先格式化，再进入绘制函数 | 只在绘制时按完整英文原文查表无法命中。需在格式化前转换格式模板，或改用带显式翻译键的格式化辅助函数 |
-| `hud_info.c` 的区域名/伙伴名 | 返回运行时英文字符串，再送入绘制函数 | 区域名可以按原文查表；伙伴名 CSV 当前把中文暂定名称写在 `english_source` 列中，和源码的 `Goombario`、`Kooper` 等实际原文不一致，正式接入前需把来源键改为源码里的英文名并确认译名 |
-
-## 当前需要校对的字形
-
-检查脚本：
+首次生成字体头文件前安装 host 依赖：`python3 -m pip install Pillow`。然后运行：
 
 ```sh
+python3 port/3ds/tools/generate_bottom_screen_translations.py --strict
+python3 port/3ds/tools/generate_small_text_font.py \
+  --font port/3ds/fonts/FusionPixel-10px-Mono-zh-Hans.ttf \
+  --csv port/3ds/localization/ui_translations_zh_CN.csv \
+  --out port/3ds/gen/ui_small_font.h --size 10
 python3 port/3ds/tools/check_bottom_screen_translation_glyphs.py \
   --report port/3ds/localization/ui_translation_glyph_audit.md
 ```
 
-严格检查（发现缺字或重复原文冲突即返回失败）：
+要尝试 12×12 字体，生成器支持 `--font <SimSun.ttf> --size 12`；还需在对应构建配置中把该字体文件作为输入，并按相同命令重新生成头文件。当前工作流默认使用仓库内的 Fusion Pixel 10×10 字体。
 
-```sh
-python3 port/3ds/tools/check_bottom_screen_translation_glyphs.py --strict
-```
+## 当前审查注意事项
 
-当前表格有 10 个未映射字符：`版`、`帧`、`赠`、`览`、`字`、`《`、`》`、`—`、`–`、`　`。建议词语替换示例（均已检查过字符映射，仍请结合你认可的术语校对）：
+全局按英文原文查表时，`Start` 同时用作“开始”动作和手柄上的 Start 键名。当前 Controls 绘制路径对按钮名使用原文绘制，其他对应动作继续显示“开始”；翻译生成器仍会对 CSV 中这个重复键给出警告。
 
-- `扫描一览` → `扫描记录`
-- `帧率` → `画面速率`；`30 帧` / `60 帧` → `30 FPS` / `60 FPS`
-- `文字速度` → `文本速度`
-- `赠礼` → `礼物`；`角色赠送的物品也会被随机分配。` → `角色给出的物品也会被随机分配。`
-- `当前版本：v` → `你正在使用 v`
-- 去掉 `《》` 书名号，直接用 `纸片马力欧`
-- `ROM 版本不正确` → `ROM 不正确`
-- `（美版、欧版或神游中文版）放到 SD 卡中` → `（美国、欧洲或神游中国 ROM）放到 SD 卡中`
-- 全角长破折号改成普通 ASCII `-`；种子说明中的 `0–9` 改为 `0-9`；全角空格改成普通空格
-
-注意：这些是为通过字库映射检查而给出的候选，不会自动覆盖 CSV 中的校对稿。
-
-## 译文键必须考虑上下文
-
-同一原文 `Start` 在新游戏按钮中应译为“开始”，在按键名称中则保留 `Start`。因此不能仅用一个全局 `English string -> Chinese string` 字典；建议生成 `source key + context/category` 的表，对有歧义的键在调用点显式指定上下文。
-
-动态格式字符串也需检查占位符。例如 `Save import` 的目标译文不再需要英文复数后缀 `%s`，对应 C 调用应去掉英文复数分支，而不是继续使用旧格式模板。
+所有中文译文都必须能通过 `CHARSET_IQUE` 映射。修改中文后，应重跑严格检查和小字字体生成器，避免生成头文件与 CSV 不同步。
