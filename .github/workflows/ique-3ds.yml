@@ -35,6 +35,7 @@ jobs:
           python3 port/3ds/tools/check_bottom_screen_translation_glyphs.py \
             --report "$RUNNER_TEMP/ui_translation_glyph_audit.md"
           python3 port/3ds/tests/test_ui_translation_generator.py
+          python3 port/3ds/tests/test_check_undef_syms.py
           make -C port/3ds/tests test_pm3ds_addr
           port/3ds/tests/test_pm3ds_addr
           rm -f port/3ds/tests/test_pm3ds_addr
@@ -162,6 +163,10 @@ jobs:
             cat "$build_log"
             if [[ "$attempt" -eq 7 ]]; then
               break
+            fi
+            if grep -Eq '^FAIL: (Could not read ELF symbol table|[0-9]+ unresolved libultra-like symbols:)' "$build_log"; then
+              echo "Post-link undefined-symbol audit failed; this is not an overlay-symbol discovery failure, so retrying symbol generation would not help." >&2
+              exit 1
             fi
             # The symbol-discovery retry is only valid for linker errors of the
             # matching GNU ld's undefined-reference line for *_ROM_START, *_ROM_END,
