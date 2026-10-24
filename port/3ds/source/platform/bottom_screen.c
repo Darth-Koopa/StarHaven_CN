@@ -1103,6 +1103,10 @@ static int tattle_stat(const char *t, const char *key) {
     return *p >= '0' && *p <= '9' ? atoi(p) : -1;
 }
 
+/* Forward declaration: log_open builds the display variant after parsing the
+ * original Tattle text, while the implementation lives directly below. */
+static void build_tattle_display_text(void);
+
 static void log_open(int i) {
     s_log_open = i;
     s_log_text_page = 0;
