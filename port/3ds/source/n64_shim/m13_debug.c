@@ -30,7 +30,7 @@ void set_battle_formation(Battle* battle);
     defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST) || defined(PM3DS_ENC_TEST) || \
     defined(PM3DS_JOURNAL_TEST) || defined(PM3DS_NO_TITLE_DEMO) || defined(PM3DS_QUICKSAVE_EVERY) || \
     defined(PM3DS_SHOP_DIALOG) || defined(PM3DS_MODEL_DUMP) || defined(PM3DS_TOUR) || defined(PM3DS_AUTO_WIN) || \
-    defined(PM3DS_ENEMY_HP1)
+    defined(PM3DS_ENEMY_HP1) || defined(PM3DS_RANDO_TEST)
 /* make_cia.sh refuses to publish a binary containing this string */
 __attribute__((used)) const char pm3ds_debug_build_marker[] = "PM3DS-DEBUG-BUILD";
 #endif
@@ -553,7 +553,7 @@ void pm3ds_game_debug_tick(u32 frame) {
     defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST) || defined(PM3DS_ENC_TEST) || \
     defined(PM3DS_JOURNAL_TEST) || defined(PM3DS_NO_TITLE_DEMO) || defined(PM3DS_QUICKSAVE_EVERY) || \
     defined(PM3DS_SHOP_DIALOG) || defined(PM3DS_MODEL_DUMP) || defined(PM3DS_TOUR) || defined(PM3DS_AUTO_WIN) || \
-    defined(PM3DS_ENEMY_HP1)
+    defined(PM3DS_ENEMY_HP1) || defined(PM3DS_RANDO_TEST)
     if (frame == 1) {
         pm3ds_log(2, "%s", pm3ds_debug_build_marker);   /* keeps the marker linked */
     }
@@ -608,6 +608,9 @@ void pm3ds_game_debug_tick(u32 frame) {
 #endif
 #ifdef PM3DS_ENEMY_HP1
     pm3ds_enemy_hp1_tick();
+#endif
+#ifdef PM3DS_RANDO_TEST
+    { extern void pm3ds_rando_test_tick(void); pm3ds_rando_test_tick(); }
 #endif
 #ifdef PM3DS_STORY_SWEEP
     pm3ds_story_sweep_tick(frame);

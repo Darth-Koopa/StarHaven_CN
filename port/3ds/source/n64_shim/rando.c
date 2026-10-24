@@ -398,6 +398,24 @@ s32 pm3ds_rando_item(s32 itemID, s32 flagIndex, s32* spawnMode) {
             *spawnMode = ITEM_SPAWN_MODE_ITEM_BLOCK_ITEM;
         }
     }
+    // bush and tree drops vanish after a while, and most mark the spot taken as they appear:
+    // a key item left lying there was gone for good (#31). Keep it until it is picked up and
+    // mark the spot then, as the vanilla tree letters and star pieces do (make_item_entity
+    // won't drop a second one while it lies there).
+    switch (*spawnMode) {
+        case ITEM_SPAWN_MODE_TOSS:
+        case ITEM_SPAWN_MODE_TOSS_SPAWN_ONCE:
+        case ITEM_SPAWN_MODE_TOSS_SPAWN_ONCE_NEVER_VANISH:
+            *spawnMode = ITEM_SPAWN_MODE_TOSS_NEVER_VANISH;
+            break;
+        case ITEM_SPAWN_MODE_FALL:
+        case ITEM_SPAWN_MODE_FALL_SPAWN_ONCE:
+            *spawnMode = ITEM_SPAWN_MODE_FALL_NEVER_VANISH;
+            break;
+        case ITEM_SPAWN_MODE_FIXED:
+            *spawnMode = ITEM_SPAWN_MODE_FIXED_NEVER_VANISH;
+            break;
+    }
     return newItem;
 }
 
@@ -565,6 +583,9 @@ void pm3ds_rando_choose(unsigned flags, unsigned seed) {
 /* src/filemenu/filemenu_yesno.c, new file: the picker's choice */
 void pm3ds_rando_new_game(void) {
     extern unsigned int pm3ds_random_seed(void);
+#ifdef PM3DS_RANDO_TEST
+    sNextFlags = PM3DS_RANDO_ALL;
+#endif
     if (sNextFlags == 0) {
         pm3ds_rando_off();
         return;
@@ -607,3 +628,56 @@ void pm3ds_rando_deserialize(const void* src) {
 unsigned pm3ds_rando_seed(void) {
     return sFlags == 0 ? 0 : sSeed;
 }
+
+#ifdef PM3DS_RANDO_TEST
+#include "game_modes.h"
+
+/* Debug (-DPM3DS_RANDO_TEST with PM3DS_START_MAP): the debug New Game randomizes everything,
+ * then a bush/tree spot whose item was swapped drops it twice the way a bush does
+ * (ITEM_SPAWN_MODE_FALL_SPAWN_ONCE) next to an unswapped one; 600 frames later the log tells
+ * whether each is still there and whether its spot is marked taken. */
+extern bool pm3ds_debug_new_game_made;
+
+static s32 test_find(bool swapped) {
+    s32 i;
+
+    for (i = 0; i < NUM_LOCS; i++) {
+        if ((sLocs[i].src == SRC_BUSH || sLocs[i].src == SRC_TREE) && sLocs[i].flag != 0 &&
+            (sItem[i] != sLocs[i].item) == swapped && !get_global_flag(sLocs[i].flag)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void pm3ds_rando_test_tick(void) {
+    static s32 timer, ids[3], locs[2];
+    s32 k;
+
+    if (!pm3ds_debug_new_game_made || get_game_mode() != GAME_MODE_WORLD) {
+        return;
+    }
+    timer++;
+    if (timer == 120) {
+        locs[0] = test_find(true);
+        locs[1] = test_find(false);
+        if (locs[0] < 0 || locs[1] < 0) {
+            pm3ds_log(2, "RANDOTEST: no spots (flags %x) swapped %d plain %d", sFlags, locs[0], locs[1]);
+            return;
+        }
+        for (k = 0; k < 3; k++) {
+            s32 l = locs[k == 2 ? 1 : 0];
+            ids[k] = make_item_entity(sLocs[l].item, gPlayerStatus.pos.x + 70 + 40 * k, gPlayerStatus.pos.y + 40,
+                                      gPlayerStatus.pos.z, ITEM_SPAWN_MODE_FALL_SPAWN_ONCE, 0, 0, sLocs[l].flag);
+        }
+        pm3ds_log(2, "RANDOTEST: swapped %s (%s -> item %d): drop %d, again %d, flag %d | plain %s: drop %d, flag %d",
+                  sLocs[locs[0]].map, sLocs[locs[0]].itemName, sItem[locs[0]], ids[0], ids[1],
+                  get_global_flag(sLocs[locs[0]].flag), sLocs[locs[1]].map, ids[2], get_global_flag(sLocs[locs[1]].flag));
+    }
+    if (timer == 720 && locs[0] >= 0 && locs[1] >= 0) {
+        pm3ds_log(2, "RANDOTEST: after 600 frames: swapped item %s, flag %d | plain item %s, flag %d",
+                  ids[0] >= 0 && get_item_entity(ids[0]) != nullptr ? "there" : "gone", get_global_flag(sLocs[locs[0]].flag),
+                  ids[2] >= 0 && get_item_entity(ids[2]) != nullptr ? "there" : "gone", get_global_flag(sLocs[locs[1]].flag));
+    }
+}
+#endif

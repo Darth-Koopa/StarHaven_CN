@@ -8,8 +8,8 @@ usage: cgfx_texture.py list <model.cgfx>
        cgfx_texture.py replace <model.cgfx> <texture name> <image> <out.cgfx>
        cgfx_texture.py root <model.cgfx> <scale> <x> <y> <z> <depth scale> <out.cgfx>
 
-Layout (image TXOB, offsets from the object): +0x1C width, +0x34 PICA format,
-+0x44 data size, +0x48 self-relative pointer to the pixels. Pixels are 8x8
+Layout (image TXOB, offsets from the object): +0x18 and +0x3C height, +0x1C and +0x40
+width, +0x34 PICA format, +0x44 data size, +0x48 self-relative pointer to the pixels. Pixels are 8x8
 Morton-ordered tiles, rows stored bottom-up. Names are not changed in place:
 CGFX dictionaries are Patricia trees keyed on the names' bits.
 
@@ -17,7 +17,7 @@ Bone (offsets from the bone): +0 self-relative name pointer, +4 flags, +8 index,
 +0xC parent index (-1 for the root), +0x20 scale, +0x2C rotation, +0x38 translation
 (vec3 each), then the local, world and inverse-world 3x4 matrices (row-major) at
 +0x44, +0x74 and +0xA4. bannertool's flat-banner template quad spans x -13..13 and
-y -7.5..5.5, but on a console the bottom of that is cut off: keep a model above y = -3.
+y -7.5..5.5; HOME Menu themes may draw over its bottom edge.
 """
 import struct
 import sys
@@ -108,6 +108,28 @@ def replace(d, name, image):
         r, g, b, a = px[x, y]
         struct.pack_into("<H", d, o, (r >> 4) << 12 | (g >> 4) << 8 | (b >> 4) << 4 | a >> 4)
     return d
+
+
+def set_height(d, name, height):
+    """d (bytearray) with texture `name` redrawn `height` texels tall, in the space it has.
+    The console's GPU needs power-of-two sizes; emulators draw other sizes fine, a console
+    loses part of the texture. Both entries of a texture (`name`, `name.png`) share the pixels."""
+    found = [t for t in textures(bytes(d)) if t["name"] in (name, name + ".png")]
+    assert found, f"no texture {name!r}"
+    t = found[0]
+    size = t["w"] * height * BPP[t["fmt"]] // 8
+    assert size <= t["h"] * t["w"] * BPP[t["fmt"]] // 8, f"{name}: {height} rows don't fit"
+    img = decode(bytes(d), t)
+    data = struct.unpack_from("<H", d, 6)[0]
+    dic = rel(d, data + 0x14)
+    for i in range(u32(d, dic + 8)):
+        e = dic + 0x1C + i * 0x10
+        name_o, obj = rel(d, e + 8), rel(d, e + 12)
+        if d[name_o:d.index(b"\0", name_o)].decode() in (name, name + ".png"):
+            struct.pack_into("<I", d, obj + 0x18, height)
+            struct.pack_into("<I", d, obj + 0x3C, height)
+            struct.pack_into("<I", d, obj + 0x44, size)
+    return replace(d, name, img)
 
 
 def root_bone(d):
