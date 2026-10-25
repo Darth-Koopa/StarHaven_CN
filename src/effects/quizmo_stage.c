@@ -111,6 +111,22 @@ void quizmo_stage_appendGfx(void* effect) {
     Matrix4f sp18;
     Matrix4f sp58;
 
+#ifdef _3DS
+    {
+        // 3DS port: the stage's four static matrices are big-endian bytes in the effect data
+        // (gfx/quizmo_stage.c, a char array), read as native Mtx words they put the curtains,
+        // spotlights and backdrop anywhere (a giant brown wedge, the rest missing: GitHub #59).
+        // Each Mtx word holds two 16-bit halves, so reverse every 32-bit word once.
+        static bool swapped;
+        if (!swapped) {
+            u32* w = (u32*)D_09004148_39CD08;
+            for (s32 i = 0; i < 4 * (s32)(sizeof(Mtx) / sizeof(u32)); i++) {
+                w[i] = __builtin_bswap32(w[i]);
+            }
+            swapped = true;
+        }
+    }
+#endif
     gDPPipeSync(gMainGfxPos++);
     gSPSegment(gMainGfxPos++, 0x09, VIRTUAL_TO_PHYSICAL(((EffectInstance*)effect)->shared->graphics));
 

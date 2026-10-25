@@ -184,7 +184,11 @@ static void publish(s32 kind) {
             }
             sMenu.cursor = BattleMenu_CurPos + BattleMenu_HomePos;
             set_name(PM3DS_TM_MAX, sMenu.partner ? PartnerNameMessages[gPlayerData.curPartner] : MSG_NONE);
-            if (!sMenu.partner) {
+            if (gBattleState == BATTLE_STATE_PEACH_MENU || gBattleState == BATTLE_STATE_TWINK_MENU) {
+                // the final battle: Peach's and Twink's turns use the same wheel (GitHub #58)
+                strcpy(sMenu.title, gBattleState == BATTLE_STATE_PEACH_MENU ? "Peach" : "Twink");
+                sNameMsg[PM3DS_TM_MAX] = -2;
+            } else if (!sMenu.partner) {
                 strcpy(sMenu.title, "Mario");
                 sNameMsg[PM3DS_TM_MAX] = -2;
             }

@@ -1488,8 +1488,11 @@ static void draw_battle_rail(void) {
 #define TGT_TY0 170
 #define TGT_TY1 200
 #define TGT_TILES 4
+#define TGT_FY1_2ROWS 147   /* the picture's bottom with two rows of tiles */
 extern C3D_Tex *pm3ds_gfx_top_copy(void);
 static float s_tgt_x0, s_tgt_y0, s_tgt_k;   /* the top-screen area shown: origin and scale to the strip */
+static int tgt_tiles(void);
+static float tgt_fy1(void) { return tgt_tiles() > 2 ? TGT_FY1_2ROWS : TGT_FY1; }   /* the picture's bottom */
 
 /* top-screen area X0..X1, Y0..Y1 into the bottom-screen rect x0..x1, y0..y1;
  * the copy is the framebuffer turned a quarter: pixel X, Y at
@@ -1514,7 +1517,7 @@ static void tgt_area(void) {
         if (e->py - e->pr < miny) miny = e->py - e->pr;
         if (e->py + e->pr > maxy) maxy = e->py + e->pr;
     }
-    const float aspect = (TGT_FX1 - TGT_FX0) / (float)(TGT_FY1 - TGT_FY0);
+    const float aspect = (TGT_FX1 - TGT_FX0) / (float)(tgt_fy1() - TGT_FY0);
     if (minx > maxx) { minx = 200; maxx = 400; miny = 60; maxy = 200; }
     float cx = (minx + maxx) / 2, cy = (miny + maxy) / 2;
     float w = maxx - minx + 24, h = maxy - miny + 24;
@@ -1536,14 +1539,21 @@ static float tgt_bx(float X) { return TGT_FX0 + (X - s_tgt_x0) * s_tgt_k; }
 static float tgt_by(float Y) { return TGT_FY0 + (Y - s_tgt_y0) * s_tgt_k; }
 
 static int tgt_tiles(void) { return s_tm.count < TGT_TILES ? s_tm.count : TGT_TILES; }
+/* 3 or 4 targets: two rows of two, wide enough for long names (GitHub #60) */
+static int tgt_cols(void) { return tgt_tiles() > 2 ? 2 : tgt_tiles(); }
 
 static void tgt_tile_rect(int slot, float *x0, float *y0, float *x1, float *y1) {
-    int n = tgt_tiles();
-    float gap = 5, w = (TGT_FX1 - TGT_FX0 - (n - 1) * gap) / n;
-    *x0 = TGT_FX0 + slot * (w + gap);
+    int cols = tgt_cols(), col = slot % cols, row = slot / cols;
+    float gap = 5, w = (TGT_FX1 - TGT_FX0 - (cols - 1) * gap) / cols;
+    *x0 = TGT_FX0 + col * (w + gap);
     *x1 = *x0 + w;
-    *y0 = TGT_TY0;
-    *y1 = TGT_TY1;
+    if (tgt_tiles() > 2) {
+        *y0 = TGT_FY1_2ROWS + 5 + row * 29;
+        *y1 = *y0 + 26;
+    } else {
+        *y0 = TGT_TY0;
+        *y1 = TGT_TY1;
+    }
 }
 
 static void draw_targets(void) {
@@ -1561,12 +1571,12 @@ static void draw_targets(void) {
     /* the stage */
     tgt_area();
     C3D_Tex *t = pm3ds_gfx_top_copy();
-    round_rect(TGT_FX0 - 2, TGT_FY0 - 2, TGT_FX1 + 2, TGT_FY1 + 2, 6, COL_PANEL_EDGE);
+    round_rect(TGT_FX0 - 2, TGT_FY0 - 2, TGT_FX1 + 2, tgt_fy1() + 2, 6, COL_PANEL_EDGE);
     if (t) {
-        float w = (TGT_FX1 - TGT_FX0) / s_tgt_k, h = (TGT_FY1 - TGT_FY0) / s_tgt_k;
-        top_area(t, s_tgt_x0, s_tgt_y0, s_tgt_x0 + w, s_tgt_y0 + h, TGT_FX0, TGT_FY0, TGT_FX1, TGT_FY1);
+        float w = (TGT_FX1 - TGT_FX0) / s_tgt_k, h = (tgt_fy1() - TGT_FY0) / s_tgt_k;
+        top_area(t, s_tgt_x0, s_tgt_y0, s_tgt_x0 + w, s_tgt_y0 + h, TGT_FX0, TGT_FY0, TGT_FX1, tgt_fy1());
     } else {
-        fill(TGT_FX0, TGT_FY0, TGT_FX1, TGT_FY1, RGBA(90, 70, 60, 255));
+        fill(TGT_FX0, TGT_FY0, TGT_FX1, tgt_fy1(), RGBA(90, 70, 60, 255));
     }
     for (int i = 0; i < s_tm.count; i++) {
         const pm3ds_tm_entry_t *e = &s_tm.e[i];
@@ -1575,12 +1585,12 @@ static void draw_targets(void) {
         float bx = tgt_bx(e->px), r = e->pr * s_tgt_k;
         if (sel) {   /* a soft box around the chosen one */
             float bt = tgt_by(e->py) - r, bb = tgt_by(e->py) + r;
-            round_rect(bx - r * 0.8f, bt < TGT_FY0 ? TGT_FY0 : bt, bx + r * 0.8f, bb > TGT_FY1 ? TGT_FY1 : bb, 8,
+            round_rect(bx - r * 0.8f, bt < TGT_FY0 ? TGT_FY0 : bt, bx + r * 0.8f, bb > tgt_fy1() ? tgt_fy1() : bb, 8,
                        RGBA(255, 214, 120, 70));
         }
         float my = tgt_by(e->py - e->pr * 0.75f) - 6;
         if (my < TGT_FY0 + 10) my = TGT_FY0 + 10;
-        if (my > TGT_FY1 - 10) my = TGT_FY1 - 10;
+        if (my > tgt_fy1() - 10) my = tgt_fy1() - 10;
         snprintf(buf, sizeof buf, "%d", i + 1);
         disc(bx, my, 9, sel ? RGBA(230, 120, 30, 255) : COL_PANEL_EDGE);
         disc(bx, my, 7, sel ? COL_SEL : COL_PANEL);
@@ -1598,17 +1608,18 @@ static void draw_targets(void) {
         bool sel = s_tm.all_targets || i == s_tm.cursor;
         tile(x0, y0, x1, y1, 7, sel ? COL_SEL : COL_TAB_ON);
         float right = x1 - 5;
-        if (n <= 2 && e->enemy) {   /* room for the HP: known once tattled */
+        float ty = y0 + (y1 - y0) / 2 - 9;   /* text centred in the tile (30 or 26 high) */
+        if (tgt_cols() <= 2 && e->enemy) {   /* room for the HP: known once tattled */
             bool known = e->cost_kind == PM3DS_TM_COST_HP;
             if (known) snprintf(buf, sizeof buf, "HP %d/%d", e->cost, e->max_hp);
             else strcpy(buf, "HP ?");
-            text_right(right, y0 + 9, buf, 0.62f, known ? RGBA(200, 40, 40, 255) : COL_SUB);
+            text_right(right, ty + 3, buf, 0.62f, known ? RGBA(200, 40, 40, 255) : COL_SUB);
             right -= 52;
         }
         snprintf(buf, sizeof buf, "%d", i + 1);
-        text(x0 + 6, y0 + 6, buf, 0.85f, 0, COL_WHITE);
+        text(x0 + 6, ty, buf, 0.85f, 0, COL_WHITE);
         float left = x0 + 18;
-        text(left, y0 + 7, e->name, fit(e->name, right - left, 0.8f, 0.5f), 0, COL_WHITE);
+        text(left, ty + 1, e->name, fit(e->name, right - left, 0.8f, 0.5f), 0, COL_WHITE);
     }
 }
 
@@ -1619,7 +1630,7 @@ static bool targets_tap(int px, int py) {
         s_tm_page = np;
         return true;
     }
-    if (in(px, py, TGT_FX0, TGT_FY0, TGT_FX1, TGT_FY1) && s_tgt_k > 0) {   /* the nearest one in the picture */
+    if (in(px, py, TGT_FX0, TGT_FY0, TGT_FX1, tgt_fy1()) && s_tgt_k > 0) {   /* the nearest one in the picture */
         int best = -1;
         float bd = 1e9f;
         for (int i = 0; i < s_tm.count; i++) {
