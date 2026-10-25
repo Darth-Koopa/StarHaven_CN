@@ -9,7 +9,18 @@ on the 3DS; nothing is emulated.
   <img src="port/3ds/docs/screenshots/battle.png" width="380" alt="A battle, with Mario's commands as big icon tiles on the bottom screen">
 </p>
 
+<p align="center">
+  <a href="https://youtu.be/P1md4pz01cY">
+    <img src="https://img.youtube.com/vi/P1md4pz01cY/maxresdefault.jpg" width="640" alt="Video: Paper Mario 64 runs natively on 3DS now!!">
+  </a>
+  <br>
+  <a href="https://youtu.be/P1md4pz01cY">▶ Watch Star Haven running on a 3DS</a>
+</p>
+
 **Star Haven contains no game data.** The established release supports your own Paper Mario ROM (EU or US). An experimental iQue China build is being brought up separately; it requires the original iQue ROM and is not yet part of the standard release.
+
+**Join the Star Haven 3DS Discord: [discord.gg/zHq9tH49Z](https://discord.gg/zHq9tH49Z)** for help,
+news about new versions and to report bugs. Bug reports here on GitHub are welcome too.
 
 ## Install
 
@@ -19,8 +30,8 @@ on the 3DS; nothing is emulated.
    Scan QR Code** and scan the code on the right. It always installs the newest release.
    You can also download `StarHaven.cia` or `StarHaven.3dsx` from
    [Releases](../../releases/latest).
-2. Copy your ROM to the SD card as `/3ds/StarHaven/baserom.z64` (`.z64`, `.n64` and `.v64`
-   all work).
+2. Copy your ROM into `/3ds/StarHaven/` on the SD card. Any file name works, and so do
+   `.z64`, `.n64` and `.v64` dumps.
 3. Start Star Haven from the HOME menu.
 
 Full instructions: [the player readme](port/3ds/RELEASE_README.md).
@@ -51,9 +62,11 @@ Console? Keep playing it on the 3DS:
   - **Party**: tap a partner to switch to them
   - **Tattle**: every enemy Goombario has tattled so far; tap one to read the whole tattle
   - **Found**: star pieces, badges, hidden blocks and panels and item spots collected in each area
+  - **Recipes**: every dish Tayce T. cooks, the ones you've made, and how to make each one
   - plus Items, and in battle your HP, FP and Star Power down the side and the menus to tap:
     Mario's commands as big tiles with the game's icons, and targets picked on a live picture of the stage
 - A randomizer, chosen when you start a new file, with a seed you can share
+- Optional cheats (infinite HP, FP and Star Power, 999 coins, unlimited BP) for files started with them on (chosen once, when the file is made)
 - Imports N64 saves (Project64, RetroArch, Wii U Virtual Console and others), and a
   [web converter](https://secondarylifer.github.io/StarHaven/converter/) for both directions,
   also to and from Paperboat
@@ -83,6 +96,11 @@ devkitARM, libctru and citro3d, and needs the matching original ROM in `ver/pal/
 | `port/3ds/` | the 3DS port: platform layer, renderer, audio, tools, packaging |
 | `src/`, `include/`, `ver/` | the decompilation, with port changes under `#ifdef _3DS` |
 | `DECOMP_README.md` | the decompilation's own readme |
+
+## Credits
+
+- 3D HOME Menu banner by [Velvii](https://github.com/Velvii). The title is in the Hey Gorgeous
+  font, free for personal use.
 
 ## License
 

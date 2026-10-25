@@ -15,7 +15,7 @@
  * title version comes from these numbers too (tools/package.sh) */
 #define PM3DS_VERSION_MAJOR  1
 #define PM3DS_VERSION_MINOR  2
-#define PM3DS_VERSION_MICRO  2
+#define PM3DS_VERSION_MICRO  8
 #define PM3DS_VSTR_(x)       #x
 #define PM3DS_VSTR(x)        PM3DS_VSTR_(x)
 #define PM3DS_VERSION_STR    PM3DS_VSTR(PM3DS_VERSION_MAJOR) "." PM3DS_VSTR(PM3DS_VERSION_MINOR) \
@@ -27,6 +27,9 @@
 /* save, settings, log and the player's ROM */
 #define PM3DS_SD_DIR         "sdmc:/3ds/StarHaven"
 #define PM3DS_SD_DIR_SHOWN   "/3ds/StarHaven"
+/* where the player's ROM is looked for, in this order (platform/pm3ds_rom.c,
+ * universal/starter.c): any Paper Mario ROM there, whatever its file name */
+#define PM3DS_ROM_DIRS       PM3DS_SD_DIR, "sdmc:/roms/n64", "sdmc:/roms", "sdmc:/n64", "sdmc:/3ds", "sdmc:/"
 /* builds before the rename used this folder; it is moved on first boot */
 #define PM3DS_SD_DIR_OLD     "sdmc:/3ds/PaperMario3DS"
 

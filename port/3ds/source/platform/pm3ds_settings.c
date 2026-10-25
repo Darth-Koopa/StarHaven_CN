@@ -80,6 +80,7 @@ void pm3ds_settings_load(void) {
     pm3ds_cfg.rando_flags = PM3DS_RANDO_COINS | PM3DS_RANDO_SHOPS | PM3DS_RANDO_GIFTS;
     pm3ds_cfg.update_check = true;
     pm3ds_cfg.update_skip = 0;
+    pm3ds_cfg.map_dragged = false;
     pm3ds_settings_default_keymap(pm3ds_cfg.keymap);
     FILE *f = fopen(CFG_PATH, "r");
     if (f) {
@@ -94,6 +95,7 @@ void pm3ds_settings_load(void) {
             else if (sscanf(line, "ff_speed=%d", &v) == 1 && v >= 2 && v <= 4) pm3ds_cfg.ff_speed = v;
             else if (sscanf(line, "ff_toggle=%d", &v) == 1) pm3ds_cfg.ff_toggle = v != 0;
             else if (sscanf(line, "update_check=%d", &v) == 1) pm3ds_cfg.update_check = v != 0;
+            else if (sscanf(line, "map_dragged=%d", &v) == 1) pm3ds_cfg.map_dragged = v != 0;
             else if (sscanf(line, "update_skip=%d", &v) == 1) pm3ds_cfg.update_skip = v;
             else if (sscanf(line, "rando_flags=%d", &v) == 1) pm3ds_cfg.rando_flags = (unsigned)v & PM3DS_RANDO_ALL;
             else if (sscanf(line, "rando=%d", &v) == 1 && v >= 1 && v <= 3) {   /* older builds: a mode */
@@ -118,6 +120,7 @@ void pm3ds_settings_save(void) {
     fprintf(f, "view_mode=%d\nfps60=%d\ndepth3d=%d\ntext_speed=%d\nff_speed=%d\nff_toggle=%d\nrando_flags=%u\n", pm3ds_cfg.view_mode,
             pm3ds_cfg.fps60, pm3ds_cfg.depth3d, pm3ds_cfg.text_speed, pm3ds_cfg.ff_speed, pm3ds_cfg.ff_toggle, pm3ds_cfg.rando_flags);
     fprintf(f, "update_check=%d\nupdate_skip=%d\n", pm3ds_cfg.update_check, pm3ds_cfg.update_skip);
+    fprintf(f, "map_dragged=%d\n", pm3ds_cfg.map_dragged);
     for (int k = 0; k < KEY_IDX_COUNT; k++) fprintf(f, "key_%s=%d\n", s_key_cfg[k], pm3ds_cfg.keymap[k]);
     fclose(f);
 }

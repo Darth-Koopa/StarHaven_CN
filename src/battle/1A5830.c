@@ -502,6 +502,12 @@ HitResult calc_enemy_damage_target(Actor* attacker) {
             if (!(target->flags & ACTOR_FLAG_NO_DMG_APPLY)) {
                 target->curHP -= damage;
             }
+#ifdef _3DS
+            if (actorClass == ACTOR_CLASS_PLAYER) {   // 3DS port: the infinite HP cheat (cheats.c)
+                extern s32 pm3ds_cheats_player_hp(s32 hp);
+                target->curHP = pm3ds_cheats_player_hp(target->curHP);
+            }
+#endif
 
             if (target->curHP < 1) {
                 target->curHP = 0;

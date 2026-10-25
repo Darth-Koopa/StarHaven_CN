@@ -208,6 +208,8 @@ const void* pm3ds_ui_icon_script(int id) {
         case UI_ICON_DEBUG:      return item_icon(ITEM_CALCULATOR);
         case UI_ICON_BOOTS:      return &HES_MenuBoots1;
         case UI_ICON_HAMMER:     return &HES_MenuHammer1;
+        case UI_ICON_COOK:       return item_icon(ITEM_FRYING_PAN);
+        case UI_ICON_CHEATS:     return item_icon(ITEM_LUCKY_STAR);
     }
     return nullptr;
 }

@@ -5,6 +5,10 @@ the banner jingle, and build cia/icon.icn and cia/banner.bnr with bannertool.
 Everything is original: a folded-paper star over a night sky, the title in
 Fira Sans Heavy (SIL Open Font License), and a few bell tones. No game art.
 
+With cia/banner.cgfx (Velvii's 3D banner, see NOTICE) the banner is that model
+instead, with the paper star drawn into its emblem texture; the flat 256x128
+picture is still drawn as the fallback.
+
 usage: make_branding.py            (BANNERTOOL defaults to port/3ds/local/bin)
 """
 import math
@@ -153,6 +157,29 @@ def make_jingle(path, rate=32000):
         w.writeframes(frames)
 
 
+def make_emblem(cgfx):
+    """the paper star in the 3D banner's emblem texture (its quad is 1.844:1 and stretches
+    the square texture across it, so the star is drawn that much narrower), and the model
+    sized to the banner area"""
+    import cgfx_texture
+    star = paper_star(220)
+    star = star.resize((round(star.width / 1.844), star.height), Image.LANCZOS)
+    img = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
+    img.alpha_composite(star, ((256 - star.width) // 2, 4))
+    d = cgfx_texture.replace(bytearray(open(cgfx, "rb").read()), "PaperMarioLogo", img)
+    # Velvii's title texture is 256x244 (240 rows of data): a console draws only part of a
+    # texture that isn't a power of two tall (#30, #32)
+    d = cgfx_texture.set_height(d, "Star Haven", 128)
+    # the model is about 2.2 x 1.2 units around y = 1.715 (with its animation) and the banner
+    # area about 26 x 13, so scale it up 7x through the root bone and centre it on y = 1.2, clear
+    # of the bottom edge, where HOME Menu themes draw over the banner.
+    # Each part is a front and a back layer 0.03-0.06 apart: the depth stays unscaled so they
+    # don't drift apart into two visible sheets.
+    scale = 7.0
+    d = cgfx_texture.place_root(d, scale, 0.0, 1.2 - 1.715 * scale, -1.0, depth_scale=1.0)
+    open(cgfx, "wb").write(d)
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     icon, banner, jingle = (os.path.join(OUT, f) for f in ("icon.png", "banner.png", "banner.wav"))
@@ -161,7 +188,13 @@ def main():
     make_jingle(jingle)
     subprocess.run([BANNERTOOL, "makesmdh", "-s", NAME, "-l", LONG, "-p", PUBLISHER, "-i", icon,
                     "-o", os.path.join(OUT, "icon.icn")], check=True)
-    subprocess.run([BANNERTOOL, "makebanner", "-i", banner, "-a", jingle,
+    cgfx = os.path.join(OUT, "banner.cgfx")
+    if os.path.exists(cgfx):
+        make_emblem(cgfx)
+        art = ["-ci", cgfx]
+    else:
+        art = ["-i", banner]
+    subprocess.run([BANNERTOOL, "makebanner", *art, "-a", jingle,
                     "-o", os.path.join(OUT, "banner.bnr")], check=True)
     print("wrote", icon, banner, jingle, "icon.icn", "banner.bnr")
 

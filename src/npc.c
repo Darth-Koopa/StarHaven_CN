@@ -847,10 +847,69 @@ f32 npc_get_render_yaw(Npc* npc) {
     return yaw;
 }
 
+#ifdef _3DS
+// 3DS port: an NPC whose sprite is certainly off screen is not drawn; building and
+// translating its sprite costs CPU on an Old 3DS even though the GPU clips it all away.
+// Only plain NPCs: no reflections, render callbacks, screen-space offsets or tilts.
+extern u32 pm3ds_tstat_npcs_culled;   // port/3ds/source/n64_shim/gfx_translate.c (PERF log)
+#ifdef PM3DS_CULL_VERIFY
+#include "pm3ds_gfx_tags.h"
+static Npc* sCullCheckNpcs[MAX_NPCS];
+static s32 sCullCheckCount;
+#endif
+f32 pm3ds_view_ndc_x(f32 viewportStartX, f32 viewportW);
+
+static bool pm3ds_npc_offscreen(Npc* npc, Camera* cam) {
+    f32 size, cx, cy, cz, kx;
+    u32 all = 0x1F;
+    s32 i;
+
+    if ((npc->flags & (NPC_FLAG_REFLECT_WALL | NPC_FLAG_REFLECT_FLOOR)) || npc->onRender != &STUB_npc_callback
+        || npc->screenSpaceOffset2D[0] != 0.0f || npc->screenSpaceOffset2D[1] != 0.0f
+        || npc->rot.x != 0.0f || npc->rot.z != 0.0f || npc->rotPivotOffsetY != 0.0f) {
+        return false;
+    }
+    size = MAX(npc->collisionHeight, npc->collisionDiameter) * MAX(MAX(npc->scale.x, npc->scale.y * npc->verticalStretch), 1.0f);
+    size = size * 1.5f + 24.0f;   // half-size of a generous cube around the sprite
+    cx = npc->pos.x;
+    cy = npc->pos.y + npc->verticalRenderOffset + size * 0.5f;
+    cz = npc->pos.z;
+    kx = pm3ds_view_ndc_x(cam->viewportStartX, cam->viewportW) + 0.15f;
+#ifdef PM3DS_CULL_VERIFY_CONTROL   // debug: a deliberately wrong test (outer half of the screen) the check must catch
+    size = 1.0f;
+    kx = 0.5f;
+#endif
+    for (i = 0; i < 8 && all; i++) {
+        f32 x, y, z, w;
+        u32 code = 0;
+        transform_point(cam->mtxPerspective, cx + ((i & 1) ? size : -size), cy + ((i & 2) ? size : -size),
+                        cz + ((i & 4) ? size : -size), 1.0f, &x, &y, &z, &w);
+        if (x > kx * w) code |= 0x01;
+        if (x < -kx * w) code |= 0x02;
+        if (y > 1.15f * w) code |= 0x04;
+        if (y < -1.15f * w) code |= 0x08;
+        if (z < -w) code |= 0x10;
+        all &= code;
+    }
+    return all != 0;
+}
+#endif
+
 void appendGfx_npc(void* data) {
     Npc* npc = data;
     Matrix4f mtx1, mtx2;
     f32 renderYaw = npc_get_render_yaw(npc);
+#ifdef PM3DS_CULL_VERIFY
+    b8 cullCheck = false;
+    for (s32 k = 0; k < ARRAY_COUNT(sCullCheckNpcs); k++) {
+        if (sCullCheckNpcs[k] == npc) {
+            cullCheck = true;
+        }
+    }
+    if (cullCheck) {
+        gDPNoOpTag(gMainGfxPos++, PM3DS_GFX_TAG_CULL_CHECK);
+    }
+#endif
 
     guTranslateF(mtx1, npc->pos.x, npc->pos.y + npc->verticalRenderOffset, npc->pos.z);
     if (npc->flags & NPC_FLAG_UPSIDE_DOWN) {
@@ -971,6 +1030,11 @@ void appendGfx_npc(void* data) {
         }
     }
     npc->onRender(npc);
+#ifdef PM3DS_CULL_VERIFY
+    if (cullCheck) {
+        gDPNoOpTag(gMainGfxPos++, PM3DS_GFX_TAG_CULL_CHECK_END);
+    }
+#endif
 }
 
 void render_npcs(void) {
@@ -982,6 +1046,12 @@ void render_npcs(void) {
     f32 renderDist;
     s32 i;
 
+#ifdef PM3DS_CULL_VERIFY
+    sCullCheckCount = 0;
+    for (i = 0; i < ARRAY_COUNT(sCullCheckNpcs); i++) {
+        sCullCheckNpcs[i] = nullptr;
+    }
+#endif
     for (i = 0; i < MAX_NPCS; i++) {
         Npc* npc = (*gCurrentNpcListPtr)[i];
         if ((npc != nullptr)
@@ -1010,6 +1080,26 @@ void render_npcs(void) {
                     npc->hideAlpha = 255;
                 }
 
+#if defined(_3DS) && defined(PM3DS_CULL_VERIFY)
+                // debug: draw it anyway, marked, so the translator can tell whether it was visible
+                if (pm3ds_npc_offscreen(npc, cam)) {
+                    sCullCheckNpcs[sCullCheckCount++ % ARRAY_COUNT(sCullCheckNpcs)] = npc;
+                    pm3ds_tstat_npcs_culled++;
+                }
+#elif defined(_3DS) && !defined(PM3DS_NO_OFFSCREEN_CULL)
+                if (pm3ds_npc_offscreen(npc, cam)) {
+                    // what appendGfx_npc would have read back from the sprite
+                    if (!(npc->flags & NPC_FLAG_NO_ANIMS_LOADED)) {
+                        if (npc->curAnim != 0 && npc->spriteInstanceID >= 0) {
+                            npc->animNotifyValue = spr_get_notify_value(npc->spriteInstanceID);
+                        }
+                    } else {
+                        npc->animNotifyValue = func_802DDEC4(PLAYER_SPRITE_AUX1);
+                    }
+                    pm3ds_tstat_npcs_culled++;
+                    continue;
+                }
+#endif
                 if (npc->hideAlpha != 0) {
                     queue_render_task(renderTaskPtr);
                 }

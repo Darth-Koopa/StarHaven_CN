@@ -1,5 +1,9 @@
 #include "common.h"
 #include "filemenu.h"
+
+#if defined(_3DS) && defined(PM3DS_START_MAP)
+bool pm3ds_debug_new_game_made;   // port/3ds/source/n64_shim/m13_debug.c (battle sweep)
+#endif
 #include "fio.h"
 #include "game_modes.h"
 
@@ -373,9 +377,11 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
                         clear_player_data();
                         clear_saved_variables();
 #ifdef _3DS
-                        {   // 3DS port: roll a randomizer seed if the option is on
+                        {   // 3DS port: roll a randomizer seed if the option is on; cheats if allowed
                             extern void pm3ds_rando_new_game(void);
+                            extern void pm3ds_cheats_new_game(void);
                             pm3ds_rando_new_game();
+                            pm3ds_cheats_new_game();
                         }
 #endif
                         gGameStatusPtr->areaID = AREA_KMR;
@@ -390,6 +396,7 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
                         gGameStatusPtr->mapID = PM3DS_START_MAP;
                         gGameStatusPtr->entryID = PM3DS_START_ENTRY;
                         evt_set_variable(nullptr, GB_StoryProgress, PM3DS_START_STORY);
+                        pm3ds_debug_new_game_made = true;   // debug sweeps wait for this file, not the title's world scenes
 #ifdef PM3DS_START_FLAG   /* e.g. -DPM3DS_START_FLAG=GF_KMR10_KnockedSpringOutOfTree */
                         evt_set_variable(nullptr, PM3DS_START_FLAG, true);
 #endif
@@ -437,6 +444,7 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
                             gPlayerData.keyItems[0] = ITEM_DOLLY;
                             gPlayerData.keyItems[1] = ITEM_ODD_KEY;
                             gPlayerData.keyItems[2] = ITEM_LUCKY_STAR;
+                            gPlayerData.hasActionCommands = true;   // what getting the Lucky Star sets
                             for (k = 0; k < ARRAY_COUNT(partners); k++) {
                                 gPlayerData.partners[partners[k]].enabled = true;
                             }

@@ -941,7 +941,12 @@ EvtScript N(EVS_Attack_GrappleDrop) = {
     EndThread
     Wait(20)
     Call(LoadActionCommand, ACTION_COMMAND_BREAK_FREE)
+#ifdef _3DS
+    // 3DS port: the N64 calls whirlwind's init address, which is break_free's once its overlay is loaded
+    Call(action_command_break_free_init)
+#else
     Call(action_command_whirlwind_init)
+#endif
     Call(SetupMashMeter, 1, 30, 0, 0, 0, 0)
     Wait(10)
     Call(SetAnimation, ACTOR_SELF, PRT_MAIN, ANIM_Buzzar_Anim17)

@@ -194,13 +194,15 @@ void __wrap_state_step_logos(void) {
      * GAME_MODE_INTRO (the absolute-pointer hos_05 map that needs the
      * deferred 3D matrix/vtx chain + relocation). One-shot; skipLogos is
      * sticky so the fade + mode transition proceed naturally, and the N64
-     * logo still gets its full HOLD first. */
+     * logo still gets its full HOLD first.
+     * Every pass through the logos, not just the first boot: Quit on the
+     * end-of-chapter save prompt (kmr_24 ExitGame) and the soft reset go
+     * back through GAME_MODE_STARTUP, and a one-shot here played the whole
+     * story intro there (GitHub #34). state_init_logos clears skipLogos. */
     if (gGameStatusPtr) {
         unsigned char *gs = (unsigned char *)gGameStatusPtr;
         signed char   *ss = (signed char *)&gs[0xAC];   /* GameStatus.startupState */
-        static int skip_armed = 0;
-        if (!skip_armed && *ss >= 2) {
-            skip_armed = 1;
+        if (*ss >= 2 && !gs[0xAE]) {
             gs[0xAE] = 1;                                /* GameStatus.skipLogos = true */
             pm3ds_log(PM3DS_LOG_INFO,
                       "logos: N64 hold done -> skipLogos=1 (-> TITLE_SCREEN)");

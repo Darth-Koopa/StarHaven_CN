@@ -2528,7 +2528,14 @@ void create_encounters(void) {
                     enemy->npcID = npcData->id;
                     npcSettings = enemy->npcSettings = npcData->settings;
                     enemy->drops = &npcData->drops;
+#ifdef _3DS
+                    // 3DS port: the N64 tests the high byte of the first big-endian s16, which is
+                    // dropFlags. Little-endian puts itemDropChance there, so every enemy fell back
+                    // to DefaultEnemyDrops (Mushrooms only, no hearts or flowers, GitHub #35).
+                    if (npcData->drops.dropFlags != NPC_DROP_FLAG_80) {
+#else
                     if ((*(s16*)(&npcData->drops) & 0xFF00) != 0x8000) { //TODO s16?
+#endif
                         enemy->drops = &DefaultEnemyDrops;
                     }
                     enemy->encountered = 0;

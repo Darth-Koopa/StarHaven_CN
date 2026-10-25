@@ -3,6 +3,14 @@
 
 extern Gfx PauseGfxOrbs[];
 
+#ifdef _3DS
+// 3DS port: with the unlimited BP cheat on (cheats.c) any badge fits
+s32 pm3ds_cheats_badge_bp(s32 bp);
+#define BADGE_BP_LEFT(bp) pm3ds_cheats_badge_bp(bp)
+#else
+#define BADGE_BP_LEFT(bp) (bp)
+#endif
+
 void pause_badges_draw_contents(MenuPanel* menu, s32 baseX, s32 baseY, s32 width, s32 height, s32 opacity, s32 darkening);
 void pause_badges_init(MenuPanel* panel);
 void pause_badges_handle_input(MenuPanel* panel);
@@ -275,7 +283,7 @@ s32 pause_badges_try_equip(s16 badgeID) {
         u8 moveID = gItemTable[badgeID].moveID;
         s32 requiredBP = totalEquippedBP + gMoveTable[moveID].costBP;
 
-        if (playerData->maxBP < requiredBP) {
+        if (BADGE_BP_LEFT(playerData->maxBP) < requiredBP) {
             return EQUIP_RESULT_NOT_ENOUGH_BP;
         }
     }
@@ -473,7 +481,7 @@ void pause_badges_draw_contents(MenuPanel* menu, s32 baseX, s32 baseY, s32 width
                     }
                 }
 
-                if (!isNone && bpAvailable < gMoveTable[gItemTable[badgeID].moveID].costBP) {
+                if (!isNone && BADGE_BP_LEFT(bpAvailable) < gMoveTable[gItemTable[badgeID].moveID].costBP) {
                     cannotBeEquipped = true;
                 }
 
@@ -669,6 +677,11 @@ void pause_badges_draw_contents(MenuPanel* menu, s32 baseX, s32 baseY, s32 width
     draw_msg(pause_get_menu_msg(PAUSE_MSG_BADGE_BP), baseX + OFFSET_2_X, baseY + 74, 255, MSG_PAL_STANDARD, DRAW_MSG_STYLE_MENU);
     draw_number(playerData->maxBP, baseX + OFFSET_3_X, baseY + OFFSET_3_Y, DRAW_NUMBER_CHARSET_THIN, MSG_PAL_STANDARD, 255, DRAW_NUMBER_STYLE_MONOSPACE | DRAW_NUMBER_STYLE_ALIGN_RIGHT);
     bpAmount = playerData->maxBP - pause_get_total_equipped_bp_cost();
+#ifdef _3DS
+    if (bpAmount < 0) {   // 3DS port: more equipped than the BP allow (the unlimited BP cheat)
+        bpAmount = 0;
+    }
+#endif
     bpAvailOffsetX = 0;
     bpAvailOffsetY = (playerData->maxBP - 1) / 10 * 8;
     if (bpAmount < 10) {

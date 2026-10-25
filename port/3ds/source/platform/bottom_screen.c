@@ -12,8 +12,10 @@
  *   Party   partner portraits (joined / not yet), current partner
  *   Tattle  every enemy Goombario has tattled
  *   Found   the item spots collected, per area
- * plus three buttons: Options (its own rail: settings, controls, debug page;
- * saved by platform/pm3ds_settings.c), Items and a fast-forward toggle.
+ *   Recipes every dish Tayce T. cooks, which ones she has, how to make them
+ * plus three buttons: Options (its own rail: settings, controls, the cheats of
+ * a save that allows them, debug page; saved by platform/pm3ds_settings.c),
+ * Items and a fast-forward toggle.
  *
  * In battle the rail shows HP/FP/star power/coins and the panel the menu the
  * game is waiting on (commands, moves, items, targets) as buttons to tap, or
@@ -30,6 +32,7 @@
 #include <stdlib.h>
 #include "pm3ds_brand.h"
 
+#include "pm3ds_cheats.h"
 #include "pm3ds_hud_info.h"
 #include "pm3ds_rando.h"
 #include "pm3ds_settings.h"
@@ -132,8 +135,8 @@ static const char *ui_text(const char *source) {
 }
 
 /* ---- state --------------------------------------------------------------- */
-enum { TAB_STATS, TAB_MAP, TAB_PARTY, TAB_LOG, TAB_FOUND, TAB_DEBUG, TAB_OPTIONS, TAB_CONTROLS };
-#define TAB_GAME_LAST TAB_FOUND   /* the tabs shown along the top in game */
+enum { TAB_STATS, TAB_MAP, TAB_PARTY, TAB_LOG, TAB_FOUND, TAB_COOK, TAB_DEBUG, TAB_OPTIONS, TAB_CONTROLS, TAB_CHEATS };
+#define TAB_GAME_LAST TAB_COOK    /* the tabs on the rail in game */
 #define NUM_GAME_TABS (TAB_GAME_LAST + 1)
 static int s_tab = TAB_STATS;
 static pm3ds_hud_info_t s_info;
@@ -797,7 +800,7 @@ static void bar(float x, float y, float w, float h, int v, int max, u32 col) {
  * second line under it), their body from BODY_Y. */
 #define RAIL_X1 50
 #define RAIL_Y0 6
-#define RAIL_TAB_H 40
+#define RAIL_TAB_H 33
 #define PANEL_X0 RAIL_X1
 #define PANEL_Y0 4
 #define PANEL_Y1 206
@@ -827,6 +830,7 @@ static const float s_btn_ff[2] = { 216, 312 };
 
 static void button(const float x[2], const char *label);
 static bool draw_ui_icon(int id, float x, float y, float size, u32 c);
+static bool draw_icon(const void *script, float x, float y, float size, u32 c);
 static bool in(int px, int py, float x0, float y0, float x1, float y1);
 static void small_text_center(float cx, float y, const char *str, float scale, u32 c);
 static float ui_bitmap_text(float x, float y, const char *str, float scale, float max_width, u32 c);
@@ -966,13 +970,16 @@ static const rail_tab_t s_game_rail[] = {
     { "Party", UI_IMG_PARTNER_FIRST + 1, -1 },   /* Kooper */
     { "Tattle", UI_IMG_PARTNER_FIRST, -1 },      /* Goombario */
     { "Found", UI_IMG_STAR_PIECE, UI_ICON_STAR_PIECE },
+    { "Recipes", -1, UI_ICON_COOK },
 };
-static const rail_tab_t s_opt_rail[] = {
+/* the Options rail; Cheats only for a save that allows them (opt_rail) */
+static const rail_tab_t s_opt_rail_all[] = {
     { "Settings", UI_IMG_TIME, UI_ICON_SETTINGS },
     { "Controls", -1, UI_ICON_CONTROLS },
+    { "Cheats", -1, UI_ICON_CHEATS },
     { "Debug", -1, UI_ICON_DEBUG },
 };
-#define NUM_OPT_TABS 3
+static const int s_opt_rail_tab[] = { TAB_OPTIONS, TAB_CONTROLS, TAB_CHEATS, TAB_DEBUG };
 
 /* after the panel: the active tab runs into the panel's rim */
 static void draw_rail(const rail_tab_t *tabs, int n, int active) {
@@ -984,12 +991,12 @@ static void draw_rail(const rail_tab_t *tabs, int n, int active) {
         round_rect(x0, y0, x1, y1, 7, COL_PANEL_EDGE);
         round_rect(x0 + 2, y0 + 2, on ? x1 : x1 - 2, y1 - 2, 5, on ? COL_PANEL : COL_TAB);
         float cx = (x0 + RAIL_X1 - 2) / 2 + (on ? 1 : 0);
-        if (!(tabs[i].icon >= 0 && draw_ui_icon(tabs[i].icon, cx - 10, y0 + 3, 20, COL_WHITE)) && tabs[i].img >= 0) {
+        if (!(tabs[i].icon >= 0 && draw_ui_icon(tabs[i].icon, cx - 9, y0 + 3, 18, COL_WHITE)) && tabs[i].img >= 0) {
             rect_t r = s_img[tabs[i].img];
-            float s = r.w > 16 ? 20.0f / r.w : 1.0f;
-            image(tabs[i].img, cx - r.w * s / 2, y0 + 3 + (20 - r.h * s) / 2, s, COL_WHITE);
+            float s = r.w > 16 ? 18.0f / r.w : 1.0f;
+            image(tabs[i].img, cx - r.w * s / 2, y0 + 3 + (18 - r.h * s) / 2, s, COL_WHITE);
         }
-        /* The Chinese tab labels were tiny at the old 0.55-0.62 game-font scale. */
+        /* Keep the native iQue glyph face; enlarge only its drawn glyphs. */
         ui_bitmap_text_center(cx, y0 + 22, tabs[i].name, 1.3f, x1 - x0 - 6, COL_WHITE);
     }
 }
@@ -999,6 +1006,19 @@ static int rail_hit(int px, int py, int n) {
     if (px >= RAIL_X1 + 2 || py < RAIL_Y0) return -1;
     int i = (py - RAIL_Y0) / RAIL_TAB_H;
     return i < n ? i : -1;
+}
+
+static bool cheats_shown(void) { return s_info.in_game && pm3ds_cheats_allowed(); }
+
+/* the Options rail as shown: its tabs and their TAB_* ids; returns how many */
+static int opt_rail(rail_tab_t *tabs, int *ids) {
+    int n = 0;
+    for (int i = 0; i < (int)(sizeof s_opt_rail_tab / sizeof s_opt_rail_tab[0]); i++) {
+        if (s_opt_rail_tab[i] == TAB_CHEATS && !cheats_shown()) continue;
+        tabs[n] = s_opt_rail_all[i];
+        ids[n++] = s_opt_rail_tab[i];
+    }
+    return n;
 }
 
 /* ---- Stats ----------------------------------------------------------------- */
@@ -1186,7 +1206,7 @@ static void draw_map(void) {
     }
     if (!s_map_follow) {
         chip(MAP_CENTRE_X0, MAP_CENTRE_Y0, vx1 - 4, vy1 - 4, "Centre", COL_SEL, 0.75f);
-    } else {
+    } else if (!pm3ds_cfg.map_dragged) {   /* until the first drag */
         round_rect(vx0 + 4, vy1 - 24, vx0 + 112, vy1 - 4, 7, COL_DARK_CHIP);
         /* Center inside the chip; use the bitmap font so Chinese is legible. */
         ui_bitmap_text_center(vx0 + 58, vy1 - 20, "Drag to look", 1.25f, 100, COL_WHITE);
@@ -1495,6 +1515,175 @@ static void draw_found(void) {
         }
         snprintf(buf, sizeof buf, "%d/%d", a->found, a->total);
         text_right(CX1 - 4, y0 + 1, buf, 0.72f, done ? COL_DONE : COL_WHITE);
+    }
+}
+
+/* ---- Recipes --------------------------------------------------------------- */
+/* Every dish Tayce T. cooks, by name, the cooked ones lit. Dishes she hasn't
+ * cooked yet stay ??? unless "Show all" is on. A dish opens on what it does
+ * and every way to cook it (n64_shim/journal.c). */
+static pm3ds_recipe_list_t s_cook;
+static pm3ds_recipe_detail_t s_dish;
+static int s_cook_page, s_cook_open = -1, s_dish_page;   /* s_cook_open: s_cook index shown */
+static bool s_cook_all;
+static char s_dish_name[PM3DS_RECIPE_NAME];
+static short s_dish_starts[8], s_dish_lens[8];
+static int s_dish_lines;
+#define COOK_ROWS 7
+#define COOK_PER_PAGE (COOK_ROWS * 2)
+#define COOK_ALL_X0 150
+#define COOK_ALL_X1 214
+#define DISH_DESC_Y 58
+#define DISH_DESC_SCALE 0.7f
+#define DISH_DESC_LINE_H 12
+#define DISH_DESC_LINES 3
+#define DISH_WAY_H 19
+
+static bool cook_known(int i) { return s_cook.done[i] || s_cook_all; }
+
+static void cook_open(int i) {
+    s_cook_open = i;
+    s_dish_page = 0;
+    memcpy(s_dish_name, s_cook.name[i], sizeof s_dish_name);
+    pm3ds_recipe_detail(s_cook.item[i], &s_dish);
+    s_dish_lines = wrap_text(s_dish.desc, DISH_DESC_SCALE, CX1 - CX0 - 12, s_dish_starts, s_dish_lens, DISH_DESC_LINES);
+}
+
+/* the ways list starts under the description */
+static float dish_ways_y0(void) { return DISH_DESC_Y + s_dish_lines * DISH_DESC_LINE_H + 8 + 16; }
+static int dish_ways_per_page(void) { return (int)((PANEL_Y1 - 4 - dish_ways_y0()) / DISH_WAY_H); }
+
+/* ingredient k of a way: icon and name from x, within w; the x after it */
+static float dish_ingr(int k, float x, float y, float w) {
+    if (draw_icon(s_dish.ingr_icon[k], x, y + 1, 14, COL_WHITE)) x += 16;
+    const char *name = s_dish.ingr_name[k];
+    float sc = fit(name, w - 16, 0.68f, 0.45f);
+    text(x, y + 1, name, sc, 0, COL_WHITE);
+    return x + text_width(name, sc);
+}
+
+static void draw_dish(void) {
+    char buf[24];
+    int per = dish_ways_per_page(), pages = pages_of(s_dish.ways, per);
+    if (s_dish_page >= pages) s_dish_page = 0;
+    chip(CX0, HEAD_Y - 1, CX0 + 50, HEAD_Y + 19, "Back", COL_SEL, 0.85f);
+    float nx = CX0 + 56;
+    if (draw_icon(s_cook.icon[s_cook_open], nx, HEAD_Y - 1, 20, COL_WHITE)) nx += 23;
+    text(nx, HEAD_Y, s_dish_name, fit(s_dish_name, (pages > 1 ? 218 : CX1) - nx - 4, 1.0f, 0.55f), 0, COL_WHITE);
+    pager(s_dish_page, pages);
+    /* what eating it does */
+    float x = CX0;
+    if (s_dish.hp > 0) {
+        card(x, 34, x + 56, 54, COL_CARD);
+        image(UI_IMG_HEART, x + 4, 36, 1.0f, COL_WHITE);
+        snprintf(buf, sizeof buf, "+%d", s_dish.hp);
+        text_right(x + 52, 36, buf, 0.85f, COL_WHITE);
+        x += 60;
+    }
+    if (s_dish.fp > 0) {
+        card(x, 34, x + 56, 54, COL_CARD);
+        image(UI_IMG_FLOWER, x + 4, 36, 1.0f, COL_WHITE);
+        snprintf(buf, sizeof buf, "+%d", s_dish.fp);
+        text_right(x + 52, 36, buf, 0.85f, COL_WHITE);
+    }
+    bool done = s_cook.done[s_cook_open];
+    text_right(CX1 - 2, 38, done ? "Cooked" : "Not cooked yet", 0.72f, done ? COL_DONE : COL_HINT);
+    if (s_dish_lines > 0) {
+        card(CX0, DISH_DESC_Y - 2, CX1, DISH_DESC_Y + s_dish_lines * DISH_DESC_LINE_H + 4, COL_AREA);
+        for (int l = 0; l < s_dish_lines; l++) {
+            char line[96];
+            int n = s_dish_lens[l] < (int)sizeof line - 1 ? s_dish_lens[l] : (int)sizeof line - 1;
+            memcpy(line, s_dish.desc + s_dish_starts[l], n);
+            line[n] = '\0';
+            text(CX0 + 6, DISH_DESC_Y + l * DISH_DESC_LINE_H, line, DISH_DESC_SCALE, 0, COL_WHITE);
+        }
+    }
+    float y = dish_ways_y0();
+    text(CX0 + 2, y - 16, "How to cook it", 0.72f, 0, COL_SUB);
+    if (s_dish.ways == 0) {
+        text(CX0 + 6, y + 2, "Anything that doesn't go together", 0.72f, 0, COL_WHITE);
+        return;
+    }
+    text_right(CX1 - 2, y - 16, "Mixing two needs the Cookbook", 0.62f, COL_HINT);
+    for (int r = 0; r < per; r++) {
+        int i = s_dish_page * per + r;
+        if (i >= s_dish.ways) break;
+        float y0 = y + r * DISH_WAY_H;
+        tile(CX0, y0, CX1, y0 + DISH_WAY_H - 2, 6, COL_TAB_ON);
+        if (s_dish.way[i].b < 0) {
+            float xe = dish_ingr(s_dish.way[i].a, CX0 + 5, y0, 150);
+            const char *note = s_dish.way[i].luck ? "by luck" : s_dish.way[i].cookbook ? "with the Cookbook" : "on its own";
+            text(xe + 8, y0 + 2, note, 0.62f, 0, COL_HINT);
+        } else {
+            float xe = dish_ingr(s_dish.way[i].a, CX0 + 5, y0, 112);
+            text(xe + 4, y0 + 1, "+", 0.75f, 0, COL_HINT);
+            dish_ingr(s_dish.way[i].b, xe + 14, y0, CX1 - xe - 18);
+        }
+    }
+}
+
+static void cook_entry_rect(int slot, float *x0, float *y0, float *x1, float *y1) {
+    *x0 = CX0 + (slot / COOK_ROWS) * 126;
+    *y0 = 56 + (slot % COOK_ROWS) * 21;
+    *x1 = *x0 + 122;
+    *y1 = *y0 + 18;
+}
+
+static void draw_cook(void) {
+    char buf[40];
+    if (s_cook_open >= 0 && s_cook_open < s_cook.count) {
+        draw_dish();
+        return;
+    }
+    s_cook_open = -1;
+    int pages = pages_of(s_cook.count, COOK_PER_PAGE);
+    if (s_cook_page >= pages) s_cook_page = 0;
+    snprintf(buf, sizeof buf, "%d of %d cooked", s_cook.cooked, s_cook.count);
+    page_title("Recipes", buf);
+    chip(COOK_ALL_X0, HEAD_Y, COOK_ALL_X1, HEAD_Y + 18, s_cook_all ? "Hide new" : "Show all",
+         s_cook_all ? COL_SEL : COL_OFF, 0.7f);
+    pager(s_cook_page, pages);
+    bar(CX0 + 2, BODY_Y, CX1 - CX0 - 2, 5, s_cook.cooked, s_cook.count, COL_GOLD);
+    for (int slot = 0; slot < COOK_PER_PAGE; slot++) {
+        int i = s_cook_page * COOK_PER_PAGE + slot;
+        if (i >= s_cook.count) break;
+        float x0, y0, x1, y1;
+        cook_entry_rect(slot, &x0, &y0, &x1, &y1);
+        bool known = cook_known(i);
+        tile(x0, y0, x1, y1, 6, s_cook.done[i] ? COL_TAB_ON : COL_OFF);
+        /* not cooked: a dark silhouette, the name hidden unless "Show all" */
+        draw_icon(s_cook.icon[i], x0 + 4, y0 + 2, 14, s_cook.done[i] ? COL_WHITE : RGBA(70, 45, 25, known ? 200 : 150));
+        const char *name = known ? s_cook.name[i] : "???";
+        text(x0 + 21, y0 + 1, name, fit(name, x1 - x0 - 26, 0.75f, 0.5f), 0, known ? COL_WHITE : RGBA(255, 255, 255, 170));
+    }
+}
+
+static void cook_tap(int px, int py) {
+    if (s_cook_open >= 0) {
+        if (in(px, py, CX0 - 4, HEAD_Y - 5, CX0 + 54, HEAD_Y + 23)) {
+            s_cook_open = -1;
+            return;
+        }
+        int np = pager_tap(px, py, s_dish_page, pages_of(s_dish.ways, dish_ways_per_page()));
+        if (np >= 0) s_dish_page = np;
+        else if (py >= dish_ways_y0()) s_dish_page++;   /* wraps in draw_dish */
+        return;
+    }
+    if (in(px, py, COOK_ALL_X0 - 2, HEAD_Y - 4, COOK_ALL_X1 + 2, HEAD_Y + 22)) {
+        s_cook_all = !s_cook_all;
+        return;
+    }
+    int np = pager_tap(px, py, s_cook_page, pages_of(s_cook.count, COOK_PER_PAGE));
+    if (np >= 0) { s_cook_page = np; return; }
+    for (int slot = 0; slot < COOK_PER_PAGE; slot++) {
+        int i = s_cook_page * COOK_PER_PAGE + slot;
+        if (i >= s_cook.count) break;
+        float x0, y0, x1, y1;
+        cook_entry_rect(slot, &x0, &y0, &x1, &y1);
+        if (in(px, py, x0, y0 - 1, x1, y1 + 2)) {
+            if (cook_known(i)) cook_open(i);
+            return;
+        }
     }
 }
 
@@ -2025,6 +2214,28 @@ static void draw_controls(void) {
     button(s_btn_ff, "Back");
 }
 
+/* a save's cheats, each switched on its own (n64_shim/cheats.c) */
+static const char *const s_cheat_names[PM3DS_CHEAT_COUNT] = {
+    "Infinite HP", "Infinite FP", "Infinite Star Power", "999 coins", "Unlimited BP",
+};
+static const char *const s_cheat_help[PM3DS_CHEAT_COUNT] = {
+    "Stays full", "Stays full", "Stays full", "Stays at 999", "Any badges fit",
+};
+
+static void draw_cheats(void) {
+    page_title("Cheats", "Tap one to switch it");
+    for (int i = 0; i < PM3DS_CHEAT_COUNT; i++) {
+        float y = OPT_Y0 + i * OPT_ROW_H;
+        bool on = pm3ds_cheat_on(i);
+        tile(CX0, y, CX1, y + OPT_ROW_H - 3, 6, on ? COL_SEL : COL_TAB_ON);
+        text(CX0 + 7, y + 1, s_cheat_names[i], fit(s_cheat_names[i], 112, 0.82f, 0.6f), 0, COL_WHITE);
+        text(CX0 + 124, y + 3, s_cheat_help[i], fit(s_cheat_help[i], 96, 0.62f, 0.5f), 0, COL_HINT);
+        chip(266, y + 2, CX1 - 4, y + OPT_ROW_H - 5, on ? "On" : "Off", on ? COL_GOLD : COL_OFF, 0.75f);
+    }
+    small_text_center((CX0 + CX1) / 2, OPT_Y0 + PM3DS_CHEAT_COUNT * OPT_ROW_H + 8, "Saved with this file.", 1.0f, COL_PANEL_EDGE);
+    button(s_btn_ff, "Back");
+}
+
 static void button(const float x[2], const char *label) {
     round_rect(x[0] + 2, BTN_Y0 + 2, x[1] + 2, BTN_Y1 + 2, 10, COL_SHADOW);
     round_rect(x[0], BTN_Y0, x[1], BTN_Y1, 10, COL_PANEL_EDGE);
@@ -2061,8 +2272,8 @@ static void draw_buttons(void) {
 
 /* ---- new-game picker ------------------------------------------------------ */
 /* The file menu (src/filemenu/filemenu_main.c) opens it when an empty file is
- * picked: Classic or Randomizer, then what the randomizer shuffles and the
- * seed. Drawn on both screens (the top one over the file menu); touch on the
+ * picked: Classic or Randomizer (and whether the save allows cheats), then
+ * what the randomizer shuffles and the seed. Drawn on both screens (the top one over the file menu); touch on the
  * bottom one, +Control Pad / A / B / Y / START on either. */
 enum { NG_CLOSED, NG_MODE, NG_RANDO };
 enum { NG_SND_NONE, NG_SND_MOVE, NG_SND_NEXT, NG_SND_BACK, NG_SND_TOGGLE };   /* for the file menu to play */
@@ -2083,6 +2294,9 @@ static unsigned s_ng_flags, s_ng_seed;
 static bool s_ng_fresh;   /* just opened: the press that opened it is still down */
 static bool s_ng_hold;    /* closed, but the game sees no buttons until they are let go */
 static bool s_ng_kbd;     /* type a seed: the keyboard opens from the tick, outside a frame */
+static bool s_ng_cheats;  /* the new save allows cheats (n64_shim/cheats.c) */
+#define NG_CHEAT_Y0 178
+#define NG_CHEAT_Y1 200
 
 void pm3ds_new_game_picker_open(void) {
     s_ng_page = NG_MODE;
@@ -2091,6 +2305,7 @@ void pm3ds_new_game_picker_open(void) {
     s_ng_seed = 0;
     s_ng_result = 0;
     s_ng_fresh = true;
+    s_ng_cheats = false;
 }
 
 /* src/filemenu/filemenu_main.c, each frame: -1 while open, 1 once a game
@@ -2117,6 +2332,7 @@ static void ng_close(int result, int sound) {
 static void ng_start(bool rando) {
     unsigned flags = rando ? (s_ng_flags | PM3DS_RANDO_ON) : 0;
     pm3ds_rando_choose(flags, s_ng_seed);
+    pm3ds_cheats_choose(s_ng_cheats);
     pm3ds_cfg.rando_flags = s_ng_flags | (rando ? PM3DS_RANDO_ON : 0);
     pm3ds_settings_save();
     ng_close(1, NG_SND_NEXT);
@@ -2183,6 +2399,9 @@ static void ng_buttons(void) {
                 s_ng_cursor = NG_ROW_START;
                 s_ng_sound = NG_SND_NEXT;
             }
+        } else if (kd & KEY_Y) {
+            s_ng_cheats = !s_ng_cheats;
+            s_ng_sound = NG_SND_TOGGLE;
         } else if (kd & KEY_B) {
             ng_close(0, NG_SND_BACK);
         }
@@ -2219,6 +2438,9 @@ static void ng_touch(int px, int py) {
             s_ng_page = NG_RANDO;
             s_ng_cursor = NG_ROW_START;
             s_ng_sound = NG_SND_NEXT;
+        } else if (in(px, py, 16, NG_CHEAT_Y0, 304, NG_CHEAT_Y1)) {
+            s_ng_cheats = !s_ng_cheats;
+            s_ng_sound = NG_SND_TOGGLE;
         } else if (in(px, py, 8, 212, 88, 236)) {
             ng_close(0, NG_SND_BACK);
         }
@@ -2289,7 +2511,15 @@ static void draw_new_game(float w) {
             small_text_center((x0 + x1) / 2, 124, desc[i][0], 1.0f, COL_PANEL_EDGE);
             small_text_center((x0 + x1) / 2, 136, desc[i][1], 1.0f, COL_PANEL_EDGE);
         }
-        small_text_center(dx + 160, 186, "A: choose    B: back", 1.0f, COL_PANEL_EDGE);
+        /* cheats: a switch for the new save, used from Options > Cheats in game */
+        round_rect(dx + 16, NG_CHEAT_Y0, dx + 304, NG_CHEAT_Y1, 8, s_ng_cheats ? RGBA(255, 214, 120, 150) : RGBA(205, 190, 170, 120));
+        text(dx + 24, NG_CHEAT_Y0 + 2, "Cheats", 1.0f, 0, COL_WHITE);
+        small_text(dx + 90, NG_CHEAT_Y0 + 7, "Can't add later", 40, COL_PANEL_EDGE);
+        round_rect(dx + 248, NG_CHEAT_Y0 + 2, dx + 300, NG_CHEAT_Y1 - 2, 8, COL_PANEL_EDGE);
+        round_rect(dx + 250, NG_CHEAT_Y0 + 4, dx + 298, NG_CHEAT_Y1 - 4, 6,
+                   s_ng_cheats ? RGBA(255, 214, 120, 255) : RGBA(205, 190, 170, 255));
+        text_center(dx + 274, NG_CHEAT_Y0 + 2, s_ng_cheats ? "On" : "Off", 1.0f, 0, COL_WHITE);
+        small_text_center(dx + 206, 219, "A: choose  Y: cheats", 1.0f, COL_PANEL_EDGE);
         ng_button(dx + 8, 212, dx + 88, 234, "Back", false);
         return;
     }
@@ -2410,11 +2640,17 @@ static void draw_menu_page(void) {
         draw_debug();
         return;
     }
-    if (s_tab == TAB_OPTIONS || s_tab == TAB_CONTROLS) {
+    if (s_tab == TAB_CHEATS && !cheats_shown()) s_tab = TAB_OPTIONS;   /* back on the title screen */
+    if (s_tab == TAB_OPTIONS || s_tab == TAB_CONTROLS || s_tab == TAB_CHEATS) {
+        rail_tab_t tabs[4];
+        int ids[4], n = opt_rail(tabs, ids), active = 0;
+        for (int i = 0; i < n; i++)
+            if (ids[i] == s_tab) active = i;
         panel(PANEL_X0, PANEL_Y0, 316, PANEL_Y1, COL_PANEL);
-        draw_rail(s_opt_rail, NUM_OPT_TABS, s_tab == TAB_OPTIONS ? 0 : 1);
+        draw_rail(tabs, n, active);
         if (s_tab == TAB_OPTIONS) draw_options();
-        else draw_controls();
+        else if (s_tab == TAB_CONTROLS) draw_controls();
+        else draw_cheats();
         return;
     }
     if (!s_info.in_game) {
@@ -2443,6 +2679,7 @@ static void draw_menu_page(void) {
             case TAB_PARTY: draw_party(); break;
             case TAB_LOG:   draw_log();   break;
             case TAB_FOUND: draw_found(); break;
+            case TAB_COOK:  draw_cook();  break;
         }
     }
     draw_buttons();
@@ -2461,6 +2698,7 @@ static void select_tab(int tab) {
     if (tab == TAB_STATS || tab == TAB_MAP || tab == TAB_FOUND) pm3ds_tracker_query(&s_found);
     if (tab == TAB_FOUND && s_found.here >= 0) s_found_page = s_found.here / FOUND_ROWS;
     if (tab == TAB_MAP) s_map_follow = true;
+    if (tab == TAB_COOK) { s_cook_open = -1; pm3ds_recipe_query(&s_cook); }
 }
 
 static void handle_touch(void) {
@@ -2479,6 +2717,10 @@ static void handle_touch(void) {
         if (in(last_x, last_y, MAP_X0, MAP_Y0, MAP_X1, MAP_Y1) && (dx || dy)) {
             drag_dist += abs(dx) + abs(dy);
             if (drag_dist > 4) {
+                if (!pm3ds_cfg.map_dragged) {
+                    pm3ds_cfg.map_dragged = true;
+                    pm3ds_settings_save();
+                }
                 s_map_follow = false;
                 s_map_cx -= dx;
                 s_map_cy -= dy;
@@ -2522,12 +2764,19 @@ static void handle_touch(void) {
         return;
     }
     bool back = in(tp.px, tp.py, s_btn_ff[0], BTN_Y0, s_btn_ff[1], BTN_Y1);
-    if (s_tab == TAB_OPTIONS || s_tab == TAB_CONTROLS) {
-        int r = rail_hit(tp.px, tp.py, NUM_OPT_TABS);
+    if (s_tab == TAB_OPTIONS || s_tab == TAB_CONTROLS || s_tab == TAB_CHEATS) {
+        rail_tab_t tabs[4];
+        int ids[4], r = rail_hit(tp.px, tp.py, opt_rail(tabs, ids));
         if (r >= 0) {
-            s_tab = r == 0 ? TAB_OPTIONS : r == 1 ? TAB_CONTROLS : TAB_DEBUG;
+            s_tab = ids[r];
             return;
         }
+    }
+    if (s_tab == TAB_CHEATS) {
+        int row = (tp.py - OPT_Y0) / OPT_ROW_H;
+        if (back) s_tab = TAB_OPTIONS;
+        else if (tp.px >= CX0 - 4 && tp.py >= OPT_Y0 && row < PM3DS_CHEAT_COUNT) pm3ds_cheat_toggle(row);
+        return;
     }
     if (s_tab == TAB_OPTIONS) {
         if (back) {
@@ -2587,6 +2836,8 @@ static void handle_touch(void) {
         qs_tap();
     } else if (s_info.in_game && s_tab == TAB_LOG) {
         log_tap(tp.px, tp.py);
+    } else if (s_info.in_game && s_tab == TAB_COOK) {
+        cook_tap(tp.px, tp.py);
     } else if (s_info.in_game && s_tab == TAB_FOUND) {
         int np = pager_tap(tp.px, tp.py, s_found_page, pages_of(s_found.count, FOUND_ROWS));
         if (np >= 0) s_found_page = np;
@@ -2653,6 +2904,7 @@ void pm3ds_bottom_screen_tick(unsigned frame) {
     if (s_info.in_game && frame % 30 == 0) {
         if (s_tab == TAB_LOG && s_log_open < 0) pm3ds_tattle_query(&s_log);
         if (s_tab == TAB_STATS || s_tab == TAB_MAP || s_tab == TAB_FOUND) pm3ds_tracker_query(&s_found);
+        if (s_tab == TAB_COOK && s_cook_open < 0) pm3ds_recipe_query(&s_cook);
     }
     pm3ds_tm_get(&s_tm);
     if (s_tm.kind == PM3DS_TM_TARGET && s_info.in_battle) pm3ds_gfx_request_top_copy();   /* the portraits */

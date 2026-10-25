@@ -60,6 +60,35 @@ typedef struct {
 } pm3ds_tracker_t;
 int pm3ds_tracker_query(pm3ds_tracker_t *out);
 
+/* Recipes (n64_shim/journal.c): every dish Tayce T. can cook, by name */
+#define PM3DS_RECIPE_MAX  56
+#define PM3DS_RECIPE_NAME 24
+typedef struct {
+    int count, cooked;
+    short item[PM3DS_RECIPE_MAX];                 /* for pm3ds_recipe_detail */
+    unsigned char done[PM3DS_RECIPE_MAX];         /* cooked at least once */
+    const void *icon[PM3DS_RECIPE_MAX];           /* HudScript */
+    char name[PM3DS_RECIPE_MAX][PM3DS_RECIPE_NAME];
+} pm3ds_recipe_list_t;
+int pm3ds_recipe_query(pm3ds_recipe_list_t *out);
+/* one dish: what it does and every way to cook it */
+#define PM3DS_RECIPE_WAYS  48
+#define PM3DS_RECIPE_INGR  36
+typedef struct {
+    int hp, fp;                                   /* eating it restores */
+    char desc[192];
+    int ways;
+    struct {
+        short a, b;                               /* ingr[] indices; b -1: on its own */
+        unsigned char cookbook;                   /* only once Tayce T. has the Cookbook */
+        unsigned char luck;                       /* a cooked Mystery? (a) turns into it by luck */
+    } way[PM3DS_RECIPE_WAYS];
+    int ingr_count;
+    char ingr_name[PM3DS_RECIPE_INGR][PM3DS_RECIPE_NAME];
+    const void *ingr_icon[PM3DS_RECIPE_INGR];
+} pm3ds_recipe_detail_t;
+void pm3ds_recipe_detail(int item, pm3ds_recipe_detail_t *out);
+
 /* N64 images the menu draws, decoded once into the UI atlas */
 enum {
     UI_IMG_HEART, UI_IMG_FLOWER, UI_IMG_COIN, UI_IMG_STAR_POINT, UI_IMG_STAR_PIECE,
@@ -86,7 +115,7 @@ int pm3ds_ui_get_image(int id, pm3ds_ui_image_t *out);   /* 0 if unavailable */
  * icons, so they need the ROM: only ask once a game is running) */
 enum {
     UI_ICON_STAR_PIECE, UI_ICON_COMPASS, UI_ICON_SETTINGS, UI_ICON_CONTROLS,
-    UI_ICON_DEBUG, UI_ICON_BOOTS, UI_ICON_HAMMER,
+    UI_ICON_DEBUG, UI_ICON_BOOTS, UI_ICON_HAMMER, UI_ICON_COOK, UI_ICON_CHEATS,
     UI_ICON_COUNT
 };
 const void *pm3ds_ui_icon_script(int id);

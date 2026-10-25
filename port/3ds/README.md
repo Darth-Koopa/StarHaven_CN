@@ -11,7 +11,8 @@ original 3DS and 2DS start the CIA in their 80 MB mode (96 MB crashes HOME Menu)
 NPC/enemy shadows.
 The existing release package supports PAL and US. The experimental iQue build is produced separately by the GitHub Actions workflow until it has been validated on hardware.
 
-Players supply the ROM: it goes on the SD card as `/3ds/StarHaven/baserom.z64`, and release
+Players supply the ROM: it goes on the SD card in `/3ds/StarHaven` under any name (the folders
+in `PM3DS_ROM_DIRS` are searched, and ROMs are told apart by their header), and release
 packages contain no game data (see *Releases*). `RELEASE_README.md` is the player-facing readme.
 The name, icon and banner are the port's own (`include/pm3ds_brand.h`, `tools/make_branding.py`).
 

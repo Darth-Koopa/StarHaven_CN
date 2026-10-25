@@ -410,7 +410,17 @@ s32 make_item_entity(s32 itemID, f32 x, f32 y, f32 z, s32 itemSpawnMode, s32 pic
 #ifdef _3DS
     {   // 3DS port: the randomizer's item for this flagged spot (port/3ds/source/n64_shim/rando.c)
         extern s32 pm3ds_rando_item(s32 itemID, s32 flagIndex, s32* spawnMode);
+        s32 vanillaID = itemID;
+
         itemID = pm3ds_rando_item(itemID, pickupFlagIndex, &itemSpawnMode);
+        // a randomized drop stays until it is picked up: shaking its bush again drops no second one
+        if (itemID != vanillaID) {
+            for (i = 0; i < MAX_ITEM_ENTITIES; i++) {
+                if (gCurrentItemEntities[i] != nullptr && gCurrentItemEntities[i]->boundVar == pickupFlagIndex) {
+                    return -1;
+                }
+            }
+        }
     }
 #endif
 

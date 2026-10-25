@@ -15,7 +15,7 @@
 #if defined(PM3DS_SHOP_TEST) || defined(PM3DS_HUD_TEST)
 #include "hud_element.h"
 #endif
-#if defined(PM3DS_BATTLE_SWEEP) || defined(PM3DS_STORY_SWEEP)
+#if defined(PM3DS_BATTLE_SWEEP) || defined(PM3DS_STORY_SWEEP) || defined(PM3DS_AUTO_WIN) || defined(PM3DS_ENEMY_HP1)
 #include "../../../../src/battle/battle.h"
 #endif
 #ifdef PM3DS_BATTLE_SWEEP
@@ -29,7 +29,8 @@ void set_battle_formation(Battle* battle);
     defined(PM3DS_STORY_SWEEP) || defined(PM3DS_FX_SWEEP) || defined(PM3DS_NO_BATTLES) || \
     defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST) || defined(PM3DS_ENC_TEST) || \
     defined(PM3DS_JOURNAL_TEST) || defined(PM3DS_NO_TITLE_DEMO) || defined(PM3DS_QUICKSAVE_EVERY) || \
-    defined(PM3DS_SHOP_DIALOG) || defined(PM3DS_MODEL_DUMP) || defined(PM3DS_TOUR)
+    defined(PM3DS_SHOP_DIALOG) || defined(PM3DS_MODEL_DUMP) || defined(PM3DS_TOUR) || defined(PM3DS_AUTO_WIN) || \
+    defined(PM3DS_ENEMY_HP1) || defined(PM3DS_RANDO_TEST)
 /* make_cia.sh refuses to publish a binary containing this string */
 __attribute__((used)) const char pm3ds_debug_build_marker[] = "PM3DS-DEBUG-BUILD";
 #endif
@@ -238,8 +239,11 @@ static void pm3ds_fx_sweep_tick(u32 frame) {
 /* Debug: start every battle formation in turn from the world, let each run
  * PM3DS_BATTLE_SWEEP frames, then win it without the celebration and return
  * to the world for the next one. <SD folder>/sweep.txt may hold
- * "<first area> <last area>" to split the sweep across emulator instances.
+ * "<first area> <last area>" to split the sweep across emulator instances,
+ * optionally followed by the first area's starting formation index.
  * Logs "BSWEEP <area>/<index> <formation size>" per battle. */
+extern bool pm3ds_debug_new_game_made;   /* src/filemenu/filemenu_yesno.c, with PM3DS_START_MAP */
+
 static void pm3ds_battle_sweep_tick(u32 frame) {
     static s32 first = -1, last = -1, area, idx, phase, timer, done;
     if (done || gGameStatusPtr == nullptr) {
@@ -250,14 +254,14 @@ static void pm3ds_battle_sweep_tick(u32 frame) {
         first = 0;
         last = ARRAY_COUNT(gBattleAreas) - 1;
         if (f != nullptr) {
-            if (fscanf(f, "%d %d", &first, &last) != 2) {
+            idx = 0;
+            if (fscanf(f, "%d %d %d", &first, &last, &idx) < 2) {
                 first = 0;
                 last = ARRAY_COUNT(gBattleAreas) - 1;
             }
             fclose(f);
         }
         area = first;
-        idx = 0;
         pm3ds_log(2, "BSWEEP range %d..%d", (int)first, (int)last);
     }
     switch (phase) {
@@ -266,6 +270,11 @@ static void pm3ds_battle_sweep_tick(u32 frame) {
                 timer = 0;
                 return;
             }
+#ifdef PM3DS_START_MAP
+            if (!pm3ds_debug_new_game_made) {   /* the title's world scenes come before New Game */
+                return;
+            }
+#endif
             if (++timer < 45) {
                 return;
             }
@@ -337,6 +346,44 @@ static void pm3ds_battle_sweep_tick(u32 frame) {
                 timer = 0;
             }
             break;
+    }
+}
+#endif
+
+#ifdef PM3DS_ENEMY_HP1
+/* Debug: enemies stay at 1 HP and Mario at 99 star points, so the next hit ends a battle the
+ * real way (death animations, star points, a level-up) without playing it out. */
+static void pm3ds_enemy_hp1_tick(void) {
+    static bool armed;
+    if (get_game_mode() != GAME_MODE_BATTLE) {
+        armed = false;
+        return;
+    }
+    if (!armed) {
+        armed = true;
+        gPlayerData.starPoints = 99;
+    }
+    for (s32 i = 0; i < ARRAY_COUNT(gBattleStatus.enemyActors); i++) {
+        Actor* enemy = gBattleStatus.enemyActors[i];
+        if (enemy != nullptr && enemy->curHP > 1) {
+            enemy->curHP = 1;
+        }
+    }
+}
+#endif
+
+#ifdef PM3DS_AUTO_WIN
+/* Debug: win every battle PM3DS_AUTO_WIN frames after it starts, as if the last enemy fell,
+ * so a story battle's defeat script and the scene after it run (e.g. -DPM3DS_AUTO_WIN=300). */
+static void pm3ds_auto_win_tick(void) {
+    static s32 timer;
+    if (get_game_mode() != GAME_MODE_BATTLE) {
+        timer = 0;
+        return;
+    }
+    if (++timer == PM3DS_AUTO_WIN) {
+        pm3ds_log(2, "AUTOWIN state=%d", (int)gBattleState);
+        btl_set_state(BATTLE_STATE_VICTORY);
     }
 }
 #endif
@@ -505,7 +552,8 @@ void pm3ds_game_debug_tick(u32 frame) {
     defined(PM3DS_STORY_SWEEP) || defined(PM3DS_FX_SWEEP) || defined(PM3DS_NO_BATTLES) || \
     defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST) || defined(PM3DS_ENC_TEST) || \
     defined(PM3DS_JOURNAL_TEST) || defined(PM3DS_NO_TITLE_DEMO) || defined(PM3DS_QUICKSAVE_EVERY) || \
-    defined(PM3DS_SHOP_DIALOG) || defined(PM3DS_MODEL_DUMP) || defined(PM3DS_TOUR)
+    defined(PM3DS_SHOP_DIALOG) || defined(PM3DS_MODEL_DUMP) || defined(PM3DS_TOUR) || defined(PM3DS_AUTO_WIN) || \
+    defined(PM3DS_ENEMY_HP1) || defined(PM3DS_RANDO_TEST)
     if (frame == 1) {
         pm3ds_log(2, "%s", pm3ds_debug_build_marker);   /* keeps the marker linked */
     }
@@ -554,6 +602,15 @@ void pm3ds_game_debug_tick(u32 frame) {
 #endif
 #ifdef PM3DS_BATTLE_SWEEP
     pm3ds_battle_sweep_tick(frame);
+#endif
+#ifdef PM3DS_AUTO_WIN
+    pm3ds_auto_win_tick();
+#endif
+#ifdef PM3DS_ENEMY_HP1
+    pm3ds_enemy_hp1_tick();
+#endif
+#ifdef PM3DS_RANDO_TEST
+    { extern void pm3ds_rando_test_tick(void); pm3ds_rando_test_tick(); }
 #endif
 #ifdef PM3DS_STORY_SWEEP
     pm3ds_story_sweep_tick(frame);

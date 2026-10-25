@@ -25,6 +25,14 @@ enum CookingResultQuality {
 
 #include "recipes.inc.c"
 
+#ifdef _3DS
+// 3DS port: the bottom screen's recipe list (n64_shim/journal.c) reads the tables above
+const s32 pm3ds_RecipeTableSizes[] = {
+    NUM_INGREDIENTS, ARRAY_COUNT(CookingResults), ARRAY_COUNT(ExtraDoubleRecipes),
+    ARRAY_COUNT(MysteryResultOptions), ARRAY_COUNT(CookableItemIDs),
+};
+#endif
+
 API_CALLABLE(N(GetCookResultForSingleRecipe)) {
     Bytecode* args = script->ptrReadPos;
     s32 hasCookbook;

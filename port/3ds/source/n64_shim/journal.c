@@ -6,13 +6,16 @@
  * tattle text the game shows. Item tracker: per area, how many of the item
  * spots the randomizer knows (rando_locations.inc: field items, blocks, hidden
  * blocks, trees, bushes, hidden panels, chests) have been collected, from the
- * same flags the scripts set. Gifts have no flag and are left out.
+ * same flags the scripts set. Gifts have no flag and are left out. Recipes:
+ * every dish Tayce T. can cook, every way to cook it, and which ones she has
+ * cooked (her own discovered flags).
  *
  * Plain structs out (pm3ds_hud_info.h), so platform/bottom_screen.c needs no
  * decomp headers.
  */
 #include "common.h"
 #include "battle/battle.h"
+#include "hud_element.h"
 #include "map.h"
 
 #include <string.h>
@@ -179,6 +182,160 @@ int pm3ds_tracker_query(pm3ds_tracker_t* out) {
     return out->count;
 }
 
+/* ---- recipes --------------------------------------------------------------- */
+/* Tayce T.'s tables (src/world/area_mac/mac_02/npc/tayce_t.inc.c, recipes.inc.c);
+ * the game sets one discovered flag per dish it hands out */
+typedef struct { s32 quality, itemID; } RecipeResult;
+typedef struct { s32 inputA, inputB, output; } RecipePair;
+extern s32 CookingIngredients[];
+extern RecipeResult CookingResults[];
+extern s8 SingleRecipesWithoutCookbook[], SingleRecipesWithCookbook[], DoubleRecipesMatrix[];
+extern RecipePair ExtraDoubleRecipes[];
+extern s32 MysteryResultOptions[];
+extern const s32 CookableItemIDs[], CookableDiscoveredFlags[];
+extern const s32 pm3ds_RecipeTableSizes[];
+enum { RT_INGREDIENTS, RT_RESULTS, RT_EXTRAS, RT_MYSTERY, RT_COOKABLE };
+
+static bool recipe_mystery(s32 item) {
+    for (s32 i = 0; i < pm3ds_RecipeTableSizes[RT_MYSTERY]; i++) {
+        if (MysteryResultOptions[i] == item) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* calls add(a, b, cookbook, ctx) for every way to cook item; b = ITEM_NONE: on its own */
+static s32 recipe_ways(s32 item, void (*add)(s32 a, s32 b, bool cookbook, void* ctx), void* ctx) {
+    s32 n = pm3ds_RecipeTableSizes[RT_INGREDIENTS], ways = 0;
+    for (s32 i = 0; i < n; i++) {
+        bool plain = CookingResults[SingleRecipesWithoutCookbook[i]].itemID == item && SingleRecipesWithoutCookbook[i] != 0;
+        bool book = CookingResults[SingleRecipesWithCookbook[i]].itemID == item && SingleRecipesWithCookbook[i] != 0;
+        if (plain || book) {
+            if (add) add(CookingIngredients[i], ITEM_NONE, !plain, ctx);
+            ways++;
+        }
+    }
+    for (s32 a = 0; a < n; a++) {
+        for (s32 b = a; b < n; b++) {
+            s32 r = DoubleRecipesMatrix[b + a * n];
+            if (r > 0 && CookingResults[r].itemID == item) {
+                if (add) add(CookingIngredients[a], CookingIngredients[b], true, ctx);
+                ways++;
+            }
+        }
+    }
+    for (s32 i = 0; i < pm3ds_RecipeTableSizes[RT_EXTRAS]; i++) {
+        if (CookingResults[ExtraDoubleRecipes[i].output].itemID == item) {
+            if (add) add(ExtraDoubleRecipes[i].inputA, ExtraDoubleRecipes[i].inputB, true, ctx);
+            ways++;
+        }
+    }
+    return ways;
+}
+
+static const void* item_hud_script(s32 item) {
+    extern IconHudScriptPair gItemHudScripts[];
+    return gItemHudScripts[gItemTable[item].hudElemID].enabled;
+}
+
+static s32 sRecipeItem[PM3DS_RECIPE_MAX], sRecipeFlag[PM3DS_RECIPE_MAX];
+static char sRecipeName[PM3DS_RECIPE_MAX][PM3DS_RECIPE_NAME];
+static s32 sNumRecipes = -1;
+
+/* the dishes that can be cooked at all (a few discovered flags never get set),
+ * sorted by name */
+static void list_recipes(void) {
+    sNumRecipes = 0;
+    for (s32 i = 0; i < pm3ds_RecipeTableSizes[RT_COOKABLE] && sNumRecipes < PM3DS_RECIPE_MAX; i++) {
+        s32 item = CookableItemIDs[i];
+        if (item != ITEM_MISTAKE && recipe_ways(item, nullptr, nullptr) == 0 && !recipe_mystery(item)) {
+            continue;
+        }
+        char name[PM3DS_RECIPE_NAME];
+        pm3ds_decode_msg(gItemTable[item].nameMsg, name, sizeof(name), false);
+        s32 k = sNumRecipes++;
+        while (k > 0 && strcmp(sRecipeName[k - 1], name) > 0) {
+            sRecipeItem[k] = sRecipeItem[k - 1];
+            sRecipeFlag[k] = sRecipeFlag[k - 1];
+            memcpy(sRecipeName[k], sRecipeName[k - 1], PM3DS_RECIPE_NAME);
+            k--;
+        }
+        sRecipeItem[k] = item;
+        sRecipeFlag[k] = CookableDiscoveredFlags[i];
+        memcpy(sRecipeName[k], name, PM3DS_RECIPE_NAME);
+    }
+}
+
+int pm3ds_recipe_query(pm3ds_recipe_list_t* out) {
+    out->count = 0;
+    out->cooked = 0;
+    if (gGameStatusPtr == nullptr) {
+        return 0;
+    }
+    if (sNumRecipes < 0) {
+        list_recipes();
+    }
+    for (s32 i = 0; i < sNumRecipes; i++) {
+        out->item[i] = sRecipeItem[i];
+        out->done[i] = evt_get_variable(nullptr, sRecipeFlag[i]) != 0;
+        out->icon[i] = item_hud_script(sRecipeItem[i]);
+        memcpy(out->name[i], sRecipeName[i], PM3DS_RECIPE_NAME);
+        out->cooked += out->done[i];
+    }
+    out->count = sNumRecipes;
+    return out->count;
+}
+
+/* the detail's ingredient slot for item, added on first use */
+static s16 sIngrItem[PM3DS_RECIPE_INGR];
+
+static s32 recipe_ingr(pm3ds_recipe_detail_t* d, s32 item) {
+    for (s32 i = 0; i < d->ingr_count; i++) {
+        if (sIngrItem[i] == item) {
+            return i;
+        }
+    }
+    if (d->ingr_count >= PM3DS_RECIPE_INGR) {
+        return -1;
+    }
+    s32 i = d->ingr_count++;
+    sIngrItem[i] = item;
+    pm3ds_decode_msg(gItemTable[item].nameMsg, d->ingr_name[i], PM3DS_RECIPE_NAME, false);
+    d->ingr_icon[i] = item_hud_script(item);
+    return i;
+}
+
+static void recipe_add_way(s32 a, s32 b, bool cookbook, void* ctx) {
+    pm3ds_recipe_detail_t* d = ctx;
+    if (d->ways >= PM3DS_RECIPE_WAYS) {
+        return;
+    }
+    s32 ia = recipe_ingr(d, a), ib = b == ITEM_NONE ? -1 : recipe_ingr(d, b);
+    if (ia < 0 || (b != ITEM_NONE && ib < 0)) {
+        return;
+    }
+    d->way[d->ways].a = ia;
+    d->way[d->ways].b = ib;
+    d->way[d->ways].cookbook = cookbook;
+    d->way[d->ways].luck = a == ITEM_MYSTERY;
+    d->ways++;
+}
+
+void pm3ds_recipe_detail(int item, pm3ds_recipe_detail_t* out) {
+    memset(out, 0, sizeof(*out));
+    if (gGameStatusPtr == nullptr || item < ITEM_FIRST_CONSUMABLE || item > ITEM_LAST_CONSUMABLE) {
+        return;
+    }
+    out->hp = gItemTable[item].potencyA;
+    out->fp = gItemTable[item].potencyB;
+    pm3ds_decode_msg(gItemTable[item].fullDescMsg, out->desc, sizeof(out->desc), false);
+    recipe_ways(item, recipe_add_way, out);
+    if (recipe_mystery(item)) {
+        recipe_add_way(ITEM_MYSTERY, ITEM_NONE, false, out);
+    }
+}
+
 #ifdef PM3DS_SHOT_JOURNAL
 /* debug builds only (README screenshots): a chapter-2 file's worth of tattles and
  * found item spots, so the Tattle and Found tabs have something to show */
@@ -192,6 +349,9 @@ void pm3ds_journal_debug_fill(void) {
     for (u32 k = 0; k < ARRAY_COUNT(types); k++) {
         s32 i = EVT_INDEX_OF_GAME_BYTE(GB_Tattles_00) + types[k] / 8;
         set_global_byte(i, get_global_byte(i) | (1 << (types[k] % 8)));
+    }
+    for (s32 i = 0; i < pm3ds_RecipeTableSizes[RT_COOKABLE]; i += 3) {   /* every third dish cooked */
+        evt_set_variable(nullptr, CookableDiscoveredFlags[i], true);
     }
     for (u32 i = 0, n = 0; i < ARRAY_COUNT(sSpots); i++) {
         for (u32 a = 0; a < ARRAY_COUNT(areas); a++) {
