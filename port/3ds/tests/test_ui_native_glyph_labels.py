@@ -38,17 +38,34 @@ for name in ("ui_native_glyph_text_fit", "ui_native_glyph_text_center_fit"):
     if "float render_scale = scale;" not in body or "scale * 0.625f" in body:
         raise SystemExit(f"{name} must use native game-font scale without TTF conversion")
 
-if "#define UI_NATIVE_GLYPH_INK_SCALE 1.08f" not in source:
-    raise SystemExit("expected a slight 1.08x glyph-ink enlargement without changing advances")
+if "#define UI_NATIVE_GLYPH_INK_SCALE 1.20f" not in source:
+    raise SystemExit("expected 1.20x glyph-ink enlargement without changing nominal scales or advances")
 for label in (
-    "ui_native_glyph_text_center_fit(cx, y0 + 22, tabs[i].name, label_scale",
+    "ui_native_glyph_text_center_fit(cx, y0 + 19, tabs[i].name, label_scale",
     'ui_native_glyph_text_center_fit(vx0 + 58, vy1 - 20, "Drag to look", 0.7f',
-    "ui_native_glyph_text_fit(x0 + 7, y0 + 1, s_log.name[i], 0.8f",
-    "ui_native_glyph_text_fit(x, y0 + 1, a->name, 0.75f",
-    "ui_native_glyph_text_fit(CX0 + 7, y + 1, label, 0.82f",
-    "ui_native_glyph_text_center_fit((bx0 + bx1) / 2, (by0 + by1) / 2 - 6.5f, value, 0.75f",
+    "ui_native_glyph_text_fit(x0 + 7, y0 + 3, s_log.name[i], 0.8f",
+    "ui_native_glyph_text_fit(x, y0 + 3, a->name, 0.75f",
+    "ui_native_glyph_text_fit(CX0 + 7, y + 3, label, 0.82f",
+    "ui_native_glyph_text_center_fit((bx0 + bx1) / 2, (by0 + by1) / 2 - 4.5f, value, 0.75f",
 ):
     if label not in source:
         raise SystemExit(f"expected legibility call site missing: {label}")
 
 print("Native iQue glyph renderer and scale-preserving ink enlargement checks passed")
+
+# Recipe and cheat labels should share the native iQue glyph renderer and row baseline.
+for expected in (
+    'ui_native_glyph_text(x0 + 21, y0 + 3, name,',
+    'ui_native_glyph_text(CX0 + 7, y + 3, s_cheat_names[i],',
+    'ui_native_glyph_text(CX0 + 124, y + 4, s_cheat_help[i],',
+):
+    if expected not in source:
+        raise SystemExit(f"expected native-glyph row renderer missing: {expected}")
+
+import csv
+translation_csv = ROOT / "port/3ds/localization/ui_translations_zh_CN.csv"
+with translation_csv.open("r", encoding="utf-8-sig", newline="") as stream:
+    rows = list(csv.DictReader(stream))
+if not any(r["source_file"] == "bottom_screen.c" and r["english_source"] == "Checked" and r["proposed_simplified_chinese"] == "已完成" for r in rows):
+    raise SystemExit("Checked translation must be 已完成")
+print("Unified row renderers and Checked translation checks passed")

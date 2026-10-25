@@ -1,4 +1,4 @@
-category,source_file,english_source,proposed_simplified_chinese,review_notes
+﻿category,source_file,english_source,proposed_simplified_chinese,review_notes
 Navigation,bottom_screen.c,Stats,状态,
 Navigation,bottom_screen.c,Map,地图,
 Navigation,bottom_screen.c,Party,同伴,“同伴”一词请确认是否采用神游版用语
@@ -44,7 +44,7 @@ Tattle,bottom_screen.c,Attack Power:,攻击力：,这是解析原版 Tattle 文�
 Tattle,bottom_screen.c,Defense Power:,防御力：,这是解析原版 Tattle 文本中的字段标记；若更改需同步 tattle_stat()
 Tattle,bottom_screen.c,No tattles yet,还没有敌人资料,
 Tattle,bottom_screen.c,Tattle enemies in battle with Goombario,在战斗中让酷栗欧扫描敌人,Goombario 为同伴专名，需校对；句子也可更自然地意译
-Tattle,bottom_screen.c,Checked,已查看,
+Tattle,bottom_screen.c,Checked,已完成,
 Tattle,bottom_screen.c,All,全部,
 Battle touch UI,bottom_screen.c,Targets: all,目标：所有敌人,
 Battle touch UI,bottom_screen.c,Tap an enemy,点击敌人,
