@@ -31,7 +31,7 @@ extern const float pm3ds_depth3d_shift[DEPTH3D_LEVELS];   /* pixels per eye at i
 extern const char *const pm3ds_depth3d_names[DEPTH3D_LEVELS];
 
 typedef struct {
-    int view_mode;              /* 0 Original, 1 Fill, 2 Wide */
+    int view_mode;              /* 0 Original, 1 Fill, 2 Wide, 3 Sharp wide (1:1, world to the edges) */
     bool fps60;                 /* in-between frames (n64_shim/gfx_interp.c) */
     int depth3d;                /* 0..DEPTH3D_LEVELS-1 */
     int text_speed;             /* TEXT_* */

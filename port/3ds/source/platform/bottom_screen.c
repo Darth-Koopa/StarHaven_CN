@@ -40,9 +40,9 @@
 #include "pm3ds_save_import.h"
 #include "pm3ds_update.h"
 
-extern void pm3ds_set_view_mode(int mode);   /* 0 Original, 1 Fill, 2 Wide */
+extern void pm3ds_set_view_mode(int mode);   /* 0 Original, 1 Fill, 2 Wide, 3 Sharp wide */
 extern int pm3ds_view_mode(void);
-static const char *const s_view_names[3] = { "Original", "Fill", "Wide" };
+static const char *const s_view_names[4] = { "Original", "Fill", "Wide", "Sharp wide" };
 extern shaderProgram_s *pm3ds_gfx_program(void);
 extern int pm3ds_gfx_uloc_screen(void);
 extern const char *pm3ds_log_recent(int i);   /* 0 = newest */
@@ -1779,7 +1779,7 @@ static void opt_row(int i, const char *label, const char *value) {
 static void draw_options(void) {
     char buf[16];
     page_title("Settings", "Tap a value to change it");
-    opt_row(0, "Screen", s_view_names[pm3ds_cfg.view_mode % 3]);
+    opt_row(0, "Screen", s_view_names[pm3ds_cfg.view_mode % 4]);
     opt_row(1, "Frame rate", s_fps_names[pm3ds_cfg.fps60]);
     {   /* Old 3DS: no 3D (gfx_present.c), say so instead of a setting that does nothing */
         extern bool pm3ds_lite_effects;
@@ -2379,7 +2379,7 @@ static void handle_touch(void) {
         int row = (tp.py - OPT_Y0) / OPT_ROW_H;
         if (tp.px < CX0 - 4 || tp.py < OPT_Y0 || row >= OPT_ROWS) return;
         switch (row) {
-            case 0: pm3ds_cfg.view_mode = (pm3ds_cfg.view_mode + 1) % 3; break;   /* Original -> Fill -> Wide */
+            case 0: pm3ds_cfg.view_mode = (pm3ds_cfg.view_mode + 1) % 4; break;   /* Original -> Fill -> Wide -> Sharp wide */
             case 1: pm3ds_cfg.fps60 = !pm3ds_cfg.fps60; break;
             case 2: {
                 extern bool pm3ds_lite_effects;

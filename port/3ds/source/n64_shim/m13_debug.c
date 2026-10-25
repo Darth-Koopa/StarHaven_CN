@@ -30,7 +30,7 @@ void set_battle_formation(Battle* battle);
     defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST) || defined(PM3DS_ENC_TEST) || defined(PM3DS_FX_LIST) || \
     defined(PM3DS_JOURNAL_TEST) || defined(PM3DS_NO_TITLE_DEMO) || defined(PM3DS_QUICKSAVE_EVERY) || \
     defined(PM3DS_SHOP_DIALOG) || defined(PM3DS_MODEL_DUMP) || defined(PM3DS_TOUR) || defined(PM3DS_AUTO_WIN) || \
-    defined(PM3DS_ENEMY_HP1) || defined(PM3DS_RANDO_TEST)
+    defined(PM3DS_ENEMY_HP1) || defined(PM3DS_RANDO_TEST) || defined(PM3DS_FLAME_TEST) || defined(PM3DS_MUS_DBG) || defined(PM3DS_GOTO)
 /* make_cia.sh refuses to publish a binary containing this string */
 __attribute__((used)) const char pm3ds_debug_build_marker[] = "PM3DS-DEBUG-BUILD";
 #endif
@@ -553,7 +553,7 @@ void pm3ds_game_debug_tick(u32 frame) {
     defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST) || defined(PM3DS_ENC_TEST) || defined(PM3DS_FX_LIST) || \
     defined(PM3DS_JOURNAL_TEST) || defined(PM3DS_NO_TITLE_DEMO) || defined(PM3DS_QUICKSAVE_EVERY) || \
     defined(PM3DS_SHOP_DIALOG) || defined(PM3DS_MODEL_DUMP) || defined(PM3DS_TOUR) || defined(PM3DS_AUTO_WIN) || \
-    defined(PM3DS_ENEMY_HP1) || defined(PM3DS_RANDO_TEST)
+    defined(PM3DS_ENEMY_HP1) || defined(PM3DS_RANDO_TEST) || defined(PM3DS_FLAME_TEST) || defined(PM3DS_MUS_DBG) || defined(PM3DS_GOTO)
     if (frame == 1) {
         pm3ds_log(2, "%s", pm3ds_debug_build_marker);   /* keeps the marker linked */
     }
@@ -802,6 +802,37 @@ void pm3ds_game_debug_tick(u32 frame) {
                 }
                 pm3ds_log(2, "ENCTEST enemies at 1 HP, frame %u", (unsigned)frame);
             }
+        }
+    }
+#endif
+#ifdef PM3DS_MUS_DBG
+    if (gGameStatusPtr != nullptr && frame % 120 == 0) {   /* debug: the BGM player 0 song, every 2 s */
+        pm3ds_log(2, "MUSDBG map=%d.%d load=%d song=%d state=%d", gGameStatusPtr->areaID, gGameStatusPtr->mapID,
+                  gGameStatusPtr->loadType, (int)gMusicControlData[0].requestedSongID, gMusicControlData[0].state);
+    }
+#endif
+#ifdef PM3DS_GOTO
+    {   /* debug: after PM3DS_GOTO frames in the world, a normal map change to
+         * PM3DS_GOTO_AREA / _MAP / _ENTRY (e.g. through a door without walking there) */
+        static s32 worldFrames, done;
+        if (!done && gGameStatusPtr != nullptr && get_game_mode() == GAME_MODE_WORLD && ++worldFrames == PM3DS_GOTO) {
+            done = 1;
+            pm3ds_log(2, "GOTO %d.%d entry %d", PM3DS_GOTO_AREA, PM3DS_GOTO_MAP, PM3DS_GOTO_ENTRY);
+            gGameStatusPtr->areaID = PM3DS_GOTO_AREA;
+            gGameStatusPtr->mapID = PM3DS_GOTO_MAP;
+            gGameStatusPtr->entryID = PM3DS_GOTO_ENTRY;
+            set_map_transition_effect(TRANSITION_STANDARD);
+            set_game_mode(GAME_MODE_CHANGE_MAP);
+        }
+    }
+#endif
+#ifdef PM3DS_FLAME_TEST
+    {   /* debug: the Super Block's three motion-blur flames around Mario, as in its upgrade (GitHub #57) */
+        static s32 worldFrames;
+        if (gGameStatusPtr != nullptr && get_game_mode() == GAME_MODE_WORLD && ++worldFrames == 200) {
+            for (s32 i = 0; i < PM3DS_FLAME_TEST; i++)
+                fx_motion_blur_flame(0, gPlayerStatus.pos.x + (i - 1) * 30.0f, gPlayerStatus.pos.y + 20.0f, gPlayerStatus.pos.z, 1.0f, -1);
+            pm3ds_log(2, "FLAMETEST %d flames", PM3DS_FLAME_TEST);
         }
     }
 #endif

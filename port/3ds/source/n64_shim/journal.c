@@ -29,6 +29,35 @@ void pm3ds_decode_msg(s32 msgID, char* out, s32 size, bool dialogue);   /* touch
 /* ---- tattle log ------------------------------------------------------------ */
 #define NUM_ACTOR_TYPES (ACTOR_TYPE_SLOT_MACHINE_START_DUP3 + 1)
 
+/* types whose tattle is its own message but with the same name and (up to
+ * spaces and line breaks) the same text as another type: the flying
+ * Magikoopas and the boss's copies. They log under the base type (GitHub #55). */
+static const u8 sTattleAlias[][2] = {
+    { ACTOR_TYPE_FLYING_MAGIKOOPA,        ACTOR_TYPE_MAGIKOOPA },
+    { ACTOR_TYPE_FLYING_MAGICLONE,        ACTOR_TYPE_MAGICLONE },
+    { ACTOR_TYPE_FLYING_RED_MAGIKOOPA,    ACTOR_TYPE_RED_MAGIKOOPA },
+    { ACTOR_TYPE_FLYING_GREEN_MAGIKOOPA,  ACTOR_TYPE_GREEN_MAGIKOOPA },
+    { ACTOR_TYPE_FLYING_YELLOW_MAGIKOOPA, ACTOR_TYPE_YELLOW_MAGIKOOPA },
+    { ACTOR_TYPE_FLYING_GRAY_MAGIKOOPA,   ACTOR_TYPE_GRAY_MAGIKOOPA },
+    { ACTOR_TYPE_FLYING_WHITE_MAGIKOOPA,  ACTOR_TYPE_WHITE_MAGIKOOPA },
+    { ACTOR_TYPE_FLYING_MAGIKOOPA_BOSS,   ACTOR_TYPE_MAGIKOOPA_BOSS },
+    { ACTOR_TYPE_MAGIKOOPA_DUP2,          ACTOR_TYPE_MAGIKOOPA_BOSS },
+};
+
+static s32 tattle_base_type(s32 t) {
+    for (u32 i = 0; i < ARRAY_COUNT(sTattleAlias); i++) {
+        if (sTattleAlias[i][0] == t) {
+            return sTattleAlias[i][1];
+        }
+    }
+    return t;
+}
+
+/* the message a type is logged under */
+static s32 tattle_msg(s32 t) {
+    return bActorTattles[tattle_base_type(t)];
+}
+
 /* one entry per tattle message (types that share one, share the entry), in
  * actor-type order */
 static u8 sEntryType[NUM_ACTOR_TYPES];
@@ -38,16 +67,16 @@ static char sEntryName[NUM_ACTOR_TYPES][PM3DS_TATTLE_NAME];
 static void list_entries(void) {
     sNumEntries = 0;
     for (s32 t = 0; t < NUM_ACTOR_TYPES; t++) {
-        s32 msg = bActorTattles[t];
+        s32 msg = tattle_msg(t);
         bool dup = false;
         if (msg == MSG_NONE || msg == 0) {
             continue;
         }
         for (s32 e = 0; e < sNumEntries && !dup; e++) {
-            dup = bActorTattles[sEntryType[e]] == msg;
+            dup = tattle_msg(sEntryType[e]) == msg;
         }
         if (!dup) {
-            sEntryType[sNumEntries++] = t;
+            sEntryType[sNumEntries++] = tattle_base_type(t);
         }
     }
 }
@@ -59,9 +88,9 @@ static bool type_tattled(s32 t) {
 
 /* every type with this entry's message counts */
 static bool entry_known(s32 e) {
-    s32 msg = bActorTattles[sEntryType[e]];
+    s32 msg = tattle_msg(sEntryType[e]);
     for (s32 t = 0; t < NUM_ACTOR_TYPES; t++) {
-        if (bActorTattles[t] == msg && type_tattled(t)) {
+        if (tattle_msg(t) == msg && type_tattled(t)) {
             return true;
         }
     }

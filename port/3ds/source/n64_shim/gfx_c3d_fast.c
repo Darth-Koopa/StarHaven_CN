@@ -44,6 +44,13 @@ extern void __real_C3D_UpdateUniforms(GPU_SHADER_TYPE type);
 
 static bool s_fast;
 
+/* free slots in citro3d's GX command queue (32 entries, emptied each frame).
+ * Every C3D_FrameSplit and every transfer takes one; a full queue is a
+ * svcBreak in libctru's gxCmdQueueAdd (GitHub #57) */
+int pm3ds_gx_queue_room(void) {
+    return (int)__C3D_Context.gxQueue.maxEntries - (int)__C3D_Context.gxQueue.numEntries;
+}
+
 void pm3ds_c3d_fast_init(size_t cmdbuf_bytes) {
     /* C3D_Init keeps the buffer size in words, rounded up to 16 bytes */
     size_t sz = __C3D_Context.cmdBufSize;

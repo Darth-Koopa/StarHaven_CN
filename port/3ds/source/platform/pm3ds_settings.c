@@ -89,7 +89,7 @@ void pm3ds_settings_load(void) {
         char line[80], name[32];
         while (fgets(line, sizeof line, f)) {
             int v;
-            if (sscanf(line, "view_mode=%d", &v) == 1) pm3ds_cfg.view_mode = v % 3;
+            if (sscanf(line, "view_mode=%d", &v) == 1) pm3ds_cfg.view_mode = v % 4;
             else if (sscanf(line, "view_fill=%d", &v) == 1) pm3ds_cfg.view_mode = v ? 1 : 0;   /* older builds */
             else if (sscanf(line, "fps60=%d", &v) == 1) pm3ds_cfg.fps60 = v != 0;
             else if (sscanf(line, "depth3d=%d", &v) == 1 && v >= 0 && v < DEPTH3D_LEVELS) pm3ds_cfg.depth3d = v;

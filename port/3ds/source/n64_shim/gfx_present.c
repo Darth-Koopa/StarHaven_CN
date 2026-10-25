@@ -59,6 +59,7 @@ extern const void *pm3ds_gfx_drain_dl_list(const void **out, int max, int *count
 #define PM3DS_VIEW_ORIGINAL 0       /* pixel-exact 320x240, pillarboxed */
 #define PM3DS_VIEW_FILL     1       /* TV-safe box scaled 1.2 to full height */
 #define PM3DS_VIEW_WIDE     2       /* Fill + the world drawn to the screen edges */
+#define PM3DS_VIEW_SHARP    3       /* Original's 1:1 pixels + the world drawn to the screen edges */
 
 typedef struct {
     float x, y, z, w;
@@ -92,11 +93,14 @@ static int   g_view_mode;   /* PM3DS_VIEW_* */
 
 int pm3ds_view_mode(void) { return g_view_mode; }
 
+/* the 3D world past the 4:3 edges: Wide (scaled 1.2) and Sharp wide (1:1) */
+static inline bool view_wide(void) { return g_view_mode == PM3DS_VIEW_WIDE || g_view_mode == PM3DS_VIEW_SHARP; }
+
 /* How far past +-1 a camera's NDC x reaches on screen: Wide shows N64 x from
  * -ox/s to (400-ox)/s, beyond the viewport. 1 in the 4:3 modes (the scissor
  * stops at the viewport there). For the game's model culling (model.c). */
 float pm3ds_view_ndc_x(float vp_x, float vp_w) {
-    if (g_view_mode != PM3DS_VIEW_WIDE || vp_w <= 0.0f) return 1.0f;
+    if (!view_wide() || vp_w <= 0.0f) return 1.0f;
     float xl = -g_view_ox / g_view_s, xr = (400.0f - g_view_ox) / g_view_s;
     float h = vp_w * 0.5f, c = vp_x + h;
     float m = (c - xl) / h, r = (xr - c) / h;
@@ -104,15 +108,16 @@ float pm3ds_view_ndc_x(float vp_x, float vp_w) {
     return m > 1.0f ? m : 1.0f;
 }
 
-/* Wide = Fill's 1.2 scale, plus the 3D world shown past the 4:3 edge: the
+/* Wide = Fill's 1.2 scale, plus the 3D world shown past the 4:3 edge (Sharp
+ * wide: the same at Original's 1:1, so text and HUD stay pixel-exact): the
  * full-width scissor is opened up and full-width rectangles (clears,
  * backgrounds, fades) are stretched to the screen edges with matching
  * texture coordinates. The game draws whole maps, so the extra width is
  * real scenery; things culled by the game near the edges may pop in. */
 void pm3ds_set_view_mode(int mode) {
-    if (mode < PM3DS_VIEW_ORIGINAL || mode > PM3DS_VIEW_WIDE) mode = PM3DS_VIEW_WIDE;
+    if (mode < PM3DS_VIEW_ORIGINAL || mode > PM3DS_VIEW_SHARP) mode = PM3DS_VIEW_WIDE;
     g_view_mode = mode;
-    bool fill = mode != PM3DS_VIEW_ORIGINAL;
+    bool fill = mode == PM3DS_VIEW_FILL || mode == PM3DS_VIEW_WIDE;   /* the 1.2 scale */
     g_view_s  = fill ? 1.2f : 1.0f;
     g_view_ox = 200.0f - 160.0f * g_view_s;
     g_view_oy = 120.0f - 120.0f * g_view_s;
@@ -345,7 +350,7 @@ static void set_scissor(const gfx_state_t *st) {
     if (lry > 240.0f) lry = 240.0f;
     int left   = (int)(240.0f - (g_view_s * lry + g_view_oy)), right  = (int)(240.0f - (g_view_s * uly + g_view_oy));
     int top    = (int)(400.0f - (g_view_s * lrx + g_view_ox)), bottom = (int)(400.0f - (g_view_s * ulx + g_view_ox));
-    if (g_view_mode == PM3DS_VIEW_WIDE && ulx <= 12.5f && lrx >= 307.5f) { top = 0; bottom = 400; }
+    if (view_wide() && ulx <= 12.5f && lrx >= 307.5f) { top = 0; bottom = 400; }
     if (left < 0) left = 0;
     if (top < 0) top = 0;
     if (right > 240) right = 240;
@@ -981,7 +986,7 @@ void gfx_backend_rect(gfx_state_t *st, float x0, float y0, float x1, float y1,
                   (unsigned)st->timg_addr);
     }
 #endif
-    if (g_view_mode == PM3DS_VIEW_WIDE && !g_in_rtt && !st->bg_wide && x0 <= 12.5f && x1 >= 307.5f && x1 > x0) {
+    if (view_wide() && !g_in_rtt && !st->bg_wide && x0 <= 12.5f && x1 >= 307.5f && x1 > x0) {
         /* full-width rectangle: carry it to the screen edges (the backdrop
          * does that itself, with its wrapped texels: gfx_translate.c) */
         float xl = -g_view_ox / g_view_s, xr = (400.0f - g_view_ox) / g_view_s;
@@ -1082,12 +1087,36 @@ void gfx_backend_rtt_end(gfx_state_t *st) {
 bool pm3ds_gfx_rtt_available(void) { return g_rtt_target != NULL; }
 bool pm3ds_gfx_screen_copy_available(void) { return g_scr_ok; }
 
+/* GX queue slots kept free for the rest of the frame: the draw-list splits,
+ * both eyes' transfers and the frame end */
+#define GX_QUEUE_RESERVE 8
+static int g_scr_copies, g_scr_copies_max = 32;   /* this eye's screen copies, and its share */
+static bool g_scr_made;                           /* g_scr_tex holds a copy (any frame, any eye) */
+
 /* The game copies the framebuffer drawn so far into the image at addr: copy
  * the eye's render target into g_scr_tex instead. The draws so far go to the
  * GPU first (C3D_FrameSplit), then the copy runs in the same GX queue, so the
  * draws after it see the finished copy. */
 void gfx_backend_screen_copy(gfx_state_t *st, uint32_t addr, uint16_t width) {
     if (!g_scr_ok || !g_draw_enabled || g_in_rtt || width == 0) return;
+    /* a copy takes two GX queue slots (the split and the copy); several effects
+     * copying every frame, in both eyes, can fill the queue and the frame end
+     * needs a few more (GitHub #57: Super Block flames on Lavalava Island).
+     * Without room the effect reads the last copy, a frame or a few draws old.
+     * In 3D each eye gets its share, so the right eye isn't left without one. */
+    extern int pm3ds_gx_queue_room(void);
+    if (pm3ds_gx_queue_room() < 2 + GX_QUEUE_RESERVE || g_scr_copies >= g_scr_copies_max) {
+        static unsigned skipped;
+        if (skipped++ % 600 == 0) pm3ds_log(PM3DS_LOG_INFO, "gfx: screen copy skipped, GX queue full (%u)", skipped);
+        if (g_scr_made) {   /* the last copy (this eye's, or the other eye's), not the black N64 buffer */
+            g_scr_addr = addr;
+            g_scr_stride = (uint32_t)width * 2u;
+            g_scr_bytes = g_scr_stride * 240u;
+        }
+        return;
+    }
+    g_scr_copies++;
+    g_scr_made = true;
     gfx_backend_flush(st);
     GPUCMD_AddWrite(GPUREG_FRAMEBUFFER_FLUSH, 1);
     C3D_FrameSplit(GX_CMDLIST_FLUSH);
@@ -1403,6 +1432,7 @@ static void render_lists(const void *const *lists, int nlists) {
     g_in_rtt = false;
     g_rtt_bytes = 0;
     g_scr_bytes = 0;
+    g_scr_copies = 0;
     C3D_BindProgram(&g_prog);
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, g_uloc_screen, &g_screen_mtx);
     {   /* a new noise pattern every frame */
@@ -1446,13 +1476,15 @@ static void render_lists(const void *const *lists, int nlists) {
             g_cur_target = g_target_right;
             g_rtt_bytes = 0;
             g_scr_bytes = 0;
+            g_scr_copies = 0;
             g_state_valid = false;
         }
+        g_scr_copies_max = stereo ? 5 : 32;   /* 3D: 5 copies (10 queue slots) per eye */
         pm3ds_stereo_shift = stereo ? (eye == 0 ? -1.0f : 1.0f) * slider * max_shift : 0.0f;
         for (int i = 0; i < nlists; i++) {
             g_st.cimg_is_screen = true;
             g_stereo_far = stereo && i == 0 && nlists > 1;
-            g_st.bg_wide = g_view_mode == PM3DS_VIEW_WIDE && i == 0 && nlists > 1 &&
+            g_st.bg_wide = view_wide() && i == 0 && nlists > 1 &&
                            gfx_interp_bg_edges(&g_st.bg_left, &g_st.bg_right);
             g_st.bg_wide_l = -g_view_ox / g_view_s - max_shift - 3.0f;   /* room for the 3D shift */
             g_st.bg_wide_r = (400.0f - g_view_ox) / g_view_s + max_shift + 3.0f;

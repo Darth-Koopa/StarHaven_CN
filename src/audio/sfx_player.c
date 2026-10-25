@@ -602,6 +602,25 @@ void au_sfx_enqueue_event(SoundManager* manager, u32 soundID, s16 volume, s16 pi
         pending += SFX_QUEUE_SIZE;
     }
 
+#ifdef _3DS
+    // 3DS port: pending is taken mod SFX_QUEUE_SIZE, so the check below never failed: a full
+    // ring wrapped to W == R and the reader then saw it empty, losing everything queued, a
+    // stop or trigger included. A looping sound waiting for one (the Star Beam) never ended
+    // (GitHub #54). Full (W one behind R): a stop or trigger takes the place of the newest
+    // ADJUST (those are sent again every step); anything else is dropped.
+    if (pending >= SFX_QUEUE_SIZE - 1) {
+        static u32 full;
+        if (full++ % 256 == 0) {
+            extern void pm3ds_log(int, const char*, ...);
+            pm3ds_log(3, "audio: SFX queue full (%u), sound %08X", (unsigned)full, (unsigned)soundID);
+        }
+        u32 last = (manager->sfxQueueWritePos + SFX_QUEUE_SIZE - 1) % SFX_QUEUE_SIZE;
+        if (!(soundID & (SOUND_ID_STOP | SOUND_ID_TRIGGER_MASK)) || !(manager->soundQueue[last].soundID & SOUND_ID_ADJUST)) {
+            return;
+        }
+        manager->sfxQueueWritePos = last;
+    }
+#endif
     // Only enqueue if there's room in the buffer
     if (pending < SFX_QUEUE_SIZE) {
         u32 nextPos = manager->sfxQueueWritePos;
@@ -688,7 +707,12 @@ void au_sfx_begin_video_frame(SoundManager* manager) {
     }
 
     // Determine the number of pending sound effects in the queue
+#ifdef _3DS
+    u32 writePos = manager->sfxQueueWritePos;   // a snapshot: requests queued mid-drain wait for the next one
+    pending = writePos - manager->sfxQueueReadPos;
+#else
     pending = manager->sfxQueueWritePos - manager->sfxQueueReadPos;
+#endif
     if (pending < 0) {
         pending += SFX_QUEUE_SIZE;
     }
@@ -719,7 +743,11 @@ void au_sfx_begin_video_frame(SoundManager* manager) {
                 j = 0;
             }
         }
+#ifdef _3DS
+        manager->sfxQueueReadPos = writePos;
+#else
         manager->sfxQueueReadPos = manager->sfxQueueWritePos;
+#endif
     }
 }
 
