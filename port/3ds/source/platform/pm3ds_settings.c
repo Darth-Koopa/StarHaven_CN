@@ -36,7 +36,7 @@ static const char *const s_key_names[KEY_IDX_COUNT] = {
 };
 static const char *const s_act_names[ACT_COUNT] = {
     "-", "A", "B", "Z", "R", "L", "Start",
-    "C-Up", "C-Down", "C-Left", "C-Right", "Fast >>",
+    "C-Up", "C-Down", "C-Left", "C-Right", "Fast >>", "Turbo A",
 };
 static const char *const s_key_cfg[KEY_IDX_COUNT] = {
     "a", "b", "x", "y", "l", "r", "zl", "zr", "start", "select",
@@ -48,7 +48,7 @@ static const char *const s_key_cfg[KEY_IDX_COUNT] = {
  * partner ability / partner menu, ZR held for fast-forward. */
 void pm3ds_settings_default_keymap(uint8_t *m) {
     static const uint8_t def[KEY_IDX_COUNT] = {
-        ACT_A, ACT_B, ACT_C_DOWN, ACT_C_LEFT, ACT_Z, ACT_R, ACT_C_LEFT, ACT_FAST_FORWARD,
+        ACT_A, ACT_B, ACT_C_DOWN, ACT_C_LEFT, ACT_Z, ACT_R, ACT_TURBO_A, ACT_FAST_FORWARD,
         ACT_START, ACT_L, ACT_C_UP, ACT_C_DOWN, ACT_C_LEFT, ACT_C_RIGHT,
         ACT_C_UP, ACT_C_DOWN, ACT_C_LEFT, ACT_C_RIGHT,
     };
@@ -81,6 +81,7 @@ void pm3ds_settings_load(void) {
     pm3ds_cfg.update_check = true;
     pm3ds_cfg.update_skip = 0;
     pm3ds_cfg.map_dragged = false;
+    pm3ds_cfg.stat_drops = true;
     pm3ds_settings_default_keymap(pm3ds_cfg.keymap);
     FILE *f = fopen(CFG_PATH, "r");
     if (f) {
@@ -96,6 +97,7 @@ void pm3ds_settings_load(void) {
             else if (sscanf(line, "ff_toggle=%d", &v) == 1) pm3ds_cfg.ff_toggle = v != 0;
             else if (sscanf(line, "update_check=%d", &v) == 1) pm3ds_cfg.update_check = v != 0;
             else if (sscanf(line, "map_dragged=%d", &v) == 1) pm3ds_cfg.map_dragged = v != 0;
+            else if (sscanf(line, "stat_drops=%d", &v) == 1) pm3ds_cfg.stat_drops = v != 0;
             else if (sscanf(line, "update_skip=%d", &v) == 1) pm3ds_cfg.update_skip = v;
             else if (sscanf(line, "rando_flags=%d", &v) == 1) pm3ds_cfg.rando_flags = (unsigned)v & PM3DS_RANDO_ALL;
             else if (sscanf(line, "rando=%d", &v) == 1 && v >= 1 && v <= 3) {   /* older builds: a mode */
@@ -121,6 +123,7 @@ void pm3ds_settings_save(void) {
             pm3ds_cfg.fps60, pm3ds_cfg.depth3d, pm3ds_cfg.text_speed, pm3ds_cfg.ff_speed, pm3ds_cfg.ff_toggle, pm3ds_cfg.rando_flags);
     fprintf(f, "update_check=%d\nupdate_skip=%d\n", pm3ds_cfg.update_check, pm3ds_cfg.update_skip);
     fprintf(f, "map_dragged=%d\n", pm3ds_cfg.map_dragged);
+    fprintf(f, "stat_drops=%d\n", pm3ds_cfg.stat_drops);
     for (int k = 0; k < KEY_IDX_COUNT; k++) fprintf(f, "key_%s=%d\n", s_key_cfg[k], pm3ds_cfg.keymap[k]);
     fclose(f);
 }
@@ -146,3 +149,6 @@ bool pm3ds_fast_forward(void) { return s_ff_held || pm3ds_ff_button_on; }
 
 int pm3ds_settings_text_speed(void) { return pm3ds_cfg.text_speed; }   /* src/msg.c */
 unsigned int pm3ds_random_seed(void) { return (unsigned)osGetTime() ^ ((unsigned)svcGetSystemTick() * 2654435761u); }
+
+/* for the decomp side (src/enemy_ai.c), which doesn't include this header */
+bool pm3ds_stat_drops_on(void) { return pm3ds_cfg.stat_drops; }

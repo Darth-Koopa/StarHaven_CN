@@ -57,6 +57,7 @@ typedef struct {
     f32 rate, mixL, mixR;             /* last values sent to the channel */
     s8 pending;                       /* a note (re)started since the last frame */
     s8 active;                        /* the channel plays this voice's note */
+    s8 endless;                       /* a looping wave buffer is queued: only a clear stops it */
 } HwVoice;
 
 static HwSample sSamples[HWV_SAMPLES];
@@ -262,6 +263,7 @@ static void start_note(HwVoice* v, s32 ch, Instrument* ins) {
     ndspChnWaveBufClear(ch);
     release_sample(v);
     v->active = false;
+    v->endless = false;
     if (ins == nullptr) {
         return;
     }
@@ -283,6 +285,7 @@ static void start_note(HwVoice* v, s32 ch, Instrument* ins) {
         add_buf(&v->wb[b++], ch, pcm, le, false);
         if (count < 0 || count > HWV_LOOP_BUFS) {
             add_buf(&v->wb[b++], ch, pcm + ls, le - ls, true);
+            v->endless = true;
         } else {
             for (s32 k = 0; k < count; k++) {
                 add_buf(&v->wb[b++], ch, pcm + ls, le - ls, false);
@@ -317,9 +320,10 @@ void pm3ds_hwv_note(u8 voiceIdx, s32 start) {
         v->pending = true;
     } else {
         v->pending = false;
-        if (v->active) {
+        if (v->active || v->endless) {
             ndspChnWaveBufClear(voiceIdx);
         }
+        v->endless = false;
         v->active = false;
         release_sample(v);
     }
@@ -336,13 +340,14 @@ static void ramp_advance(HwVoice* v, s32 k, s32 n) {
 
 /* about every 10 s of audio: what the DSP voices did */
 void pm3ds_hwv_stats(void) {
-    s32 active = 0;
+    s32 active = 0, orphans = 0;
     for (s32 i = 0; i < HWV_VOICES; i++) {
         active += sVoices[i].active;
+        orphans += !sVoices[i].active && ndspChnIsPlaying(i);   /* sounding with no voice behind it */
     }
-    pm3ds_log(2, "audio: dsp voices: %u notes, %u samples converted, %u failed, cache %u/%u KB, %d playing",
+    pm3ds_log(2, "audio: dsp voices: %u notes, %u samples converted, %u failed, cache %u/%u KB, %d playing, %d orphaned",
               (unsigned)sStatNotes, (unsigned)sStatConverted, (unsigned)sStatFailed, (unsigned)(sCacheBytes >> 10),
-              (unsigned)(sCacheCap >> 10), (int)active);
+              (unsigned)(sCacheCap >> 10), (int)active, (int)orphans);
 }
 
 /* one audio frame of a playing voice (au_pull_voice_hw) */
@@ -402,7 +407,14 @@ void pm3ds_hwv_frame(AuPVoice* pvoice, s32 restartRamp) {
     }
 
     if (env->motion == AL_STOPPED) {
-        /* the sample ran out: the DSP plays its last few samples by itself */
+        /* the sample ran out: the DSP plays its last few samples by itself.
+         * A looping one never runs out there: stop the channel, or the loop
+         * plays on at its last volume (Forever Forest's crows and wolves kept
+         * going in Toad Town, GitHub #38, #46) */
+        if (v->endless) {
+            ndspChnWaveBufClear(ch);
+            v->endless = false;
+        }
         v->active = false;
         release_sample(v);
     }

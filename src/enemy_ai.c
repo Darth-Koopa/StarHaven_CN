@@ -150,6 +150,14 @@ void spawn_drops(Enemy* enemy) {
         }
     }
 
+#ifdef _3DS
+    {   // 3DS port: Options can turn the random heart/flower drops off; the Finder badges still work (GitHub #39)
+        extern bool pm3ds_stat_drops_on(void);
+        if (!pm3ds_stat_drops_on()) {
+            dropCount = 0;
+        }
+    }
+#endif
     if (is_ability_active(ABILITY_HEART_FINDER)) {
         dropCount += 1 + rand_int(2);
     }
@@ -204,6 +212,14 @@ void spawn_drops(Enemy* enemy) {
         }
     }
 
+#ifdef _3DS
+    {   // 3DS port: Options can turn the random heart/flower drops off; the Finder badges still work (GitHub #39)
+        extern bool pm3ds_stat_drops_on(void);
+        if (!pm3ds_stat_drops_on()) {
+            dropCount = 0;
+        }
+    }
+#endif
     if (is_ability_active(ABILITY_FLOWER_FINDER)) {
         dropCount += 1 + rand_int(2);
     }

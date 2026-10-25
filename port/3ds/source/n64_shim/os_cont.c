@@ -74,8 +74,18 @@ void osContStartReadData(void *mq) {
         [ACT_C_RIGHT] = CONT_F,
     };
     uint16_t b = 0;
-    for (int k = 0; k < KEY_IDX_COUNT; k++)
-        if (kHeld & pm3ds_settings_key_bit(k)) b |= act_bits[pm3ds_cfg.keymap[k] % ACT_COUNT];
+    bool turbo = false;
+    for (int k = 0; k < KEY_IDX_COUNT; k++) {
+        if (!(kHeld & pm3ds_settings_key_bit(k))) continue;
+        b |= act_bits[pm3ds_cfg.keymap[k] % ACT_COUNT];
+        turbo |= pm3ds_cfg.keymap[k] == ACT_TURBO_A;
+    }
+    {   /* Turbo A: about 15 fresh A presses a second while held, for mashing (running
+         * away, mash action commands) without hurting your hand. By the clock, not per
+         * read: the controller is read more than once per game step. A itself stays a
+         * normal button: some action commands need it held */
+        if (turbo && (osGetTime() / 34) % 2 == 0) b |= CONT_A;
+    }
 
     /* Circle pad on 3DS reports −0x9C ... +0x9C-ish; N64 stick is ±80. A
      * resting pad sits a few units off centre (an N64 stick reads 0 there),

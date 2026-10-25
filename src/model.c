@@ -1,4 +1,7 @@
 #include "common.h"
+#ifdef _3DS
+#include "gfx_interp.h"   // 3DS port: pm3ds_interp_obj
+#endif
 #include "ld_addrs.h"
 #include "model.h"
 #include "effects.h"
@@ -4842,7 +4845,13 @@ void execute_render_tasks(void) {
                 savedGfxPos = gMainGfxPos++;
             }
 
+#ifdef _3DS
+            pm3ds_interp_obj = task->appendGfxArg;
+#endif
             appendGfx(task->appendGfxArg);
+#ifdef _3DS
+            pm3ds_interp_obj = nullptr;
+#endif
 
             if (task->renderMode & RENDER_TASK_FLAG_REFLECT_FLOOR) {
                 gSPEndDisplayList(gMainGfxPos++);
@@ -4857,7 +4866,17 @@ void execute_render_tasks(void) {
         for (i = 0; i < taskCount; i++) {
             task = &taskList[sorted[i]];
             appendGfx = task->appendGfx;
+#ifdef _3DS
+            // 3DS port: tag what this task draws, so the 60 fps in-between frame
+            // pairs each matrix with the same object's one step before even when
+            // the depth sort swaps two neighbours (a Clubba beside a Boo flickered
+            // between the two, GitHub #47, #48)
+            pm3ds_interp_obj = task->appendGfxArg;
+#endif
             appendGfx(task->appendGfxArg);
+#ifdef _3DS
+            pm3ds_interp_obj = nullptr;
+#endif
         }
     }
 

@@ -97,7 +97,8 @@ Defaults (`pm3ds_settings_default_keymap`; remappable on the bottom screen, save
 | Select | L |
 | Start | Start |
 | X | C-Down |
-| Y, ZL | C-Left |
+| Y | C-Left |
+| ZL | turbo A (held) |
 | D-Pad, C-Stick | C buttons |
 | ZR | fast-forward (held) |
 

@@ -27,7 +27,7 @@ void set_battle_formation(Battle* battle);
     defined(PM3DS_TELEPORT_X) || defined(PM3DS_COLLIDER_CHECK) || defined(PM3DS_START_BARE) || \
     defined(PM3DS_FX_TEST) || defined(PM3DS_TEST_LEVELUP) || defined(PM3DS_BATTLE_SWEEP) || \
     defined(PM3DS_STORY_SWEEP) || defined(PM3DS_FX_SWEEP) || defined(PM3DS_NO_BATTLES) || \
-    defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST) || defined(PM3DS_ENC_TEST) || \
+    defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST) || defined(PM3DS_ENC_TEST) || defined(PM3DS_FX_LIST) || \
     defined(PM3DS_JOURNAL_TEST) || defined(PM3DS_NO_TITLE_DEMO) || defined(PM3DS_QUICKSAVE_EVERY) || \
     defined(PM3DS_SHOP_DIALOG) || defined(PM3DS_MODEL_DUMP) || defined(PM3DS_TOUR) || defined(PM3DS_AUTO_WIN) || \
     defined(PM3DS_ENEMY_HP1) || defined(PM3DS_RANDO_TEST)
@@ -550,7 +550,7 @@ void pm3ds_game_debug_tick(u32 frame) {
     defined(PM3DS_TELEPORT_X) || defined(PM3DS_COLLIDER_CHECK) || defined(PM3DS_START_BARE) || \
     defined(PM3DS_FX_TEST) || defined(PM3DS_TEST_LEVELUP) || defined(PM3DS_BATTLE_SWEEP) || \
     defined(PM3DS_STORY_SWEEP) || defined(PM3DS_FX_SWEEP) || defined(PM3DS_NO_BATTLES) || \
-    defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST) || defined(PM3DS_ENC_TEST) || \
+    defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST) || defined(PM3DS_ENC_TEST) || defined(PM3DS_FX_LIST) || \
     defined(PM3DS_JOURNAL_TEST) || defined(PM3DS_NO_TITLE_DEMO) || defined(PM3DS_QUICKSAVE_EVERY) || \
     defined(PM3DS_SHOP_DIALOG) || defined(PM3DS_MODEL_DUMP) || defined(PM3DS_TOUR) || defined(PM3DS_AUTO_WIN) || \
     defined(PM3DS_ENEMY_HP1) || defined(PM3DS_RANDO_TEST)
@@ -664,6 +664,28 @@ void pm3ds_game_debug_tick(u32 frame) {
         static s32 worldFrames;
         if (gGameStatusPtr != nullptr && get_game_mode() == GAME_MODE_WORLD && ++worldFrames > 150 && worldFrames % 30 == 0) {
             fx_landing_dust(0, gPlayerStatus.pos.x + 30.0f, gPlayerStatus.pos.y, gPlayerStatus.pos.z, 0.0f);
+        }
+    }
+#endif
+#ifdef PM3DS_FX_LIST
+    {   /* debug: the effects of GitHub #40 (Super Block upgrade) and #49 (Watt's
+         * Power Shock) beside Mario in the world, one every 2.5 s */
+        static s32 worldFrames;
+        if (gGameStatusPtr != nullptr && get_game_mode() == GAME_MODE_WORLD && ++worldFrames > 150
+            && worldFrames % 150 == 0) {
+            f32 x = gPlayerStatus.pos.x + 30, y = gPlayerStatus.pos.y + 12.5f, z = gPlayerStatus.pos.z;
+            s32 which = (worldFrames / 150) % 8;
+            pm3ds_log(2, "FXLIST %d at frame %u", which, (unsigned)frame);
+            switch (which) {
+                case 6: fx_motion_blur_flame(0, x, y, z, 1.0f, 90); break;
+                case 7: { static EffectInstance* glow; fx_bulb_glow(0, x, y + 10, z, 1.0f, &glow); break; }
+                case 0: fx_radial_shimmer(4, x, y, z, 1.0f, 75); break;
+                case 1: fx_radial_shimmer(9, x, y, z, 1.0f, 75); break;
+                case 2: fx_radial_shimmer(8, x, y, z, 1.3f, 75); break;
+                case 3: fx_energy_orb_wave(0, x, y, z, 0.7f, 75); break;
+                case 4: fx_snaking_static(0, x, y, z, 1.0f, 75); break;
+                case 5: fx_sparkles(FX_SPARKLES_2, x, y + 20, z, 30.0f); break;
+            }
         }
     }
 #endif

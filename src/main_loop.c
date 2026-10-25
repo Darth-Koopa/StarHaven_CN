@@ -106,7 +106,9 @@ void step_game_loop(void) {
 #ifdef _3DS
     {   // 3DS port: cheats top up HP, FP, star power, coins (cheats.c)
         extern void pm3ds_cheats_step(void);
+        extern void pm3ds_qs_step(void);
         pm3ds_cheats_step();
+        pm3ds_qs_step();       // a quick save loads where Mario stood (quicksave.c)
     }
 #endif
     mdl_reset_transform_flags();

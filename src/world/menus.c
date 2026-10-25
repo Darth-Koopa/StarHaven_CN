@@ -269,7 +269,12 @@ void check_input_open_menus(void) {
                         gGameStatusPtr->savedPos.x = playerStatus->pos.x;
                         gGameStatusPtr->savedPos.y = playerStatus->pos.y;
                         gGameStatusPtr->savedPos.z = playerStatus->pos.z;
-                        fio_save_game(gGameStatusPtr->saveSlot);
+                        {   // marked, so loading it puts Mario back here on any map (quicksave.c, #37)
+                            extern bool pm3ds_qs_saving;
+                            pm3ds_qs_saving = true;
+                            fio_save_game(gGameStatusPtr->saveSlot);
+                            pm3ds_qs_saving = false;
+                        }
                         sfx_play_sound(SOUND_SAVE_CONFIRM);
                         pm3ds_quicksave_result = 1;
 #ifdef PM3DS_ROOM_DBG

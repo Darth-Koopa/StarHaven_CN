@@ -1,5 +1,9 @@
 #include "common.h"
 //#include "audio/public.h"
+#ifdef PM3DS_AMB_DBG
+#include "audio.h"
+#include "audio/public.h"
+#endif
 
 typedef struct {
     /* 0x0 */ s16 flags;
@@ -36,6 +40,32 @@ void reset_ambient_sounds(void) {
 void update_ambient_sounds(void) {
     AmbientSoundSettings* ambientSoundState = &AmbientSoundData;
     s32 error;
+
+#ifdef PM3DS_AMB_DBG
+    {   // debug: the ambience state machine and its player (GitHub #38, #46)
+        extern void pm3ds_log(int, const char*, ...);
+        extern AmbienceManager* gAuAmbienceManager;
+        static s32 lastState = -1, lastSound = -2, tick;
+        if (ambientSoundState->fadeState != lastState || ambientSoundState->soundID != lastSound || ++tick % 120 == 0) {
+            AmbiencePlayer* p = gAuAmbienceManager != nullptr ? &gAuAmbienceManager->players[0] : nullptr;
+            s32 nv = 0;
+            if (gAuAmbienceManager != nullptr) {
+                for (s32 i = 0; i < ARRAY_COUNT(gAuAmbienceManager->globals->voices); i++) {
+                    nv += gAuAmbienceManager->globals->voices[i].priority == AU_PRIORITY_MSEQ_MANAGER;
+                }
+            }
+            pm3ds_log(2, "AMBDBG voices %d", nv);
+            pm3ds_log(2, "AMBDBG state %d sound %d flags %d active %d p0 read %p mode %d play %d fade %d/%d stopped %d",
+                      ambientSoundState->fadeState, ambientSoundState->soundID, ambientSoundState->flags,
+                      gAuAmbienceManager != nullptr ? gAuAmbienceManager->numActivePlayers : -1,
+                      p != nullptr ? (void*)p->mseqReadPos : nullptr, p != nullptr ? p->mode : -1,
+                      p != nullptr ? p->playState : -1, p != nullptr ? p->fadeSettingsType : -1,
+                      p != nullptr ? p->fadeSettingsTime : -1, snd_ambient_is_stopped(0));
+            lastState = ambientSoundState->fadeState;
+            lastSound = ambientSoundState->soundID;
+        }
+    }
+#endif
 
     switch (ambientSoundState->fadeState) {
         case AMBIENCE_STATE_IDLE:

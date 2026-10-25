@@ -1757,9 +1757,9 @@ static bool tmenu_tap(int px, int py) {
 
 /* ---- Options and Controls pages ------------------------------------------ */
 /* their own rail: Settings, Controls, Debug */
-#define OPT_ROWS 7
+#define OPT_ROWS 8
 #define OPT_Y0 BODY_Y
-#define OPT_ROW_H 22
+#define OPT_ROW_H 21
 static const char *const s_fps_names[2] = { "30 fps", "60 fps" };
 static const char *const s_text_names[TEXT_SPEEDS] = { "Normal", "Fast", "Instant" };
 
@@ -1784,6 +1784,7 @@ static void draw_options(void) {
     opt_row(4, "Fast-forward speed", buf);
     opt_row(5, "Fast-forward button", pm3ds_cfg.ff_toggle ? "Toggle" : "Hold");
     opt_row(6, "Update check", pm3ds_cfg.update_check ? "On" : "Off");
+    opt_row(7, "Heart & flower drops", pm3ds_cfg.stat_drops ? "On" : "Off");
     small_text(12, 219, PM3DS_APP_NAME " v" PM3DS_VERSION_STR, 40, COL_PANEL_EDGE);
     button(s_btn_ff, "Back");
 }
@@ -2377,6 +2378,7 @@ static void handle_touch(void) {
             case 4: pm3ds_cfg.ff_speed = pm3ds_cfg.ff_speed >= 4 ? 2 : pm3ds_cfg.ff_speed + 1; break;
             case 5: pm3ds_cfg.ff_toggle = !pm3ds_cfg.ff_toggle; break;
             case 6: pm3ds_cfg.update_check = !pm3ds_cfg.update_check; break;   /* from the next launch */
+            case 7: pm3ds_cfg.stat_drops = !pm3ds_cfg.stat_drops; break;
         }
         pm3ds_settings_save();
         return;

@@ -382,6 +382,7 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
                             extern void pm3ds_cheats_new_game(void);
                             pm3ds_rando_new_game();
                             pm3ds_cheats_new_game();
+                            { extern void pm3ds_qs_new_game(void); pm3ds_qs_new_game(); }
                         }
 #endif
                         gGameStatusPtr->areaID = AREA_KMR;
