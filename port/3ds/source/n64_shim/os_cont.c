@@ -60,6 +60,11 @@ int osContInit(void *mq, uint8_t *bitpattern, void *status) {
 uint16_t pm3ds_debug_pad_or;
 int8_t pm3ds_debug_stick_x, pm3ds_debug_stick_y;   /* debug: steer Mario (the showcase tour) */
 
+/* this read's buttons split by where they came from: the console's buttons, and
+ * the bottom screen's pad (one game step late already, it is read once a frame)
+ * plus debug ones. src/input.c delays the first by a step in battle. */
+uint16_t pm3ds_pad_phys, pm3ds_pad_other;
+
 void osContStartReadData(void *mq) {
     (void)mq;
 #ifndef PM3DS_HOST_TEST
@@ -102,6 +107,7 @@ void osContStartReadData(void *mq) {
         }
     }
 
+    uint16_t phys = b;   /* the console's own buttons, before the touch and debug ones join */
     {   /* debug sweeps hold buttons here (always 0 otherwise) */
         extern uint16_t pm3ds_debug_pad_or;
         b |= pm3ds_debug_pad_or;
@@ -118,8 +124,10 @@ void osContStartReadData(void *mq) {
     }
     {   /* the new-game picker has the buttons (platform/bottom_screen.c) */
         extern bool pm3ds_new_game_picker_blocks_input(void);
-        if (pm3ds_new_game_picker_blocks_input()) { b = 0; sx = 0; sy = 0; }
+        if (pm3ds_new_game_picker_blocks_input()) { b = 0; phys = 0; sx = 0; sy = 0; }
     }
+    pm3ds_pad_phys = phys;
+    pm3ds_pad_other = b & ~phys;
     g_pad.button  = b;
     g_pad.stick_x = sx;
     g_pad.stick_y = sy;

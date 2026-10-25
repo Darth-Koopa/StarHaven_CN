@@ -326,6 +326,17 @@ void btl_update(void) {
     battleStatus->stickAngle = outAngle;
     battleStatus->stickMagnitude = outMagnitude;
     battleStatus->pushInputBuffer[battleStatus->inputBufferPos] = battleStatus->curButtonsPressed;
+#ifdef PM3DS_BLOCK_DBG
+    {   // debug: every A press the battle's input buffer gets (blocking, GitHub/Discord)
+        extern void pm3ds_log(int, const char*, ...);
+        static u32 step;
+        step++;
+        if (battleStatus->curButtonsPressed & BUTTON_A) {
+            pm3ds_log(2, "BLOCKDBG A pressed step %u frame %d pos %d down %X", (unsigned)step, gGameStatusPtr->frameCounter,
+                      battleStatus->inputBufferPos, battleStatus->curButtonsDown);
+        }
+    }
+#endif
     battleStatus->holdInputBuffer[battleStatus->inputBufferPos] = battleStatus->curButtonsDown;
 
     battleStatus->inputBufferPos++;

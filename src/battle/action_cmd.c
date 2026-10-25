@@ -634,6 +634,13 @@ s32 check_block_input(s32 buttonMask) {
     if (block && !acs->hitsTakenIsMax) {
         playerData->hitsBlocked++;
     }
+#ifdef PM3DS_BLOCK_DBG
+    {
+        extern void pm3ds_log(int, const char*, ...);
+        pm3ds_log(2, "BLOCKDBG check at pos %d: result %d mash %d", battleStatus->inputBufferPos,
+                  battleStatus->blockResult, mash);
+    }
+#endif
 
     return block;
 }
