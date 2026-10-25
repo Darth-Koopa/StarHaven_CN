@@ -1153,6 +1153,15 @@ s32 hud_element_update(HudElement* hudElement) {
             return true;
         case HUD_ELEMENT_OP_PlaySound:
             arg2 = *nextPos++;
+#ifdef _3DS
+            {   // Settings -> Low HP beep off: the HP icon's warning loops stay silent
+                extern bool pm3ds_hp_beep_on(void);
+                if ((arg2 == SOUND_DANGER || arg2 == SOUND_PERIL) && !pm3ds_hp_beep_on()) {
+                    hudElement->readPos = (HudScript*)nextPos;
+                    return true;
+                }
+            }
+#endif
             sfx_play_sound(arg2);
             hudElement->readPos = (HudScript*)nextPos;
             return true;

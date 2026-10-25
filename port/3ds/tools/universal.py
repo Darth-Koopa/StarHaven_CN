@@ -26,6 +26,7 @@ import sys
 PORT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BIN = "/opt/devkitpro/devkitARM/bin/arm-none-eabi-"
 CTRU = "/opt/devkitpro/libctru"
+PORTLIBS = "/opt/devkitpro/portlibs/3ds"
 ARCH = ["-march=armv6k", "-mtune=mpcore", "-mfloat-abi=hard", "-mtp=soft"]
 WORK = os.path.join(PORT, "build_universal")
 PREFIX = "us_"
@@ -124,6 +125,7 @@ def main():
            ["-Wl,-Map," + os.path.join(WORK, "universal.map")] +
            ["-Wl,--wrap=" + w for w in wraps] + ["-Wl,--wrap=" + PREFIX + w for w in wraps] +
            ["@" + rsp, os.path.join(PORT, "m11_syms.ld"), us_ld,
+            "-L" + PORTLIBS + "/lib", "-lcurl", "-lmbedtls", "-lmbedx509", "-lmbedcrypto", "-lz",   # update check
             "-L" + CTRU + "/lib", "-lcitro3d", "-lctru", "-lm", "-o", out_elf])
     run(cmd)
     print("linked", out_elf)

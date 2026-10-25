@@ -412,6 +412,9 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
                         gPlayerData.partners[PARTNER_GOOMBARIO].enabled = true;
                         gPlayerData.curPartner = PARTNER_GOOMBARIO;
 #endif
+#ifdef PM3DS_START_HP   /* e.g. -DPM3DS_START_HP=5: low HP (its warning beep) */
+                        gPlayerData.curHP = PM3DS_START_HP;
+#endif
 #ifdef PM3DS_START_PARTNER   /* e.g. -DPM3DS_START_PARTNER=PARTNER_BOW for scenes that need one */
                         gPlayerData.partners[PM3DS_START_PARTNER].enabled = true;
                         gPlayerData.curPartner = PM3DS_START_PARTNER;

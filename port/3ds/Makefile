@@ -256,12 +256,12 @@ LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map) \
 				-Wl,--wrap=set_background \
 				-Wl,--wrap=C3D_UpdateUniforms
 
-LIBS	:=	-lcitro3d -lctru -lm
+LIBS	:=	-lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lz -lcitro3d -lctru -lm
 
 #---------------------------------------------------------------------------------
 # libctru path
 #---------------------------------------------------------------------------------
-LIBDIRS	:=	$(CTRULIB)
+LIBDIRS	:=	$(PORTLIBS) $(CTRULIB)
 
 #---------------------------------------------------------------------------------
 # no real need to edit anything past this point unless you need to add additional

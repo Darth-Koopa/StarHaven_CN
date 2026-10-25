@@ -25,6 +25,9 @@ ENV PATH=$DEVKITARM/bin:$DEVKITPRO/tools/bin:$PATH
 # Install the 3DS development toolchain
 RUN dkp-pacman -Syyu --noconfirm 3ds-dev
 
+# The update check does its own TLS (the 3DS's SSL module can't reach GitHub)
+RUN dkp-pacman -S --noconfirm --needed 3ds-curl 3ds-mbedtls
+
 # Verify tools are available
 RUN arm-none-eabi-gcc --version && which 3dsxtool && echo "OK"
 

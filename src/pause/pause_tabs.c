@@ -399,9 +399,28 @@ void pause_tabs_init(MenuPanel* tab) {
     gPauseTabsPreviousTab = 5;
 }
 
+#ifdef _3DS
+// the bottom screen's Badges button opens the pause menu and asks for its Badges page:
+// once the tabs take input, move there and press A for the player. Stamped with the frame
+// counter (| 1, so never 0) and dropped if the menu didn't open soon after.
+u32 pm3ds_pause_to_badges;
+#endif
+
 void pause_tabs_handle_input(MenuPanel* tab) {
     Window* pauseWindows;
     s32 x;
+
+#ifdef _3DS
+    if (pm3ds_pause_to_badges != 0) {
+        u32 age = gGameStatusPtr->frameCounter - (pm3ds_pause_to_badges & ~1u);
+        pm3ds_pause_to_badges = 0;
+        // not while the first visit's badge tutorial is pending; it explains this page itself
+        if (age < 120 && !evt_get_variable(nullptr, GF_Tutorial_Badges) && gPausePanels[gPauseTabsPanelIDs[1]]->initialized) {
+            tab->col = 1;
+            gPausePressedButtons |= BUTTON_A;
+        }
+    }
+#endif
 
     if (gPauseHeldButtons & (BUTTON_STICK_LEFT | BUTTON_Z)) {
         do {

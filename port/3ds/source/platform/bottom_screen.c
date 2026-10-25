@@ -469,6 +469,9 @@ static void bar(float x, float y, float w, float h, int v, int max, u32 col) {
 #define BTN_Y1 234
 static const float s_btn_opt[2] = { 8, 104 };
 static const float s_btn_items[2] = { 112, 208 };
+/* in the world the middle button is two: Items and Badges (the pause menu's Badges page) */
+static const float s_btn_items_half[2] = { 112, 158 };
+static const float s_btn_badges[2] = { 162, 208 };
 static const float s_btn_ff[2] = { 216, 312 };
 
 #define COL_CARD      RGBA(250, 236, 204, 255)
@@ -490,7 +493,8 @@ static bool draw_icon(const void *script, float x, float y, float size, u32 c);
 static bool in(int px, int py, float x0, float y0, float x1, float y1);
 static void small_text_center(float cx, float y, const char *str, float scale, u32 c);
 
-/* shortcut for the game (src/world/menus.c): 1 = item menu, 2 = quick save, 0x100 + id = switch partner */
+/* shortcut for the game (src/world/menus.c): 1 = item menu, 2 = quick save, 3 = pause menu on the
+ * Badges page, 0x100 + id = switch partner */
 volatile int pm3ds_touch_req;
 
 /* Stats page Save button: a tap arms it, a second one asks the game to save
@@ -1758,9 +1762,10 @@ static bool tmenu_tap(int px, int py) {
 
 /* ---- Options and Controls pages ------------------------------------------ */
 /* their own rail: Settings, Controls, Debug */
-#define OPT_ROWS 8
+#define OPT_ROWS 9
 #define OPT_Y0 BODY_Y
-#define OPT_ROW_H 21
+#define OPT_ROW_H 18.5f   /* nine rows end just above the buttons */
+#define CHEAT_ROW_H 21
 static const char *const s_fps_names[2] = { "30 fps", "60 fps" };
 static const char *const s_text_names[TEXT_SPEEDS] = { "Normal", "Fast", "Instant" };
 
@@ -1786,6 +1791,7 @@ static void draw_options(void) {
     opt_row(5, "Fast-forward button", pm3ds_cfg.ff_toggle ? "Toggle" : "Hold");
     opt_row(6, "Update check", pm3ds_cfg.update_check ? "On" : "Off");
     opt_row(7, "Heart & flower drops", pm3ds_cfg.stat_drops ? "On" : "Off");
+    opt_row(8, "Low HP beep", pm3ds_cfg.hp_beep ? "On" : "Off");
     small_text(12, 219, PM3DS_APP_NAME " v" PM3DS_VERSION_STR, 40, COL_PANEL_EDGE);
     button(s_btn_ff, "Back");
 }
@@ -1820,14 +1826,14 @@ static const char *const s_cheat_help[PM3DS_CHEAT_COUNT] = {
 static void draw_cheats(void) {
     page_title("Cheats", "Tap one to switch it");
     for (int i = 0; i < PM3DS_CHEAT_COUNT; i++) {
-        float y = OPT_Y0 + i * OPT_ROW_H;
+        float y = OPT_Y0 + i * CHEAT_ROW_H;
         bool on = pm3ds_cheat_on(i);
-        tile(CX0, y, CX1, y + OPT_ROW_H - 3, 6, on ? COL_SEL : COL_TAB_ON);
+        tile(CX0, y, CX1, y + CHEAT_ROW_H - 3, 6, on ? COL_SEL : COL_TAB_ON);
         text(CX0 + 7, y + 1, s_cheat_names[i], fit(s_cheat_names[i], 112, 0.82f, 0.6f), 0, COL_WHITE);
         text(CX0 + 124, y + 3, s_cheat_help[i], fit(s_cheat_help[i], 96, 0.62f, 0.5f), 0, COL_HINT);
-        chip(266, y + 2, CX1 - 4, y + OPT_ROW_H - 5, on ? "On" : "Off", on ? COL_GOLD : COL_OFF, 0.75f);
+        chip(266, y + 2, CX1 - 4, y + CHEAT_ROW_H - 5, on ? "On" : "Off", on ? COL_GOLD : COL_OFF, 0.75f);
     }
-    small_text_center((CX0 + CX1) / 2, OPT_Y0 + PM3DS_CHEAT_COUNT * OPT_ROW_H + 8, "Saved with this file.", 1.0f, COL_PANEL_EDGE);
+    small_text_center((CX0 + CX1) / 2, OPT_Y0 + PM3DS_CHEAT_COUNT * CHEAT_ROW_H + 8, "Saved with this file.", 1.0f, COL_PANEL_EDGE);
     button(s_btn_ff, "Back");
 }
 
@@ -1835,7 +1841,7 @@ static void button(const float x[2], const char *label) {
     round_rect(x[0] + 2, BTN_Y0 + 2, x[1] + 2, BTN_Y1 + 2, 10, COL_SHADOW);
     round_rect(x[0], BTN_Y0, x[1], BTN_Y1, 10, COL_PANEL_EDGE);
     round_rect(x[0] + 2, BTN_Y0 + 2, x[1] - 2, BTN_Y1 - 2, 8, COL_TAB_ON);
-    text_center((x[0] + x[1]) / 2, BTN_Y0 + 3, label, 1.0f, 0, COL_WHITE);
+    text_center((x[0] + x[1]) / 2, BTN_Y0 + 3, label, fit(label, x[1] - x[0] - 8, 1.0f, 0.6f), 0, COL_WHITE);
 }
 
 /* the middle button: Items in the world; with a menu open it holds B (Back),
@@ -1855,7 +1861,12 @@ static void draw_buttons(void) {
     uint16_t mid_pad;
     const char *mid = mid_button(&mid_pad);
     button(s_btn_opt, "Options");
-    if (mid) button(s_btn_items, mid);
+    if (mid && !mid_pad && s_info.in_game) {     /* the world: Items and Badges */
+        button(s_btn_items_half, mid);
+        button(s_btn_badges, "Badges");
+    } else if (mid) {
+        button(s_btn_items, mid);
+    }
     if (pm3ds_ff_button_on) {   /* lit while on */
         round_rect(s_btn_ff[0], BTN_Y0, s_btn_ff[1], BTN_Y1, 10, COL_PANEL_EDGE);
         round_rect(s_btn_ff[0] + 2, BTN_Y0 + 2, s_btn_ff[1] - 2, BTN_Y1 - 2, 8, RGBA(255, 196, 64, 255));
@@ -2355,7 +2366,7 @@ static void handle_touch(void) {
         }
     }
     if (s_tab == TAB_CHEATS) {
-        int row = (tp.py - OPT_Y0) / OPT_ROW_H;
+        int row = (tp.py - OPT_Y0) / CHEAT_ROW_H;
         if (back) s_tab = TAB_OPTIONS;
         else if (tp.px >= CX0 - 4 && tp.py >= OPT_Y0 && row < PM3DS_CHEAT_COUNT) pm3ds_cheat_toggle(row);
         return;
@@ -2380,6 +2391,7 @@ static void handle_touch(void) {
             case 5: pm3ds_cfg.ff_toggle = !pm3ds_cfg.ff_toggle; break;
             case 6: pm3ds_cfg.update_check = !pm3ds_cfg.update_check; break;   /* from the next launch */
             case 7: pm3ds_cfg.stat_drops = !pm3ds_cfg.stat_drops; break;
+            case 8: pm3ds_cfg.hp_beep = !pm3ds_cfg.hp_beep; break;
         }
         pm3ds_settings_save();
         return;
@@ -2408,7 +2420,8 @@ static void handle_touch(void) {
     } else if (s_info.in_game && in(tp.px, tp.py, s_btn_items[0], BTN_Y0, s_btn_items[1], BTN_Y1)) {
         uint16_t mid_pad;
         const char *mid = mid_button(&mid_pad);
-        if (mid && !mid_pad) pm3ds_touch_req = 1;   /* Items; Back/Swap are held above */
+        if (mid && !mid_pad)   /* Items or Badges; Back/Swap are held above */
+            pm3ds_touch_req = in(tp.px, tp.py, s_btn_badges[0], BTN_Y0, s_btn_badges[1], BTN_Y1) ? 3 : 1;
     } else if (battle_page()) {
         tmenu_tap(tp.px, tp.py);
     } else if (s_info.in_game && s_tab <= TAB_GAME_LAST && (r = rail_hit(tp.px, tp.py, NUM_GAME_TABS)) >= 0) {
