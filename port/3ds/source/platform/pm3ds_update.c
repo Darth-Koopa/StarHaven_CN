@@ -19,7 +19,11 @@
 #include "pm3ds_update.h"
 
 #define LATEST_URL   "https://github.com/" PM3DS_GITHUB_REPO "/releases/latest"
+#ifdef PM3DS_UPDATE_TEST_VERSION   /* test builds: pretend to be an older version, so the notice shows */
+#define THIS_VERSION PM3DS_UPDATE_TEST_VERSION
+#else
 #define THIS_VERSION PM3DS_VERSION_CODE(PM3DS_VERSION_MAJOR, PM3DS_VERSION_MINOR, PM3DS_VERSION_MICRO)
+#endif
 
 static volatile int s_latest;   /* newer release found, 0 none (or dismissed) */
 
@@ -50,25 +54,44 @@ static bool wait_for_wifi(void) {
 
 static void check_thread(void *arg) {
     (void)arg;
-    if (!wait_for_wifi() || R_FAILED(httpcInit(0))) return;
+    if (!wait_for_wifi()) {
+        pm3ds_log(PM3DS_LOG_WARN, "update check: no Wi-Fi");
+        return;
+    }
+    if (R_FAILED(httpcInit(0))) {
+        pm3ds_log(PM3DS_LOG_WARN, "update check: httpc unavailable");
+        return;
+    }
     char loc[256] = "";
     u32 status = 0;
     httpcContext ctx;
-    if (R_SUCCEEDED(httpcOpenContext(&ctx, HTTPC_METHOD_GET, LATEST_URL, 0))) {
+    /* each step's result code goes to the log: the console's own SSL module does
+     * the TLS, and what it can't do only shows on hardware (GitHub #51) */
+    Result rc = httpcOpenContext(&ctx, HTTPC_METHOD_GET, LATEST_URL, 0);
+    const char *step = "open";
+    if (R_SUCCEEDED(rc)) {
         /* the 3DS's root certificates are old; only a version number is read
          * from the answer, and the notice's text is fixed */
         httpcSetSSLOpt(&ctx, SSLCOPT_DisableVerify);
         httpcSetKeepAlive(&ctx, HTTPC_KEEPALIVE_DISABLED);
         httpcAddRequestHeaderField(&ctx, "User-Agent", PM3DS_APP_NAME "/" PM3DS_VERSION_STR);
-        if (R_SUCCEEDED(httpcBeginRequest(&ctx)) &&
-            R_SUCCEEDED(httpcGetResponseStatusCodeTimeout(&ctx, &status, 20 * 1000 * 1000 * 1000LL)) &&
-            status >= 300 && status < 400)
-            httpcGetResponseHeader(&ctx, "Location", loc, sizeof loc - 1);
+        step = "request";
+        rc = httpcBeginRequest(&ctx);
+        if (R_SUCCEEDED(rc)) {
+            step = "status";
+            rc = httpcGetResponseStatusCodeTimeout(&ctx, &status, 20 * 1000 * 1000 * 1000LL);
+        }
+        if (R_SUCCEEDED(rc) && status >= 300 && status < 400) {
+            step = "location";
+            rc = httpcGetResponseHeader(&ctx, "Location", loc, sizeof loc - 1);
+        }
         httpcCloseContext(&ctx);
     }
+    if (R_FAILED(rc)) pm3ds_log(PM3DS_LOG_WARN, "update check: %s failed, rc %08lX", step, (unsigned long)rc);
     httpcExit();
     int latest = parse_tag(loc);
-    pm3ds_log(PM3DS_LOG_INFO, "update check: HTTP %lu, latest %d.%d.%d", (unsigned long)status,
+    /* a failed check is a warning, so it reaches log.txt (GitHub #51: "doesn't work for me") */
+    pm3ds_log(latest ? PM3DS_LOG_INFO : PM3DS_LOG_WARN, "update check: HTTP %lu, latest %d.%d.%d", (unsigned long)status,
               latest / 10000, latest / 100 % 100, latest % 100);
     if (latest > THIS_VERSION && latest != pm3ds_cfg.update_skip) s_latest = latest;
 }

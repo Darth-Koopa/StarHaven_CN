@@ -76,6 +76,7 @@ void pm3ds_hud_query(pm3ds_hud_info_t* out) {
                    gGameStatusPtr->demoState == 0 && gGameStatusPtr->introPart < 0;
     out->in_battle = mode == GAME_MODE_BATTLE;
     out->demo = gGameStatusPtr->demoState != 0;
+    out->ui_ready = mode != GAME_MODE_STARTUP && mode != GAME_MODE_LOGOS;
     if (!out->in_game) {
         return;
     }

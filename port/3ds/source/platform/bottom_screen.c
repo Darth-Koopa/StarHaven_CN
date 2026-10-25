@@ -1323,7 +1323,8 @@ static void disc(float cx, float cy, float r, u32 c) { round_rect(cx - r, cy - r
  * HudScripts (pm3ds_tm_icon_rgba), so no art ships with the port: 64 cells of
  * 32x32 in one texture, filled as menus show icons they haven't shown before.
  * The first UI_ICON_COUNT cells hold the pages' own icons (pm3ds_ui_icon_script),
- * decoded once a game is running and never given away. */
+ * decoded once the title is up (the Options rail shows them there too, GitHub
+ * #51) and never given away. */
 #define ICON_CELLS 64
 #define ICON_TEX 256
 static C3D_Tex s_icons;
@@ -1363,7 +1364,7 @@ static int icon_cell(const void *script) {
 
 /* decode what the open menu needs and upload once (from the tick) */
 static void icons_update(void) {
-    if (!s_ui_icons && s_info.in_game &&
+    if (!s_ui_icons && (s_info.in_game || s_info.ui_ready) &&
         (s_icon_canvas || (s_icon_canvas = (u8 *)calloc(ICON_TEX * ICON_TEX, 4)))) {
         for (int i = 0; i < UI_ICON_COUNT; i++) icon_decode(pm3ds_ui_icon_script(i), i);
         s_ui_icons = true;
