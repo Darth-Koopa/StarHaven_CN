@@ -31,24 +31,24 @@ if "x += unit_width * scale;" not in native_draw:
 if "ui_small_text_draw_raw" in native_draw or "s_ui_small" in native_draw:
     raise SystemExit("label renderer must not use the Fusion Pixel small-font atlas")
 
-for name in ("ui_bitmap_text", "ui_bitmap_text_center"):
+for name in ("ui_native_glyph_text_fit", "ui_native_glyph_text_center_fit"):
     body = function_body(name)
     if "text_width(" not in body or "ui_native_glyph_text(" not in body:
         raise SystemExit(f"{name} must measure text and draw through the native glyph renderer")
-    if "scale * 0.625f" not in body:
-        raise SystemExit(f"{name} must preserve the previous nominal text-scale mapping")
+    if "float render_scale = scale;" not in body or "scale * 0.625f" in body:
+        raise SystemExit(f"{name} must use native game-font scale without TTF conversion")
 
 if "#define UI_NATIVE_GLYPH_INK_SCALE 1.08f" not in source:
     raise SystemExit("expected a slight 1.08x glyph-ink enlargement without changing advances")
 for label in (
-    "ui_bitmap_text_center(cx, y0 + 22, tabs[i].name",
-    'ui_bitmap_text_center(vx0 + 58, vy1 - 20, "Drag to look"',
-    "ui_bitmap_text(x0 + 7, y0 + 2, s_log.name[i]",
-    "ui_bitmap_text(x, y0 + 2, a->name",
-    "ui_bitmap_text(CX0 + 7, y + 3, label",
-    "ui_bitmap_text_center((bx0 + bx1) / 2",
+    "ui_native_glyph_text_center_fit(cx, y0 + 22, tabs[i].name, label_scale",
+    'ui_native_glyph_text_center_fit(vx0 + 58, vy1 - 20, "Drag to look", 0.7f',
+    "ui_native_glyph_text_fit(x0 + 7, y0 + 1, s_log.name[i], 0.8f",
+    "ui_native_glyph_text_fit(x, y0 + 1, a->name, 0.75f",
+    "ui_native_glyph_text_fit(CX0 + 7, y + 1, label, 0.82f",
+    "ui_native_glyph_text_center_fit((bx0 + bx1) / 2, (by0 + by1) / 2 - 6.5f, value, 0.75f",
 ):
     if label not in source:
         raise SystemExit(f"expected legibility call site missing: {label}")
 
-print("Native iQue glyph renderer and larger draw-scale checks passed")
+print("Native iQue glyph renderer and scale-preserving ink enlargement checks passed")

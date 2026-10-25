@@ -24,6 +24,24 @@ for ch in "设置按键调试状态地图同伴扫描收集拖动查看速率栗
         raise SystemExit(f"missing/blank glyph metrics for {ch!r}")
 
 canonical_csv = ROOT / "port/3ds/localization/ui_translations_zh_CN.csv"
+# Every translated glyph must fit the generated texture atlas. The menu merge
+# added recipe/cheat labels and grew the subset beyond the former 512-slot atlas.
+import csv
+with canonical_csv.open("r", encoding="utf-8-sig", newline="") as stream:
+    translation_rows = list(csv.DictReader(stream))
+glyph_map = small_font.load_glyph_map()
+needed_glyphs = {
+    glyph_map[ch]
+    for row in translation_rows
+    for ch in row["proposed_simplified_chinese"]
+    if ord(ch) > 127 and ch in glyph_map
+}
+needed_slots = small_font.CJK_FIRST_SLOT + len(needed_glyphs)
+if needed_slots > small_font.SLOTS:
+    raise SystemExit(
+        f"current translation rows exceed the font atlas capacity: "
+        f"need {needed_slots} slots, have {small_font.SLOTS}"
+    )
 review_csv = ROOT / "port/3ds/docs/ique-bottom-screen-translation-review.csv"
 if not canonical_csv.is_file() or review_csv.exists():
     raise SystemExit("ui_translations_zh_CN.csv must be the only CSV translation source")

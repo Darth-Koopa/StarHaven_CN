@@ -132,7 +132,7 @@ ROM error,pm3ds_rom.c,This is not the right ROM,ROM 不正确,
 ROM error,pm3ds_rom.c,Could not read the file,无法读取文件,
 ROM error,pm3ds_rom.c,Put your own Paper Mario ROM,请将你自己的纸片马力欧ROM,游戏标题术语待校对
 ROM error,pm3ds_rom.c,"(USA, Europe or iQue China) on SD",（美、欧或神游中文）放到 SD 卡中,
-ROM error,pm3ds_rom.c,"in /3ds/StarHaven, any file name",放在 /3ds/StarHaven 中，文件名不限,
+ROM error,pm3ds_rom.c,in any searched ROM folder,放入任一 ROM 目录,"ROM loader and universal launcher both scan PM3DS_ROM_DIRS, not only /3ds/StarHaven."
 ROM error,pm3ds_rom.c,"(.z64, .n64 or .v64)",（支持 .z64、.n64 或 .v64 格式）,
 ROM error,pm3ds_rom.c,Press START to exit,按 START 退出,
 Controls names,pm3ds_settings.c,Start,Start,建议界面按钮名统一保留 START
@@ -233,3 +233,28 @@ Tracker area name,journal.c,Tubba's Castle,图巴城堡,按用户指定统一译
 Tracker area name,journal.c,Castle Grounds,城堡庭园,实际用于追踪列表的名称；不同于 HUD 中 Peach’s Castle Grounds。
 ROM error,pm3ds_rom.c,"game ID %.4s, expected %s",游戏 ID %.4s，应为%s,动态格式串；必须保留两个 printf 格式占位符。
 ROM error,pm3ds_rom.c,the blank iQue game-ID field,神游 iQue 的空白游戏 ID,用于“错误 ROM”详情中动态说明 iQue ROM 的空白游戏 ID 字段。
+Bottom-screen menus,bottom_screen.c,Recipes,食谱,新增食谱页标题。
+Bottom-screen menus,bottom_screen.c,Cheats,金手指,新增作弊页标题与新游戏选项。
+Recipes,bottom_screen.c,%d of %d cooked,已制作 %d/%d 道料理,保留两个整数格式占位符。
+Recipes,bottom_screen.c,Show all,显示全部,显示所有料理名称。
+Recipes,bottom_screen.c,Hide new,隐藏未制作,切回仅显示已制作料理名称。
+Recipes,bottom_screen.c,Cooked,已制作,料理详情状态。
+Recipes,bottom_screen.c,Not cooked yet,尚未制作,料理详情状态。
+Recipes,bottom_screen.c,How to cook it,制作方法,料理详情说明标题。
+Recipes,bottom_screen.c,Anything that doesn't go together,无法搭配,无可行制作方式时显示。
+Recipes,bottom_screen.c,Mixing two needs the Cookbook,两种物品一起制作需要料理书,料理组合提示。
+Recipes,bottom_screen.c,by luck,靠运气,料理方式说明。
+Recipes,bottom_screen.c,with the Cookbook,使用料理书,料理方式说明。
+Recipes,bottom_screen.c,on its own,单独制作,料理方式说明。
+Cheats,bottom_screen.c,Infinite HP,HP无限,作弊选项。
+Cheats,bottom_screen.c,Infinite FP,FP无限,作弊选项。
+Cheats,bottom_screen.c,Infinite Star Power,星星力量无限,作弊选项。
+Cheats,bottom_screen.c,999 coins,999金币,作弊选项。
+Cheats,bottom_screen.c,Unlimited BP,BP不限,作弊选项。
+Cheats,bottom_screen.c,Stays full,保持全满,作弊选项说明。
+Cheats,bottom_screen.c,Stays at 999,保持999,作弊选项说明。
+Cheats,bottom_screen.c,Any badges fit,可装备所有徽章,作弊选项说明。
+Cheats,bottom_screen.c,Tap one to switch it,点击即可切换,作弊页面副标题。
+Cheats,bottom_screen.c,Saved with this file.,与此存档一同保存。,作弊设置存档说明。
+New game,bottom_screen.c,Can't add later,之后不能更改,新游戏时的作弊设置提示。
+New game,bottom_screen.c,A: choose  Y: cheats,A：选择  Y：金手指,新游戏控制提示。

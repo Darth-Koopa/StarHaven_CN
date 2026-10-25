@@ -388,7 +388,7 @@ static void show_problem(const rom_status_t *st) {
         "",
         "Put your own Paper Mario ROM",
         "(USA, Europe or iQue China) on SD",
-        "in /3ds/StarHaven, any file name",
+        "in any searched ROM folder",
         "(.z64, .n64 or .v64)",
         "",
         "Press START to exit",

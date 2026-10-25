@@ -145,8 +145,6 @@ static void find_versions(bool *eu, bool *us, bool *ique) {
         closedir(d);
     }
 }
-    }
-}
 
 /* ---- the top screen while asking: the boot screens' look, drawn by hand ---- */
 static u8 *s_top;   /* BGR8, column-major from the bottom (the panel's native layout) */

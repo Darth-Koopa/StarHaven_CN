@@ -680,9 +680,9 @@ static float ui_small_text_draw_raw(float x, float y, const char *str, float sca
 #endif
 
 /* These tab, tracker, and option labels use the original iQue/game charset.
- * Preserve the original scale conversion and character advances, but expand
- * only the drawn glyph quads slightly. This increases visible ink without
- * changing the nominal font size, font face, or text layout. */
+ * Preserve the original native scale and character advances, but expand only
+ * the drawn glyph quads slightly. This increases visible ink without changing
+ * the nominal font size, font face, or text layout. */
 #define UI_NATIVE_GLYPH_INK_SCALE 1.08f
 static float ui_native_glyph_text(float x, float y, const char *str, float scale, u32 c) {
     if (!str || !s_font_ok) return x;
@@ -710,9 +710,9 @@ static float ui_native_glyph_text(float x, float y, const char *str, float scale
     return x;
 }
 
-static float ui_bitmap_text(float x, float y, const char *str, float scale, float max_width, u32 c) {
+static float ui_native_glyph_text_fit(float x, float y, const char *str, float scale, float max_width, u32 c) {
     if (!str || !s_font_ok) return x;
-    float render_scale = scale * 0.625f; /* unchanged nominal 10px-size mapping */
+    float render_scale = scale; /* native game-font scale; no TTF scale conversion */
     float width = text_width(str, render_scale);
     if (max_width > 0.0f && width > max_width && width > 0.0f) {
         render_scale *= max_width / width;
@@ -720,9 +720,9 @@ static float ui_bitmap_text(float x, float y, const char *str, float scale, floa
     return ui_native_glyph_text(x, y, str, render_scale, c);
 }
 
-static void ui_bitmap_text_center(float cx, float y, const char *str, float scale, float max_width, u32 c) {
+static void ui_native_glyph_text_center_fit(float cx, float y, const char *str, float scale, float max_width, u32 c) {
     if (!str || !s_font_ok) return;
-    float render_scale = scale * 0.625f; /* unchanged nominal 10px-size mapping */
+    float render_scale = scale; /* native game-font scale; no TTF scale conversion */
     float width = text_width(str, render_scale);
     if (max_width > 0.0f && width > max_width && width > 0.0f) {
         render_scale *= max_width / width;
@@ -833,8 +833,8 @@ static bool draw_ui_icon(int id, float x, float y, float size, u32 c);
 static bool draw_icon(const void *script, float x, float y, float size, u32 c);
 static bool in(int px, int py, float x0, float y0, float x1, float y1);
 static void small_text_center(float cx, float y, const char *str, float scale, u32 c);
-static float ui_bitmap_text(float x, float y, const char *str, float scale, float max_width, u32 c);
-static void ui_bitmap_text_center(float cx, float y, const char *str, float scale, float max_width, u32 c);
+static float ui_native_glyph_text_fit(float x, float y, const char *str, float scale, float max_width, u32 c);
+static void ui_native_glyph_text_center_fit(float cx, float y, const char *str, float scale, float max_width, u32 c);
 
 /* shortcut for the game (src/world/menus.c): 1 = item menu, 2 = quick save, 0x100 + id = switch partner */
 volatile int pm3ds_touch_req;
@@ -997,7 +997,8 @@ static void draw_rail(const rail_tab_t *tabs, int n, int active) {
             image(tabs[i].img, cx - r.w * s / 2, y0 + 3 + (18 - r.h * s) / 2, s, COL_WHITE);
         }
         /* Keep the native iQue glyph face; enlarge only its drawn glyphs. */
-        ui_bitmap_text_center(cx, y0 + 22, tabs[i].name, 1.3f, x1 - x0 - 6, COL_WHITE);
+        float label_scale = strlen(tabs[i].name) < 7 ? 0.62f : 0.55f;
+        ui_native_glyph_text_center_fit(cx, y0 + 22, tabs[i].name, label_scale, x1 - x0 - 6, COL_WHITE);
     }
 }
 
@@ -1209,7 +1210,7 @@ static void draw_map(void) {
     } else if (!pm3ds_cfg.map_dragged) {   /* until the first drag */
         round_rect(vx0 + 4, vy1 - 24, vx0 + 112, vy1 - 4, 7, COL_DARK_CHIP);
         /* Center inside the chip; use the bitmap font so Chinese is legible. */
-        ui_bitmap_text_center(vx0 + 58, vy1 - 20, "Drag to look", 1.25f, 100, COL_WHITE);
+        ui_native_glyph_text_center_fit(vx0 + 58, vy1 - 20, "Drag to look", 0.7f, 100, COL_WHITE);
     }
 }
 
@@ -1445,7 +1446,7 @@ static void draw_log(void) {
         float x0, y0, x1, y1;
         log_entry_rect(slot, &x0, &y0, &x1, &y1);
         tile(x0, y0, x1, y1, 6, COL_TAB_ON);
-        ui_bitmap_text(x0 + 7, y0 + 2, s_log.name[i], 1.35f, x1 - x0 - 14, COL_WHITE);
+        ui_native_glyph_text_fit(x0 + 7, y0 + 1, s_log.name[i], 0.8f, x1 - x0 - 14, COL_WHITE);
     }
 }
 
@@ -1507,7 +1508,7 @@ static void draw_found(void) {
         float avail = (f->rando ? 262 : 158) - x;
         /* Area names are button labels too; keep them readable without crossing
          * the fixed collection counters on the non-randomizer page. */
-        ui_bitmap_text(x, y0 + 2, a->name, 1.35f, avail - 4, done ? COL_DONE : COL_WHITE);
+        ui_native_glyph_text_fit(x, y0 + 1, a->name, 0.75f, avail - 4, done ? COL_DONE : COL_WHITE);
         if (!f->rando) {
             count_cell(178, y0 + 1, a->sp_found, a->sp_total, 0.72f);
             count_cell(212, y0 + 1, a->badge_found, a->badge_total, 0.72f);
@@ -1638,7 +1639,7 @@ static void draw_cook(void) {
     s_cook_open = -1;
     int pages = pages_of(s_cook.count, COOK_PER_PAGE);
     if (s_cook_page >= pages) s_cook_page = 0;
-    snprintf(buf, sizeof buf, "%d of %d cooked", s_cook.cooked, s_cook.count);
+    snprintf(buf, sizeof buf, ui_text("%d of %d cooked"), s_cook.cooked, s_cook.count);
     page_title("Recipes", buf);
     chip(COOK_ALL_X0, HEAD_Y, COOK_ALL_X1, HEAD_Y + 18, s_cook_all ? "Hide new" : "Show all",
          s_cook_all ? COL_SEL : COL_OFF, 0.7f);
@@ -2165,11 +2166,11 @@ static const char *const s_text_names[TEXT_SPEEDS] = { "Normal", "Fast", "Instan
 static void opt_row(int i, const char *label, const char *value) {
     float y = OPT_Y0 + i * OPT_ROW_H;
     tile(CX0, y, CX1, y + OPT_ROW_H - 3, 6, COL_TAB_ON);
-    ui_bitmap_text(CX0 + 7, y + 3, label, 1.35f, 150, COL_WHITE);
+    ui_native_glyph_text_fit(CX0 + 7, y + 1, label, 0.82f, 150, COL_WHITE);
     float bx0 = 226, by0 = y + 2, bx1 = CX1 - 4, by1 = y + OPT_ROW_H - 5;
     round_rect(bx0, by0, bx1, by1, 7, COL_PANEL_EDGE);
     round_rect(bx0 + 2, by0 + 2, bx1 - 2, by1 - 2, 5, COL_SEL);
-    ui_bitmap_text_center((bx0 + bx1) / 2, (by0 + by1) / 2 - 6.5f, value, 1.3f, bx1 - bx0 - 8, COL_WHITE);
+    ui_native_glyph_text_center_fit((bx0 + bx1) / 2, (by0 + by1) / 2 - 6.5f, value, 0.75f, bx1 - bx0 - 8, COL_WHITE);
 }
 
 static void draw_options(void) {
