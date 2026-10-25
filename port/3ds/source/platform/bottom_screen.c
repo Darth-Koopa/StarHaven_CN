@@ -996,8 +996,9 @@ static void draw_rail(const rail_tab_t *tabs, int n, int active) {
             float s = r.w > 16 ? 18.0f / r.w : 1.0f;
             image(tabs[i].img, cx - r.w * s / 2, y0 + 3 + (18 - r.h * s) / 2, s, COL_WHITE);
         }
-        /* Keep the native iQue glyph face; enlarge only its drawn glyphs. */
-        float label_scale = strlen(tabs[i].name) < 7 ? 0.62f : 0.55f;
+        /* Keep every rail label at one nominal native-glyph scale. The fit
+         * helper only reduces it if a translated label would actually clip. */
+        const float label_scale = 0.62f;
         ui_native_glyph_text_center_fit(cx, y0 + 19, tabs[i].name, label_scale, x1 - x0 - 6, COL_WHITE);
     }
 }
@@ -2172,7 +2173,9 @@ static void opt_row(int i, const char *label, const char *value) {
     float bx0 = 226, by0 = y + 2, bx1 = CX1 - 4, by1 = y + OPT_ROW_H - 5;
     round_rect(bx0, by0, bx1, by1, 7, COL_PANEL_EDGE);
     round_rect(bx0 + 2, by0 + 2, bx1 - 2, by1 - 2, 5, COL_SEL);
-    ui_native_glyph_text_center_fit((bx0 + bx1) / 2, (by0 + by1) / 2 - 4.5f, value, 0.75f, bx1 - bx0 - 8, COL_WHITE);
+    /* Right-hand option values were visibly low inside the rounded pill.
+     * Move their glyph ink up 2 px while keeping the left labels untouched. */
+    ui_native_glyph_text_center_fit((bx0 + bx1) / 2, (by0 + by1) / 2 - 6.5f, value, 0.75f, bx1 - bx0 - 8, COL_WHITE);
 }
 
 static void draw_options(void) {

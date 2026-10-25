@@ -40,13 +40,17 @@ for name in ("ui_native_glyph_text_fit", "ui_native_glyph_text_center_fit"):
 
 if "#define UI_NATIVE_GLYPH_INK_SCALE 1.20f" not in source:
     raise SystemExit("expected 1.20x glyph-ink enlargement without changing nominal scales or advances")
+if "const float label_scale = 0.62f;" not in source:
+    raise SystemExit("all left-rail labels must share one nominal native-glyph scale")
+if "float label_scale = strlen(tabs[i].name)" in source:
+    raise SystemExit("left-rail labels must not vary in scale with English source length")
 for label in (
     "ui_native_glyph_text_center_fit(cx, y0 + 19, tabs[i].name, label_scale",
     'ui_native_glyph_text_center_fit(vx0 + 58, vy1 - 20, "Drag to look", 0.7f',
     "ui_native_glyph_text_fit(x0 + 7, y0 + 3, s_log.name[i], 0.8f",
     "ui_native_glyph_text_fit(x, y0 + 3, a->name, 0.75f",
     "ui_native_glyph_text_fit(CX0 + 7, y + 3, label, 0.82f",
-    "ui_native_glyph_text_center_fit((bx0 + bx1) / 2, (by0 + by1) / 2 - 4.5f, value, 0.75f",
+    "ui_native_glyph_text_center_fit((bx0 + bx1) / 2, (by0 + by1) / 2 - 6.5f, value, 0.75f",
 ):
     if label not in source:
         raise SystemExit(f"expected legibility call site missing: {label}")
