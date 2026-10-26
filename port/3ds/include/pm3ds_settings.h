@@ -43,7 +43,8 @@ typedef struct {
     int update_skip;            /* a release the player said not to mention again (version code) */
     bool map_dragged;           /* the player has dragged the bottom-screen map, so "Drag to look" is not shown */
     bool stat_drops;            /* enemies drop hearts and flowers (off: only the Finder badges' ones, GitHub #39) */
-    bool hp_beep;               /* the HP icon's warning beep at 5 HP or less (src/hud_element.c) */
+    bool hp_beep;
+    int language;               /* the port's own text: PM3DS_LANG_* (pm3ds_lang.h); the console's by default */               /* the HP icon's warning beep at 5 HP or less (src/hud_element.c) */
 } pm3ds_settings_t;
 
 extern pm3ds_settings_t pm3ds_cfg;

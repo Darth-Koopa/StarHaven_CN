@@ -1,4 +1,4 @@
-# Japanese version (Mario Story, NMQJ)
+# Japanese (Mario Story, NMQJ) and iQue (Chinese) versions
 
 Status: groundwork only. Nothing has been built for JP yet: that needs the
 player's Japanese ROM as `ver/jp/baserom.z64` (SHA1 in `ver/jp/checksum.sha1`,
@@ -59,3 +59,27 @@ an atlas built from that font (`hud_info.c pm3ds_ui_get_font`,
 With the EU ROM only ~5 MB of heap is left in the EU+US universal build
 (8aa9d2de1). A third code copy may not fit, so JP may ship as its own
 `StarHaven_JP.cia` instead of joining the universal one. Measure first.
+
+## iQue (the iQue Player's Chinese release)
+
+Same groundwork as JP: `make PM3DS_VERSION=ique` (`build_ique/`,
+`PaperMario3DS_ique`), the cart offsets in `pm3ds_rom_layout.h` (checked
+against `ver/ique/splat.yaml`), CRC32 `18C02AD5`, `save_ique.fla`,
+`world_files_ique.mk` (the US list minus one file), randomizer tables (as US),
+and `ique` in the tools (the one 16x16 Chinese font, 0x9E0 glyphs).
+Needs the iQue ROM as `ver/ique/baserom.z64` (SHA1
+`5c724685085eba796537573dd6f84aaddedc8582`).
+
+- The iQue dump's header has a blank game ID, so an iQue build also accepts a
+  ROM whose ID is four zero bytes (pm3ds_rom.c); the CRC confirms it.
+- `filemenu_msg.c`: the iQue glyph path wrote past `filemenu_glyphBuffer`;
+  taken from PR #62.
+- Values and fixes first worked out by Darth-Koopa in PR #62 (iQue Version
+  Support), which also has more to port once there is a ROM to test with:
+  icon reads through `PM3DS_ICON_ROM_ADDR`, `load_font_data` copying the
+  linked font directly, the Peach letter in osr_00, and a Chinese translation
+  of the bottom screen (their fork's `port/3ds/localization/`).
+- The bottom screen's text: iQue messages use 2-byte characters (one font,
+  0x9E0 glyphs), so the same decoder/atlas work as for JP applies, with a
+  bigger atlas (~2500 glyphs at 16 px do not fit one 1024x1024 texture: load
+  the glyphs a screen needs on demand).

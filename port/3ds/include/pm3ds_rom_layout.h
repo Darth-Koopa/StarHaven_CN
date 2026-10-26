@@ -5,7 +5,7 @@
  * straight from the ROM instead of through the decomp's link stubs. Only
  * #defines: assembly and the decomp's C include it too. Build with
  * -DVERSION_PAL=1 (Paper Mario (Europe)), -DVERSION_US=1 (Paper Mario (USA)) or
- * -DVERSION_JP=1 (Mario Story (Japan)).
+ * -DVERSION_JP=1 (Mario Story (Japan)) or -DVERSION_IQUE=1 (the iQue Player's Chinese release).
  */
 #ifndef PM3DS_ROM_LAYOUT_H
 #define PM3DS_ROM_LAYOUT_H
@@ -68,8 +68,30 @@
 #define PM3DS_ROM_GAME_ID       "NMQJ"
 #define PM3DS_SAVE_NAME         "save_jp.fla"   /* JP saves have another layout */
 #define PM3DS_ROMDATA_PATH      "romfs:/romdata_jp.bin"
+#elif VERSION_IQUE
+/* from ver/ique/splat.yaml (values first worked out by Darth-Koopa, PR #62) */
+#define PM3DS_ROM_ICON          0x215390
+#define PM3DS_ROM_LOGOS         0x247230
+#define PM3DS_ROM_TITLE_BG_1    0x262230
+#define PM3DS_ROM_IMGFX_DATA    0x294870
+#define PM3DS_ROM_SHADING       0x35EC00
+#define PM3DS_ROM_AUDIO         0xF00000
+#define PM3DS_ROM_AUDIO_END     0x1942C40
+#define PM3DS_ROM_SPRITES       0x1943000
+#define PM3DS_ROM_MAPFS         0x1E40000
+#define PM3DS_ROM_MAPFS_END     0x27FEE1E
+#define PM3DS_ROM_MSG           0x1B83000
+#define PM3DS_ROM_DATA_SIZE     0x2800000
+#define PM3DS_ROM_CRC32         0x18C02AD5  /* the whole 40 MB, .z64 order (PR #62) */
+#define PM3DS_ROM_NAME          "Paper Mario (iQue)"
+#define PM3DS_ROM_SIZES         "40 MB"
+/* the iQue dump's header has a blank game ID: it is found by its CRC instead
+ * (pm3ds_rom.c), so this matches nothing a header can hold */
+#define PM3DS_ROM_GAME_ID       "\0\0\0\0"
+#define PM3DS_SAVE_NAME         "save_ique.fla"
+#define PM3DS_ROMDATA_PATH      "romfs:/romdata_ique.bin"
 #else
-#error "the 3DS port is built for VERSION_PAL, VERSION_US or VERSION_JP"
+#error "the 3DS port is built for VERSION_PAL, VERSION_US, VERSION_JP or VERSION_IQUE"
 #endif
 
 /* cart-tagged offset, as the decomp's DMA code takes it */

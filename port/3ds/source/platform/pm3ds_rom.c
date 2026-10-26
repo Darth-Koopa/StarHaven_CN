@@ -253,6 +253,10 @@ static bool is_paper_mario(const char *path) {
     int order = n == sizeof h ? detect_order((const uint8_t *)h) : ORDER_UNKNOWN;
     if (order == ORDER_UNKNOWN) return false;
     to_z64((uint8_t *)h, sizeof h, order);
+#if VERSION_IQUE
+    /* the iQue dump leaves the game ID blank; its CRC is checked after (load_candidate) */
+    if (!memcmp((const uint8_t *)h + 0x3B, "\0\0\0\0", 4)) return true;
+#endif
     return !memcmp((const uint8_t *)h + 0x3B, "NMQ", 3);
 }
 

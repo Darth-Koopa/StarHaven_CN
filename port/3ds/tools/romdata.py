@@ -53,7 +53,8 @@ COPY_PREFIXES = ("us_",)
 # 64 MB dumps repeat 0x2000000-0x3000000 after it (splat.yaml)
 ROM_NAME, ROM_DATA_SIZE = {"pal": (b"Paper Mario (Europe)", 0x3000000),
                            "us": (b"Paper Mario (USA)", 0x2800000),
-                           "jp": (b"Mario Story (Japan)", 0x2800000)}[VER]
+                           "jp": (b"Mario Story (Japan)", 0x2800000),
+                           "ique": (b"Paper Mario (iQue)", 0x2800000)}[VER]
 
 SHT_SYMTAB, SHT_REL = 2, 9
 R_ARM_ABS32 = 2

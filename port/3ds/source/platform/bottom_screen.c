@@ -36,6 +36,8 @@
 #include "pm3ds_hud_info.h"
 #include "pm3ds_rando.h"
 #include "pm3ds_settings.h"
+#include "pm3ds_lang.h"
+#include "pm3ds_log.h"
 #include "pm3ds_touch_menu.h"
 #include "pm3ds_save_import.h"
 #include "pm3ds_update.h"
@@ -317,9 +319,81 @@ static void flush(void) {
     s_batch_start = s_vcount;
 }
 
+/* ---- the 3DS system font: characters the game's font lacks (Japanese) ---- */
+static C3D_Tex *s_sys_sheet;    /* one per glyph sheet (the CTR font has ~1500 small ones) */
+static int s_sys_sheets = -1;   /* -1: not loaded yet, 0: none */
+static CFNT_s *s_sys_font;
+
+static bool sys_font_load(void) {
+    if (s_sys_sheets >= 0) return s_sys_sheets > 0;
+    s_sys_sheets = 0;
+    Result rc = fontEnsureMapped();
+    if (R_FAILED(rc)) {
+        pm3ds_log(PM3DS_LOG_WARN, "ui: no system font (rc %08lX), Japanese text not shown", (unsigned long)rc);
+        return false;
+    }
+    s_sys_font = fontGetSystemFont();
+    TGLP_s *g = s_sys_font ? fontGetGlyphInfo(s_sys_font) : NULL;
+    if (!g) return false;
+    pm3ds_log(PM3DS_LOG_INFO, "ui: system font %d sheets %ux%u fmt %d cell %ux%u",
+              g->nSheets, g->sheetWidth, g->sheetHeight, g->sheetFmt, g->cellWidth, g->cellHeight);
+    int n = g->nSheets;
+    s_sys_sheet = (C3D_Tex *)calloc((size_t)n, sizeof *s_sys_sheet);
+    if (!s_sys_sheet) return false;
+    for (int i = 0; i < n; i++) {   /* the sheets stay where the system put them (as citro2d does) */
+        C3D_Tex *t = &s_sys_sheet[i];
+        memset(t, 0, sizeof *t);
+        t->data = fontGetGlyphSheetTex(s_sys_font, i);
+        t->fmt = g->sheetFmt;
+        t->size = g->sheetSize;
+        t->width = g->sheetWidth;
+        t->height = g->sheetHeight;
+        t->param = GPU_TEXTURE_MAG_FILTER(GPU_LINEAR) | GPU_TEXTURE_MIN_FILTER(GPU_LINEAR) |
+                   GPU_TEXTURE_WRAP_S(GPU_CLAMP_TO_EDGE) | GPU_TEXTURE_WRAP_T(GPU_CLAMP_TO_EDGE);
+    }
+    s_sys_sheets = n;
+    return n > 0;
+}
+
+static bool is_sys_sheet(const C3D_Tex *t) {
+    return s_sys_sheets > 0 && t >= s_sys_sheet && t < s_sys_sheet + s_sys_sheets;
+}
+
+/* one system-font character at x, y (the game font's 16-pixel cell, scaled);
+ * returns its advance */
+static void quad2(C3D_Tex *t, float x0, float y0, float x1, float y1,
+                  float u0, float v0, float u1, float v1, u32 ct, u32 cb);
+static float sys_glyph(float x, float y, uint32_t cp, float scale, u32 c, bool draw) {
+    if (!sys_font_load()) return 8 * scale;
+    TGLP_s *g = fontGetGlyphInfo(s_sys_font);
+    float k = 14.0f * scale / (float)g->cellHeight;
+    fontGlyphPos_s pos;
+    fontCalcGlyphPos(&pos, s_sys_font, fontGlyphIndexFromCodePoint(s_sys_font, cp), GLYPH_POS_CALC_VTXCOORD, k, k);
+    if (draw && pos.sheetIndex >= 0 && pos.sheetIndex < s_sys_sheets)
+        quad2(&s_sys_sheet[pos.sheetIndex], x + pos.vtxcoord.left, y + 1.5f * scale + pos.vtxcoord.top,
+              x + pos.vtxcoord.right, y + 1.5f * scale + pos.vtxcoord.bottom,
+              pos.texcoord.left, pos.texcoord.top, pos.texcoord.right, pos.texcoord.bottom, c, c);
+    return pos.xAdvance;
+}
+
 static void use_tex(C3D_Tex *t) {
     if (t != s_cur_tex) {
         flush();
+        bool was_sys = s_cur_tex && is_sys_sheet(s_cur_tex), sys = is_sys_sheet(t);
+        if (sys != was_sys || !s_cur_tex) {
+            /* system-font sheets hold only alpha: colour from the vertex */
+            C3D_TexEnv *env = C3D_GetTexEnv(0);
+            C3D_TexEnvInit(env);
+            if (sys) {
+                C3D_TexEnvSrc(env, C3D_RGB, GPU_PRIMARY_COLOR, 0, 0);
+                C3D_TexEnvFunc(env, C3D_RGB, GPU_REPLACE);
+                C3D_TexEnvSrc(env, C3D_Alpha, GPU_TEXTURE0, GPU_PRIMARY_COLOR, 0);
+                C3D_TexEnvFunc(env, C3D_Alpha, GPU_MODULATE);
+            } else {
+                C3D_TexEnvSrc(env, C3D_Both, GPU_TEXTURE0, GPU_PRIMARY_COLOR, 0);
+                C3D_TexEnvFunc(env, C3D_Both, GPU_MODULATE);
+            }
+        }
         s_cur_tex = t;
         C3D_TexBind(0, t);
     }
@@ -390,9 +464,14 @@ static int glyph_of(char ch) {
 }
 
 static float text_width(const char *s, float scale) {
+    s = T(s);   /* the port's own labels in the chosen language (pm3ds_lang.c) */
     float w = 0;
-    for (; *s; s++) {
-        int g = glyph_of(*s);
+    while (*s) {
+        int len;
+        uint32_t cp = pm3ds_txt_next(s, &len);
+        s += len;
+        if (cp & 0x80000000u) { w += sys_glyph(0, 0, cp & 0x1FFFFF, scale, 0, false); continue; }
+        int g = glyph_of((char)cp);
         w += (g >= 0 && g < s_glyphs ? s_glyph_w[g] : 5) * scale;
     }
     return w;
@@ -401,8 +480,14 @@ static float text_width(const char *s, float scale) {
 /* white = 1 picks the white palette; c tints the result */
 static float text(float x, float y, const char *s, float scale, int white, u32 c) {
     if (!s_font_ok) return x;
-    for (; *s; s++) {
-        int g = glyph_of(*s);
+    s = T(s);
+    for (int len; *s; s += len) {
+        uint32_t cp = pm3ds_txt_next(s, &len);
+        if (cp & 0x80000000u) {   /* not in the game's font (Japanese) */
+            x += sys_glyph(x, y, cp & 0x1FFFFF, scale, white ? c : (c & 0xFF000000u) | 0x303030, true);
+            continue;
+        }
+        int g = glyph_of((char)cp);
         if (g >= 0 && g < s_glyphs) {
             /* only the glyph's own columns (and half a texel off the cell's
              * top and bottom): at the cell's edge the GPU can sample the
@@ -426,11 +511,19 @@ static void text_center(float cx, float y, const char *s, float scale, int white
 /* 8x8 console-font text, 1:1; wraps at max_cols, returns the next line's y */
 static float small_text(float x, float y, const char *str, int max_cols, u32 c) {
     if (!s_small_ok) return y + 9;
+    str = T(str);
     int col = 0;
     float x0 = x;
-    for (; *str; str++) {
-        unsigned char ch = (unsigned char)*str;
+    for (int len; *str; str += len) {
+        uint32_t cp = pm3ds_txt_next(str, &len);
         if (col >= max_cols) { col = 0; x = x0 + 16; y += 9; }   /* continuation lines indented */
+        if (cp & 0x80000000u) {   /* Japanese: the system font, about the 8x8 size */
+            sys_glyph(x - 1, y - 2, cp & 0x1FFFFF, 0.72f, c, true);
+            x += 10; col += 1;
+            continue;
+        }
+        unsigned char ch = (unsigned char)cp;
+        if (ch >= 0x80 && ch < 0xB0) ch = (unsigned char)"AAAACEEEEIIIINOOOOUUUUsaaaaceeeeiiiinoooouuuu!?a"[ch - 0x80];   /* accents: the console font has none */
         if (ch > 32 && ch < 128) {
             float gx = (ch % 16) * 8.0f, gy = (ch / 16) * 8.0f;
             quad2(&s_small, x, y, x + 8, y + 8, gx / 128.0f, gy / 64.0f, (gx + 8) / 128.0f, (gy + 8) / 64.0f, c, c);
@@ -488,6 +581,7 @@ static const float s_btn_ff[2] = { 216, 312 };
 #define COL_DARK_CHIP RGBA(60, 36, 20, 210)
 
 static void button(const float x[2], const char *label);
+static float fit(const char *s, float avail, float scale, float lo);
 static bool draw_ui_icon(int id, float x, float y, float size, u32 c);
 static bool draw_icon(const void *script, float x, float y, float size, u32 c);
 static bool in(int px, int py, float x0, float y0, float x1, float y1);
@@ -546,7 +640,7 @@ static void draw_qs_button(void) {
     }
     round_rect(QS_X0, QS_Y0, QS_X1, QS_Y1, 8, COL_PANEL_EDGE);
     round_rect(QS_X0 + 2, QS_Y0 + 2, QS_X1 - 2, QS_Y1 - 2, 6, face);
-    text_center((QS_X0 + QS_X1) / 2, QS_Y0 + 2, label, 0.85f, 0, COL_WHITE);
+    text_center((QS_X0 + QS_X1) / 2, QS_Y0 + 2, label, fit(label, QS_X1 - QS_X0 - 8, 0.85f, 0.55f), 0, COL_WHITE);
 }
 
 static const char *chapter_label(int ch) {
@@ -733,7 +827,7 @@ static void draw_area_card(float x0, float y0, float x1, float y1) {
     bar(x0 + 8, y0 + 20, x1 - x0 - 16, 6, a->found, a->total, COL_GOLD);
     if (f->rando) {
         extern unsigned int pm3ds_rando_seed(void);
-        snprintf(buf, sizeof buf, "Randomizer seed %08X", pm3ds_rando_seed());
+        snprintf(buf, sizeof buf, T("Randomizer seed %08X"), pm3ds_rando_seed());
         text(x0 + 8, y0 + 33, buf, 0.8f, 0, COL_WHITE);
         text(x0 + 8, y0 + 51, "The spots hold shuffled items:", 0.72f, 0, COL_SUB);
         text(x0 + 8, y0 + 64, "only the totals count.", 0.72f, 0, COL_SUB);
@@ -754,7 +848,7 @@ static void draw_area_card(float x0, float y0, float x1, float y1) {
     }
     if (f->room_total == 0) snprintf(buf, sizeof buf, "Nothing to find in this room");
     else if (f->room_found == f->room_total) snprintf(buf, sizeof buf, "This room: all found");
-    else snprintf(buf, sizeof buf, "This room: %d of %d still here", f->room_total - f->room_found, f->room_total);
+    else snprintf(buf, sizeof buf, T("This room: %d of %d still here"), f->room_total - f->room_found, f->room_total);
     text_center((x0 + x1) / 2, y1 - 16, buf, 0.75f, 0, COL_SUB);
 }
 
@@ -847,7 +941,7 @@ static void draw_map(void) {
         const pm3ds_tracker_area_t *a = &f->area[f->here];
         float y = vy0 + 21;
         if (f->rando) {
-            snprintf(buf, sizeof buf, "Checked %d/%d", a->found, a->total);
+            snprintf(buf, sizeof buf, T("Checked %d/%d"), a->found, a->total);
             text(vx0 + 10, y, buf, 0.7f, 1, COL_WHITE);
         } else {
             image(UI_IMG_STAR_PIECE, vx0 + 9, y, 0.75f, COL_WHITE);
@@ -886,7 +980,7 @@ static void draw_party(void) {
         "Goombario", "Kooper", "Bombette", "Parakarry", "Bow", "Watt", "Sushie", "Lakilester",
     };
     char sub[40];
-    if (h->partner) snprintf(sub, sizeof sub, "%s is with you", h->partner_name);
+    if (h->partner) snprintf(sub, sizeof sub, T("%s is with you"), h->partner_name);
     else snprintf(sub, sizeof sub, "No partner yet");
     page_title("Party", sub);
     for (int i = 0; i < PM3DS_HUD_PARTNERS; i++) {
@@ -1037,7 +1131,7 @@ static void draw_log(void) {
     s_log_open = -1;
     int pages = pages_of(s_log.known, LOG_PER_PAGE);
     if (s_log_page >= pages) s_log_page = 0;
-    snprintf(buf, sizeof buf, "%d of %d enemies", s_log.known, s_log.total);
+    snprintf(buf, sizeof buf, T("%d of %d enemies"), s_log.known, s_log.total);
     page_title("Tattle Log", buf);
     pager(s_log_page, pages);
     bar(CX0 + 2, BODY_Y, CX1 - CX0 - 2, 5, s_log.known, s_log.total, COL_GOLD);
@@ -1086,7 +1180,7 @@ static void draw_found(void) {
     char buf[48];
     int pages = pages_of(f->count, FOUND_ROWS);
     if (s_found_page >= pages) s_found_page = 0;
-    snprintf(buf, sizeof buf, "%d of %d item spots", f->found, f->total);
+    snprintf(buf, sizeof buf, T("%d of %d item spots"), f->found, f->total);
     page_title("Found", buf);
     pager(s_found_page, pages);
     bar(CX0 + 2, BODY_Y, CX1 - CX0 - 2, 5, f->found, f->total, COL_GOLD);
@@ -1243,7 +1337,7 @@ static void draw_cook(void) {
     s_cook_open = -1;
     int pages = pages_of(s_cook.count, COOK_PER_PAGE);
     if (s_cook_page >= pages) s_cook_page = 0;
-    snprintf(buf, sizeof buf, "%d of %d cooked", s_cook.cooked, s_cook.count);
+    snprintf(buf, sizeof buf, T("%d of %d cooked"), s_cook.cooked, s_cook.count);
     page_title("Recipes", buf);
     chip(COOK_ALL_X0, HEAD_Y, COOK_ALL_X1, HEAD_Y + 18, s_cook_all ? "Hide new" : "Show all",
          s_cook_all ? COL_SEL : COL_OFF, 0.7f);
@@ -1773,38 +1867,134 @@ static bool tmenu_tap(int px, int py) {
 
 /* ---- Options and Controls pages ------------------------------------------ */
 /* their own rail: Settings, Controls, Debug */
-#define OPT_ROWS 9
 #define OPT_Y0 BODY_Y
-#define OPT_ROW_H 18.5f   /* nine rows end just above the buttons */
 #define CHEAT_ROW_H 21
 static const char *const s_fps_names[2] = { "30 fps", "60 fps" };
 static const char *const s_text_names[TEXT_SPEEDS] = { "Normal", "Fast", "Instant" };
 
-static void opt_row(int i, const char *label, const char *value) {
-    float y = OPT_Y0 + i * OPT_ROW_H;
-    tile(CX0, y, CX1, y + OPT_ROW_H - 3, 6, COL_TAB_ON);
-    text(CX0 + 7, y + 1, label, fit(label, 150, 0.82f, 0.6f), 0, COL_WHITE);
-    chip(226, y + 2, CX1 - 4, y + OPT_ROW_H - 5, value, COL_SEL, fit(value, 70, 0.75f, 0.5f));
+/* The Settings page: a list in sections, dragged up and down (a scroll bar
+ * shows where); a row changes its setting when tapped without dragging. */
+enum { OPT_LANG, OPT_SCREEN, OPT_FPS, OPT_3D, OPT_TEXT, OPT_FF_SPEED, OPT_FF_BUTTON, OPT_DROPS, OPT_BEEP,
+       OPT_UPDATE, OPT_COUNT };
+#define OPT_HEADER 0x100          /* + section number */
+static const int s_opt_list[] = {
+    OPT_HEADER + 0, OPT_LANG, OPT_SCREEN, OPT_FPS, OPT_3D,
+    OPT_HEADER + 1, OPT_TEXT, OPT_FF_SPEED, OPT_FF_BUTTON, OPT_DROPS, OPT_BEEP,
+    OPT_HEADER + 2, OPT_UPDATE,
+};
+static const char *const s_opt_sections[] = { "Display", "Gameplay", "System" };
+#define OPT_LIST_N (int)(sizeof s_opt_list / sizeof s_opt_list[0])
+#define OPT_ROW_PX 23             /* a setting */
+#define OPT_HEAD_PX 17            /* a section title */
+#define OPT_LIST_Y1 202           /* the list's bottom (the panel face ends at 204) */
+#define OPT_LIST_X1 (CX1 - 9)     /* the scroll bar to its right */
+static float s_opt_scroll;
+
+static float opt_item_h(int k) { return s_opt_list[k] >= OPT_HEADER ? OPT_HEAD_PX : OPT_ROW_PX; }
+static float opt_list_h(void) {
+    float h = 0;
+    for (int k = 0; k < OPT_LIST_N; k++) h += opt_item_h(k);
+    return h;
+}
+static float opt_scroll_max(void) {
+    float m = opt_list_h() + 4 - (OPT_LIST_Y1 - OPT_Y0);   /* + room under the last row */
+    return m > 0 ? m : 0;
 }
 
-static void draw_options(void) {
-    char buf[16];
-    page_title("Settings", "Tap a value to change it");
-    opt_row(0, "Screen", s_view_names[pm3ds_cfg.view_mode % 4]);
-    opt_row(1, "Frame rate", s_fps_names[pm3ds_cfg.fps60]);
-    {   /* Old 3DS: no 3D (gfx_present.c), say so instead of a setting that does nothing */
-        extern bool pm3ds_lite_effects;
-        opt_row(2, "3D depth", pm3ds_lite_effects ? "Off (Old 3DS)" : pm3ds_depth3d_names[pm3ds_cfg.depth3d % DEPTH3D_LEVELS]);
+static void opt_value(int id, char *buf, size_t size) {
+    extern bool pm3ds_lite_effects;
+    const char *v = "";
+    switch (id) {
+        case OPT_LANG:      v = pm3ds_lang_name(pm3ds_cfg.language); break;
+        case OPT_SCREEN:    v = s_view_names[pm3ds_cfg.view_mode % 4]; break;
+        case OPT_FPS:       v = s_fps_names[pm3ds_cfg.fps60]; break;
+        case OPT_3D:        v = pm3ds_lite_effects ? "Off (Old 3DS)" : pm3ds_depth3d_names[pm3ds_cfg.depth3d % DEPTH3D_LEVELS]; break;
+        case OPT_TEXT:      v = s_text_names[pm3ds_cfg.text_speed % TEXT_SPEEDS]; break;
+        case OPT_FF_SPEED:  snprintf(buf, size, "%dx", pm3ds_cfg.ff_speed); return;
+        case OPT_FF_BUTTON: v = pm3ds_cfg.ff_toggle ? "Toggle" : "Hold"; break;
+        case OPT_DROPS:     v = pm3ds_cfg.stat_drops ? "On" : "Off"; break;
+        case OPT_BEEP:      v = pm3ds_cfg.hp_beep ? "On" : "Off"; break;
+        case OPT_UPDATE:    v = pm3ds_cfg.update_check ? "On" : "Off"; break;
     }
-    opt_row(3, "Text speed", s_text_names[pm3ds_cfg.text_speed % TEXT_SPEEDS]);
-    snprintf(buf, sizeof buf, "%dx", pm3ds_cfg.ff_speed);
-    opt_row(4, "Fast-forward speed", buf);
-    opt_row(5, "Fast-forward button", pm3ds_cfg.ff_toggle ? "Toggle" : "Hold");
-    opt_row(6, "Update check", pm3ds_cfg.update_check ? "On" : "Off");
-    opt_row(7, "Heart & flower drops", pm3ds_cfg.stat_drops ? "On" : "Off");
-    opt_row(8, "Low HP beep", pm3ds_cfg.hp_beep ? "On" : "Off");
+    snprintf(buf, size, "%s", T(v));
+}
+
+static const char *const s_opt_labels[OPT_COUNT] = {
+    "Language", "Screen", "Frame rate", "3D depth", "Text speed", "Fast-forward speed", "Fast-forward button",
+    "Heart & flower drops", "Low HP beep", "Update check",
+};
+
+static void draw_options(void) {
+    char buf[48];
+    float max = opt_scroll_max();
+    if (s_opt_scroll > max) s_opt_scroll = max;
+    if (s_opt_scroll < 0) s_opt_scroll = 0;
+    float y = OPT_Y0 - s_opt_scroll;
+    for (int k = 0; k < OPT_LIST_N; k++) {
+        float h = opt_item_h(k);
+        if (y + h > OPT_Y0 - 4 && y < OPT_LIST_Y1 + 4) {
+            int id = s_opt_list[k];
+            if (id >= OPT_HEADER) {   /* a section: its name and a line */
+                const char *t = s_opt_sections[id - OPT_HEADER];
+                float x1 = text(CX0 + 3, y + 2, t, 0.72f, 0, COL_HINT);
+                fill(x1 + 6, y + 9, OPT_LIST_X1, y + 10, COL_PANEL_EDGE);
+            } else {
+                tile(CX0, y, OPT_LIST_X1, y + OPT_ROW_PX - 3, 6, COL_TAB_ON);
+                const char *label = s_opt_labels[id];
+                text(CX0 + 7, y + 2, label, fit(label, 138, 0.85f, 0.6f), 0, COL_WHITE);
+                opt_value(id, buf, sizeof buf);
+                chip(206, y + 2, OPT_LIST_X1 - 4, y + OPT_ROW_PX - 5, buf, COL_SEL, fit(buf, 76, 0.78f, 0.5f));
+            }
+        }
+        y += h;
+    }
+    /* what scrolled past the list's edges: the panel face over it again, then the title */
+    fill(CX0 - 4, PANEL_Y0 + 3, CX1 + 4, OPT_Y0 - 2, COL_PANEL);
+    fill(CX0 - 4, OPT_LIST_Y1, CX1 + 4, PANEL_Y1 - 2, COL_PANEL);
+    page_title("Settings", "Drag to scroll, tap to change");
+    if (max > 0) {   /* the scroll bar */
+        float track = OPT_LIST_Y1 - OPT_Y0, view = track / (track + max);
+        float th = track * view, ty = OPT_Y0 + (track - th) * (s_opt_scroll / max);
+        round_rect(CX1 - 5, OPT_Y0, CX1 - 1, OPT_LIST_Y1, 2, COL_PANEL_EDGE);
+        round_rect(CX1 - 5, ty, CX1 - 1, ty + th, 2, COL_SEL);
+    }
     small_text(12, 219, PM3DS_APP_NAME " v" PM3DS_VERSION_STR, 40, COL_PANEL_EDGE);
     button(s_btn_ff, "Back");
+}
+
+/* a tap on the list (released without dragging): the setting at y */
+static void options_tap(int px, int py) {
+    if (px < CX0 - 4 || px >= OPT_LIST_X1 || py < OPT_Y0 || py >= OPT_LIST_Y1) return;
+    float y = OPT_Y0 - s_opt_scroll;
+    for (int k = 0; k < OPT_LIST_N; k++) {
+        float h = opt_item_h(k);
+        if (py >= y && py < y + h) {
+            int id = s_opt_list[k];
+            if (id >= OPT_HEADER) return;
+            switch (id) {
+                case OPT_LANG:
+                    pm3ds_cfg.language = (pm3ds_cfg.language + 1) % PM3DS_LANG_COUNT;
+                    pm3ds_lang_set(pm3ds_cfg.language);
+                    break;
+                case OPT_SCREEN: pm3ds_cfg.view_mode = (pm3ds_cfg.view_mode + 1) % 4; break;   /* Original -> Fill -> Wide -> Sharp wide */
+                case OPT_FPS: pm3ds_cfg.fps60 = !pm3ds_cfg.fps60; break;
+                case OPT_3D: {
+                    extern bool pm3ds_lite_effects;
+                    if (!pm3ds_lite_effects) pm3ds_cfg.depth3d = (pm3ds_cfg.depth3d + 1) % DEPTH3D_LEVELS;
+                    break;
+                }
+                case OPT_TEXT: pm3ds_cfg.text_speed = (pm3ds_cfg.text_speed + 1) % TEXT_SPEEDS; break;
+                case OPT_FF_SPEED: pm3ds_cfg.ff_speed = pm3ds_cfg.ff_speed >= 4 ? 2 : pm3ds_cfg.ff_speed + 1; break;
+                case OPT_FF_BUTTON: pm3ds_cfg.ff_toggle = !pm3ds_cfg.ff_toggle; break;
+                case OPT_DROPS: pm3ds_cfg.stat_drops = !pm3ds_cfg.stat_drops; break;
+                case OPT_BEEP: pm3ds_cfg.hp_beep = !pm3ds_cfg.hp_beep; break;
+                case OPT_UPDATE: pm3ds_cfg.update_check = !pm3ds_cfg.update_check; break;   /* from the next launch */
+            }
+            pm3ds_settings_save();
+            return;
+        }
+        y += h;
+    }
 }
 
 /* every 3DS button and what it does; tap to change */
@@ -2184,14 +2374,15 @@ static void draw_update_notice(void) {
     fill(0, 0, 320, 240, RGBA(40, 20, 0, 150));
     panel(10, 28, 310, 200, COL_PANEL);
     text_center(160, 38, "Update available", 1.2f, 0, COL_WHITE);
-    snprintf(line, sizeof line, PM3DS_APP_NAME " v%d.%d.%d is out.", v / 10000, v / 100 % 100, v % 100);
+    snprintf(line, sizeof line, T("%s v%d.%d.%d is out."), PM3DS_APP_NAME, v / 10000, v / 100 % 100, v % 100);
     small_text_center(160, 70, line, 1.0f, COL_PANEL_EDGE);
-    small_text_center(160, 82, "You have v" PM3DS_VERSION_STR ".", 1.0f, COL_PANEL_EDGE);
+    snprintf(line, sizeof line, T("You have v%s."), PM3DS_VERSION_STR);
+    small_text_center(160, 82, line, 1.0f, COL_PANEL_EDGE);
     small_text_center(160, 104, "Get it on GitHub:", 1.0f, COL_PANEL_EDGE);
     small_text_center(160, 116, "github.com/" PM3DS_GITHUB_REPO, 1.0f, COL_PANEL_EDGE);
     small_text_center(160, 136, "FBI can install it from the", 1.0f, COL_PANEL_EDGE);
     small_text_center(160, 148, "QR code on that page.", 1.0f, COL_PANEL_EDGE);
-    snprintf(skip, sizeof skip, "Skip v%d.%d.%d", v / 10000, v / 100 % 100, v % 100);
+    snprintf(skip, sizeof skip, T("Skip v%d.%d.%d"), v / 10000, v / 100 % 100, v % 100);
     ng_button(UPD_SKIP_X0, UPD_BTN_Y0, UPD_SKIP_X1, UPD_BTN_Y1, skip, false);
     ng_button(UPD_OK_X0, UPD_BTN_Y0, UPD_OK_X1, UPD_BTN_Y1, "OK", false);
 }
@@ -2209,7 +2400,7 @@ static void draw_import_notice(void) {
     panel(10, 28, 310, 200, COL_PANEL);
     if (n > 0) {
         text_center(160, 38, "Save imported", 1.2f, 0, COL_WHITE);
-        snprintf(line, sizeof line, "%d save file%s converted from your", n, n == 1 ? "" : "s");
+        snprintf(line, sizeof line, n == 1 ? T("%d save file converted from your") : T("%d save files converted from your"), n);
         small_text_center(160, 74, line, 1.0f, COL_PANEL_EDGE);
         small_text_center(160, 86, "N64 save (now named import.*.done).", 1.0f, COL_PANEL_EDGE);
         if (pm3ds_save_import_backup()[0]) {
@@ -2313,8 +2504,28 @@ static void handle_touch(void) {
     touchPosition tp = { 0, 0 };
     bool down = (hidKeysHeld() & KEY_TOUCH) != 0;
     if (down) hidTouchRead(&tp);
-    bool pressed = down && !was_down;
+    bool pressed = down && !was_down, released = !down && was_down;
     was_down = down;
+
+    {   /* the Settings list: drag to scroll, a tap acts on release */
+        static bool opt_held;
+        static int opt_x0, opt_y0, opt_prev_y, opt_moved;
+        bool on_list = s_tab == TAB_OPTIONS && s_ng_page == NG_CLOSED && !import_notice_up() && !update_notice_up();
+        if (pressed && on_list && in(tp.px, tp.py, CX0 - 4, OPT_Y0, CX1 + 4, OPT_LIST_Y1)) {
+            opt_held = true;
+            opt_x0 = tp.px; opt_y0 = opt_prev_y = tp.py;
+            opt_moved = 0;
+        } else if (down && opt_held) {
+            int dy = tp.py - opt_prev_y;
+            opt_moved += abs(dy);
+            if (opt_moved > 4) s_opt_scroll -= dy;
+            opt_prev_y = tp.py;
+        } else if (released && opt_held) {
+            opt_held = false;
+            if (on_list && opt_moved <= 4) options_tap(opt_x0, opt_y0);
+        }
+        if (!on_list) opt_held = false;
+    }
 
     if (down && !pressed && s_tab == TAB_MAP && s_info.in_game && !tm_open()) {   /* drag the map */
         int dx = tp.px - last_x, dy = tp.py - last_y;
@@ -2387,25 +2598,7 @@ static void handle_touch(void) {
             s_tab = s_tab_before_options;
             return;
         }
-        int row = (tp.py - OPT_Y0) / OPT_ROW_H;
-        if (tp.px < CX0 - 4 || tp.py < OPT_Y0 || row >= OPT_ROWS) return;
-        switch (row) {
-            case 0: pm3ds_cfg.view_mode = (pm3ds_cfg.view_mode + 1) % 4; break;   /* Original -> Fill -> Wide -> Sharp wide */
-            case 1: pm3ds_cfg.fps60 = !pm3ds_cfg.fps60; break;
-            case 2: {
-                extern bool pm3ds_lite_effects;
-                if (!pm3ds_lite_effects) pm3ds_cfg.depth3d = (pm3ds_cfg.depth3d + 1) % DEPTH3D_LEVELS;
-                break;
-            }
-            case 3: pm3ds_cfg.text_speed = (pm3ds_cfg.text_speed + 1) % TEXT_SPEEDS; break;
-            case 4: pm3ds_cfg.ff_speed = pm3ds_cfg.ff_speed >= 4 ? 2 : pm3ds_cfg.ff_speed + 1; break;
-            case 5: pm3ds_cfg.ff_toggle = !pm3ds_cfg.ff_toggle; break;
-            case 6: pm3ds_cfg.update_check = !pm3ds_cfg.update_check; break;   /* from the next launch */
-            case 7: pm3ds_cfg.stat_drops = !pm3ds_cfg.stat_drops; break;
-            case 8: pm3ds_cfg.hp_beep = !pm3ds_cfg.hp_beep; break;
-        }
-        pm3ds_settings_save();
-        return;
+        return;   /* the list acts on release (handle_touch) */
     }
     if (s_tab == TAB_CONTROLS) {
         if (back) {

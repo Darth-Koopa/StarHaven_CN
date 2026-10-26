@@ -65,6 +65,8 @@ static const RandoLoc sLocs[] = {
 #include "rando_locations_us.inc"
 #elif VERSION_JP
 #include "rando_locations_jp.inc"
+#elif VERSION_IQUE
+#include "rando_locations_ique.inc"
 #else
 #include "rando_locations.inc"
 #endif
@@ -87,6 +89,8 @@ static const RandoShop sShops[] = {
 #include "rando_shops_us.inc"
 #elif VERSION_JP
 #include "rando_shops_jp.inc"
+#elif VERSION_IQUE
+#include "rando_shops_ique.inc"
 #else
 #include "rando_shops.inc"
 #endif

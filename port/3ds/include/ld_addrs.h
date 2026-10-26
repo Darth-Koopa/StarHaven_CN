@@ -19,6 +19,8 @@
 #include "../../../ver/pal/build/include/ld_addrs.h"
 #elif VERSION_JP
 #include "../../../ver/jp/build/include/ld_addrs.h"
+#elif VERSION_IQUE
+#include "../../../ver/ique/build/include/ld_addrs.h"
 #else
 #include "../../../ver/us/build/include/ld_addrs.h"
 #endif

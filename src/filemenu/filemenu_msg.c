@@ -647,15 +647,35 @@ s32 filemenu_draw_char(s32 c, s32 x, s32 y, s32 flag1, s32 color, s32 flag2) {
 
 #if VERSION_IQUE
     if (c >= 0x100) {
-        int offset;
         s32 character;
-        s32* offsetPtr = &filemenu_glyphBufferIndex;
+        s32 glyphOffset;
+        const void* glyphRaster;
 
+        /* The text stream stores the lead byte in the low byte and the
+         * second byte in the high byte.  Keep the game's native iQue glyph
+         * mapping: (lead - 0x5F) + 0xA6 + (trail - 1) * 0x31. */
         character = c < 0 ? c + 0xFF : c;
-        offset = (((character >> 8) - 1) * 0x31) + (c & 0xff) + 0x47;
-        *offsetPtr = offset; // Probably modifying data outside of the filemenu_glyphBuffer array
+        glyphOffset = (((character >> 8) - 1) * 0x31) + (c & 0xff) + 0x47;
+        if (glyphOffset < 0 || glyphOffset >= 0x4F000 / 0x80) {
+            return 16;
+        }
 
-        load_font_data(charset_standard_OFFSET + offset * 0x80, 0x80, &filemenu_glyphBuffer[*offsetPtr][0]);
+#if defined(_3DS) && defined(PM3DS_ASSET_ROOT)
+        /* The 3DS build embeds standard.dat directly in the executable.  Use
+         * the immutable glyph bytes as the texture source instead of rotating
+         * through 20 mutable staging slots: display lists are interpreted
+         * after the menu has emitted many glyphs, so reusing a slot can make
+         * earlier characters display whichever glyph overwrote that slot. */
+        glyphRaster = (const void *)(charset_standard_OFFSET + glyphOffset * 0x80);
+#else
+        /* Preserve the legacy ROM-backed path outside the embedded-asset 3DS
+         * build.  Keep all reads within the small scratch cache. */
+        u32 bufferSlot = filemenu_glyphBufferIndex % ARRAY_COUNT(filemenu_glyphBuffer);
+        load_font_data(charset_standard_OFFSET + glyphOffset * 0x80, 0x80,
+                       &filemenu_glyphBuffer[bufferSlot][0]);
+        glyphRaster = &filemenu_glyphBuffer[bufferSlot][0];
+        filemenu_glyphBufferIndex = (bufferSlot + 1) % ARRAY_COUNT(filemenu_glyphBuffer);
+#endif
 
         if (gMainGfxPos != filemenu_savedGfxPos) {
             gSPDisplayList(gMainGfxPos++, filemenu_dl_draw_char_init);
@@ -667,7 +687,7 @@ s32 filemenu_draw_char(s32 c, s32 x, s32 y, s32 flag1, s32 color, s32 flag2) {
             gDPLoadTLUT_pal16(gMainGfxPos++, 0, D_802F4560[color]);
         }
 
-        gDPLoadTextureBlock_4b(gMainGfxPos++, &filemenu_glyphBuffer[*offsetPtr][0], G_IM_FMT_CI, 16, 16, 0, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+        gDPLoadTextureBlock_4b(gMainGfxPos++, glyphRaster, G_IM_FMT_CI, 16, 16, 0, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
 
         if (flag2) {
             gDPSetCombineMode(gMainGfxPos++, PM_CC_07, PM_CC_07);
@@ -680,7 +700,6 @@ s32 filemenu_draw_char(s32 c, s32 x, s32 y, s32 flag1, s32 color, s32 flag2) {
 
         filemenu_draw_rect(x * 4, y * 4, (x + 16) * 4, (y + 16) * 4, 0, 0, 0, 0x400, 0x400);
         filemenu_savedGfxPos = gMainGfxPos;
-        *offsetPtr = (*offsetPtr + 1) % 20;
 
         return 16;
     }

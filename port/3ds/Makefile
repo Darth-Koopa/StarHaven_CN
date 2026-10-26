@@ -16,7 +16,7 @@
 # host-tests must NOT exist there — otherwise it'd be the first-listed
 # target in that scope and steal the implicit default goal from the .3dsx
 # / .elf rules.
-ifeq ($(filter build build_us build_jp,$(notdir $(CURDIR))),)
+ifeq ($(filter build build_us build_jp build_ique,$(notdir $(CURDIR))),)
 .PHONY: host-tests
 host-tests:
 	$(MAKE) -C tests run
@@ -52,7 +52,8 @@ include $(DEVKITARM)/3ds_rules
 # options for code generation
 #---------------------------------------------------------------------------------
 # which ROM the build is for: pal = Paper Mario (Europe), us = Paper Mario (USA),
-# jp = Mario Story (Japan) (make PM3DS_VERSION=us / jp). Each version has its own build directory, output
+# jp = Mario Story (Japan), ique = the iQue Player's Chinese release
+# (make PM3DS_VERSION=us / jp / ique). Each version has its own build directory, output
 # name and generated files (build_assets*, world_files*.mk, m11_syms*.ld);
 # include/pm3ds_rom_layout.h holds its ROM offsets.
 PM3DS_VERSION	?=	pal
@@ -65,8 +66,11 @@ PM3DS_VSUFFIX	:=	_us
 else ifeq ($(PM3DS_VERSION),jp)
 PM3DS_VFLAG	:=	-DVERSION_JP=1
 PM3DS_VSUFFIX	:=	_jp
+else ifeq ($(PM3DS_VERSION),ique)
+PM3DS_VFLAG	:=	-DVERSION_IQUE=1
+PM3DS_VSUFFIX	:=	_ique
 else
-$(error PM3DS_VERSION must be pal, us or jp)
+$(error PM3DS_VERSION must be pal, us, jp or ique)
 endif
 TARGET		:=	PaperMario3DS$(PM3DS_VSUFFIX)
 BUILD		:=	build$(PM3DS_VSUFFIX)

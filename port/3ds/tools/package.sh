@@ -27,6 +27,7 @@ BANNER=${BANNER:-$PORT/cia/banner.bnr}
 case "$PM3DS_VERSION" in
     pal|universal) NAME=${NAME:-StarHaven} ;;
     jp) NAME=${NAME:-StarHaven_JP} ;;
+    ique) NAME=${NAME:-StarHaven_iQue} ;;
     *) NAME=${NAME:-StarHaven_US} ;;
 esac
 SMDH=$(basename "${ELF%.elf}").smdh            # made by make next to the ELF's twin in port/3ds

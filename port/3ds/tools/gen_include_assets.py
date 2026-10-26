@@ -54,6 +54,15 @@ CHARSET = {
         "charset/subtitle/palette.dat": (0x11EF20, 0x11EF30),
         "charset/title/palette.dat": (0x11EF30, 0x11EF40),
     },
+    # iQue: one large 16x16 Chinese font (0x9E0 glyphs) (ver/ique/splat.yaml)
+    "ique": {
+        "charset/standard.dat": (0x10E120, 0x15D120),
+        "charset/standard/palette.dat": (0x15D120, 0x15D620),
+        "charset/title.dat": (0x15D620, 0x15E580),
+        "charset/subtitle.dat": (0x15E580, 0x15F108),
+        "charset/subtitle/palette.dat": (0x15F120, 0x15F130),
+        "charset/title/palette.dat": (0x15F130, 0x15F140),
+    },
 }
 
 BPP = {"rgba32": 32, "rgba16": 16, "ia16": 16, "i8": 8, "ia8": 8, "ci8": 8,
