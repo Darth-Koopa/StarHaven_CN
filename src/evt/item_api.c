@@ -215,7 +215,11 @@ API_CALLABLE(AddKeyItem) {
 
     if (itemID == ITEM_KOOPA_FORTRESS_KEY) {
         playerData->fortressKeyCount++;
+#ifndef _3DS
         return ApiStatus_DONE2;
+#endif
+        // 3DS port: and into the list, where the fortress doors look (FindKeyItem). The game never
+        // gives one this way; the randomizer's chests do.
     }
 
     for (i = 0; i < ARRAY_COUNT(playerData->keyItems); i++) {

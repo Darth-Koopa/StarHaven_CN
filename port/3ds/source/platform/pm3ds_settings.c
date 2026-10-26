@@ -107,7 +107,7 @@ void pm3ds_settings_load(void) {
             else if (sscanf(line, "rando_flags=%d", &v) == 1) pm3ds_cfg.rando_flags = (unsigned)v & PM3DS_RANDO_ALL;
             else if (sscanf(line, "rando=%d", &v) == 1 && v >= 1 && v <= 3) {   /* older builds: a mode */
                 static const unsigned modes[4] = { 0, PM3DS_RANDO_ON | PM3DS_RANDO_SHOPS | PM3DS_RANDO_GIFTS,
-                    PM3DS_RANDO_ON | PM3DS_RANDO_COINS | PM3DS_RANDO_SHOPS | PM3DS_RANDO_GIFTS, PM3DS_RANDO_ALL & ~PM3DS_RANDO_HIDDEN };
+                    PM3DS_RANDO_ON | PM3DS_RANDO_COINS | PM3DS_RANDO_SHOPS | PM3DS_RANDO_GIFTS, PM3DS_RANDO_ALL_V3 & ~PM3DS_RANDO_HIDDEN };
                 pm3ds_cfg.rando_flags = modes[v];
             }
             else if (sscanf(line, "key_%31[a-z]=%d", name, &v) == 2 && v >= 0 && v < ACT_COUNT) {

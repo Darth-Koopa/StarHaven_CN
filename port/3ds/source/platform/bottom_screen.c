@@ -1175,9 +1175,69 @@ static void log_tap(int px, int py) {
 #define FOUND_ROW_H 19
 #define FOUND_Y0 70
 
+/* an area's spots, tapped open from its row: what lies where (a spoiler, asked for) */
+static int s_found_open = -1, s_spots_page;
+static pm3ds_tracker_spots_t s_spots;
+
+static const char *spot_src(int src) {
+    switch (src) {
+        case PM3DS_SPOT_BLOCK:        return T("Block");
+        case PM3DS_SPOT_TREE:         return T("Tree");
+        case PM3DS_SPOT_BUSH:         return T("Bush");
+        case PM3DS_SPOT_PANEL:        return T("Hidden panel");
+        case PM3DS_SPOT_CHEST:        return T("Chest");
+        case PM3DS_SPOT_HIDDEN_BLOCK: return T("Hidden block");
+        case PM3DS_SPOT_CRATE:        return T("Crate");
+        case PM3DS_SPOT_SUPER_BLOCK:  return T("Super Block");
+        default:                      return T("On the ground");
+    }
+}
+
+static void found_open(int i) {
+    s_found_open = i;
+    s_spots_page = 0;
+    pm3ds_tracker_spots(i, &s_spots);
+}
+
+static void draw_found_area(void) {
+    const pm3ds_tracker_area_t *a = &s_found.area[s_found_open];
+    char buf[48];
+    int pages = pages_of(s_spots.count, FOUND_ROWS);
+    if (s_spots_page >= pages) s_spots_page = 0;
+    chip(CX0, HEAD_Y - 1, CX0 + 50, HEAD_Y + 19, "Back", COL_SEL, 0.85f);
+    float tx = CX0 + 56, tw = (pages > 1 ? 218 : CX1) - tx - 4;
+    text(tx, HEAD_Y, a->name, fit(a->name, tw, 1.0f, 0.55f), 0, COL_WHITE);
+    pager(s_spots_page, pages);
+    bar(CX0 + 2, BODY_Y, CX1 - CX0 - 2, 5, a->found, a->total, COL_GOLD);
+    snprintf(buf, sizeof buf, T("%d of %d found"), a->found, a->total);
+    text(CX0 + 2, 54, buf, 0.7f, 0, COL_WHITE);
+    text_right(CX1 - 2, 55, T("This room first"), 0.62f, COL_HINT);
+    for (int r = 0; r < FOUND_ROWS; r++) {
+        int i = s_spots_page * FOUND_ROWS + r;
+        if (i >= s_spots.count) break;
+        const typeof(s_spots.spot[0]) *s = &s_spots.spot[i];
+        float y0 = FOUND_Y0 + r * FOUND_ROW_H;
+        tile(CX0, y0, CX1, y0 + 17, 6, s->found ? COL_DONE_ROW : s->here ? COL_SEL : COL_TAB_ON);
+        float x = CX0 + 4;
+        if (s->icon && draw_icon(s->icon, x, y0 + 1, 15, s->found ? RGBA(255, 255, 255, 150) : COL_WHITE)) x += 18;
+        else x += 2;
+        const char *what = s->item[0] ? s->item : spot_src(s->src);
+        text(x, y0 + 1, what, fit(what, 150 - x, 0.72f, 0.5f), 0, s->found ? COL_DONE : COL_WHITE);
+        /* where: what holds it, and the room */
+        if (s->here) snprintf(buf, sizeof buf, "%s, %s", spot_src(s->src), T("this room"));
+        else snprintf(buf, sizeof buf, T("%s, room %d"), spot_src(s->src), s->room);
+        text_right(CX1 - 4, y0 + 2, buf, fit(buf, CX1 - 158, 0.62f, 0.45f), s->found ? COL_DONE : COL_HINT);
+    }
+}
+
 static void draw_found(void) {
     const pm3ds_tracker_t *f = &s_found;
     char buf[48];
+    if (s_found_open >= 0 && s_found_open < f->count) {
+        draw_found_area();
+        return;
+    }
+    s_found_open = -1;
     int pages = pages_of(f->count, FOUND_ROWS);
     if (s_found_page >= pages) s_found_page = 0;
     snprintf(buf, sizeof buf, T("%d of %d item spots"), f->found, f->total);
@@ -1193,6 +1253,7 @@ static void draw_found(void) {
         qblock(240, hy, 13, true);
     }
     text_center(289, hy + 1, f->rando ? "Checked" : "All", 0.75f, 0, COL_WHITE);
+    text(CX0 + 2, hy + 2, T("Tap an area: where things are"), fit(T("Tap an area: where things are"), 104, 0.6f, 0.45f), 0, COL_HINT);
     for (int r = 0; r < FOUND_ROWS; r++) {
         int i = s_found_page * FOUND_ROWS + r;
         if (i >= f->count) break;
@@ -1214,6 +1275,31 @@ static void draw_found(void) {
         }
         snprintf(buf, sizeof buf, "%d/%d", a->found, a->total);
         text_right(CX1 - 4, y0 + 1, buf, 0.72f, done ? COL_DONE : COL_WHITE);
+    }
+}
+
+static void found_tap(int px, int py) {
+    if (s_found_open >= 0) {
+        if (in(px, py, CX0 - 4, HEAD_Y - 5, CX0 + 54, HEAD_Y + 23)) {
+            s_found_open = -1;
+            return;
+        }
+        int np = pager_tap(px, py, s_spots_page, pages_of(s_spots.count, FOUND_ROWS));
+        if (np >= 0) s_spots_page = np;
+        return;
+    }
+    int np = pager_tap(px, py, s_found_page, pages_of(s_found.count, FOUND_ROWS));
+    if (np >= 0) {
+        s_found_page = np;
+        return;
+    }
+    for (int r = 0; r < FOUND_ROWS; r++) {     /* a row: that area's spots */
+        int i = s_found_page * FOUND_ROWS + r;
+        float y0 = FOUND_Y0 + r * FOUND_ROW_H;
+        if (i < s_found.count && in(px, py, CX0, y0 - 1, CX1, y0 + 18)) {
+            found_open(i);
+            return;
+        }
     }
 }
 
@@ -2084,17 +2170,18 @@ static void draw_buttons(void) {
  * bottom one, +Control Pad / A / B / Y / START on either. */
 enum { NG_CLOSED, NG_MODE, NG_RANDO };
 enum { NG_SND_NONE, NG_SND_MOVE, NG_SND_NEXT, NG_SND_BACK, NG_SND_TOGGLE };   /* for the file menu to play */
-#define NG_TOGGLES 5
+#define NG_TOGGLES 6
 #define NG_ROW_SEED NG_TOGGLES
 #define NG_ROW_START (NG_TOGGLES + 1)
-#define NG_ROW_Y0 46
-#define NG_ROW_H 21
+#define NG_ROW_Y0 45
+#define NG_ROW_H 18
 static const struct { unsigned flag; const char *label, *help; } s_ng_toggles[NG_TOGGLES] = {
     { PM3DS_RANDO_COINS, "Coins & star pieces", "Coins and star pieces lying around are shuffled too." },
     { PM3DS_RANDO_KEYS, "Key items", "Key items move too, always somewhere you can reach before you need them." },
     { PM3DS_RANDO_SHOPS, "Shops", "Shops sell items from the world, and the world holds the shops' stock." },
     { PM3DS_RANDO_GIFTS, "Gifts", "What characters give you is shuffled too." },
     { PM3DS_RANDO_HIDDEN, "Keys in hidden spots", "Key items can also hide in hidden panels and blocks." },
+    { PM3DS_RANDO_ENEMIES, "Enemies", "Every enemy group fights as another group from the same chapter." },
 };
 static int s_ng_page, s_ng_cursor, s_ng_result, s_ng_sound;
 static unsigned s_ng_flags, s_ng_seed;
@@ -2492,6 +2579,7 @@ static void select_tab(int tab) {
     if (tab == TAB_LOG) { s_log_open = -1; pm3ds_tattle_query(&s_log); }
     if (tab == TAB_STATS || tab == TAB_MAP || tab == TAB_FOUND) pm3ds_tracker_query(&s_found);
     if (tab == TAB_FOUND && s_found.here >= 0) s_found_page = s_found.here / FOUND_ROWS;
+    if (tab == TAB_FOUND) s_found_open = -1;
     if (tab == TAB_MAP) s_map_follow = true;
     if (tab == TAB_COOK) { s_cook_open = -1; pm3ds_recipe_query(&s_cook); }
 }
@@ -2639,8 +2727,7 @@ static void handle_touch(void) {
     } else if (s_info.in_game && s_tab == TAB_COOK) {
         cook_tap(tp.px, tp.py);
     } else if (s_info.in_game && s_tab == TAB_FOUND) {
-        int np = pager_tap(tp.px, tp.py, s_found_page, pages_of(s_found.count, FOUND_ROWS));
-        if (np >= 0) s_found_page = np;
+        found_tap(tp.px, tp.py);
     } else if (s_info.in_game && s_tab == TAB_PARTY && partner_at(tp.px, tp.py)) {
         int id = partner_at(tp.px, tp.py);
         if ((s_info.partners_owned >> id) & 1) pm3ds_touch_req = 0x100 + id;
@@ -2701,6 +2788,7 @@ void pm3ds_bottom_screen_tick(unsigned frame) {
     if (s_info.in_game && frame % 30 == 0) {
         if (s_tab == TAB_LOG && s_log_open < 0) pm3ds_tattle_query(&s_log);
         if (s_tab == TAB_STATS || s_tab == TAB_MAP || s_tab == TAB_FOUND) pm3ds_tracker_query(&s_found);
+        if (s_tab == TAB_FOUND && s_found_open >= 0) pm3ds_tracker_spots(s_found_open, &s_spots);
         if (s_tab == TAB_COOK && s_cook_open < 0) pm3ds_recipe_query(&s_cook);
     }
     pm3ds_tm_get(&s_tm);

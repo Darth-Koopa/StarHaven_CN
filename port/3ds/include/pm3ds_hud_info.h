@@ -60,6 +60,21 @@ typedef struct {
     pm3ds_tracker_area_t area[PM3DS_TRACKER_AREAS];
 } pm3ds_tracker_t;
 int pm3ds_tracker_query(pm3ds_tracker_t *out);
+/* one area's spots (area: an index of pm3ds_tracker_t.area): the room's first, then by room */
+#define PM3DS_TRACKER_SPOTS 64
+typedef struct {
+    int count;
+    struct {
+        char item[24];                        /* what lies there now (the randomizer's item in a seed) */
+        const void *icon;                     /* HudScript, or NULL */
+        unsigned char src;                    /* PM3DS_SPOT_* */
+        unsigned char found, here;            /* taken; in Mario's room */
+        unsigned char room;                   /* the map's number in its area (kmr_04: 4) */
+    } spot[PM3DS_TRACKER_SPOTS];
+} pm3ds_tracker_spots_t;
+enum { PM3DS_SPOT_ITEM, PM3DS_SPOT_BLOCK, PM3DS_SPOT_TREE, PM3DS_SPOT_BUSH, PM3DS_SPOT_PANEL, PM3DS_SPOT_CHEST,
+       PM3DS_SPOT_GIFT, PM3DS_SPOT_HIDDEN_BLOCK, PM3DS_SPOT_CRATE, PM3DS_SPOT_SUPER_BLOCK };
+int pm3ds_tracker_spots(int area, pm3ds_tracker_spots_t *out);
 
 /* Recipes (n64_shim/journal.c): every dish Tayce T. can cook, by name */
 #define PM3DS_RECIPE_MAX  56

@@ -1973,6 +1973,12 @@ void update_item_entity_collectable(ItemEntity* item) {
 
         if (IS_ITEM(item->itemID)) {
             item->state = ITEM_PHYSICS_STATE_PICKUP;
+#ifdef _3DS
+        } else if (gItemTable[item->itemID].typeFlags & ITEM_TYPE_FLAG_KEY) {
+            // 3DS port: a key item below ITEM_FIRST_KEY (the Ultra Stone, a gift in the game, can lie
+            // around in the randomizer) is picked up like any other, not collected like a coin
+            item->state = ITEM_PHYSICS_STATE_PICKUP;
+#endif
         } else if (IS_BADGE(item->itemID)) {
             item->state = ITEM_PHYSICS_STATE_PICKUP;
         } else if (item->itemID == ITEM_STAR_PIECE) {
@@ -2237,6 +2243,12 @@ void update_item_entity_pickup(ItemEntity* item) {
                 if (item->itemID >= ITEM_BOOTS && item->itemID <= ITEM_ULTRA_BOOTS) {
                     playerData->bootsLevel = item->itemID - ITEM_BOOTS;
                 }
+#ifdef _3DS
+                {   // 3DS port: the randomizer notes a respawning spot's item as taken (n64_shim/rando.c)
+                    extern void pm3ds_rando_picked(s32 flagIndex, s32 itemID);
+                    pm3ds_rando_picked(item->boundVar, item->itemID);
+                }
+#endif
             }
 
 block_47: // TODO required to match

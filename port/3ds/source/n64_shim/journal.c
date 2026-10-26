@@ -256,6 +256,56 @@ int pm3ds_tracker_query(pm3ds_tracker_t* out) {
     return out->count;
 }
 
+static const void* item_hud_script(s32 item);
+
+/* the spots of the area that is out->area[area] in pm3ds_tracker_query (areas without spots skipped) */
+int pm3ds_tracker_spots(int area, pm3ds_tracker_spots_t* out) {
+    extern s32 pm3ds_rando_spot_item(s32 flag, s32 vanillaItem);
+    memset(out, 0, sizeof(*out));
+    if (gGameStatusPtr == nullptr) {
+        return 0;
+    }
+    MapConfig* mc = gGameStatusPtr->areaID >= 0 ? get_current_map_config() : nullptr;
+    const char* mapID = mc != nullptr ? mc->id : nullptr;
+    s32 n = -1;
+    for (u32 a = 0; a < ARRAY_COUNT(sTrackedAreas); a++) {
+        bool any = false;
+        for (u32 i = 0; i < ARRAY_COUNT(sSpots) && !any; i++) {
+            any = sSpots[i].flag != 0 && strncmp(sSpots[i].map, sTrackedAreas[a].prefix, 3) == 0 && !regrows(sSpots[i].flag);
+        }
+        if (!any || ++n != area) {
+            continue;
+        }
+        for (s32 pass = 0; pass < 2; pass++) {          // Mario's room first
+            for (u32 i = 0; i < ARRAY_COUNT(sSpots) && out->count < PM3DS_TRACKER_SPOTS; i++) {
+                const TrackedSpot* s = &sSpots[i];
+                if (s->flag == 0 || strncmp(s->map, sTrackedAreas[a].prefix, 3) != 0 || regrows(s->flag)) {
+                    continue;
+                }
+                bool here = mapID != nullptr && strcmp(s->map, mapID) == 0;
+                if (here != (pass == 0)) {
+                    continue;
+                }
+                typeof(out->spot[0])* o = &out->spot[out->count++];
+                s32 item = s->item != ITEM_NONE ? pm3ds_rando_spot_item(s->flag, s->item) : ITEM_NONE;
+                if (item == ITEM_COIN) {
+                    snprintf(o->item, sizeof(o->item), "Coin");   /* its name message is empty; the menu translates */
+                    o->icon = item_hud_script(item);
+                } else if (item != ITEM_NONE) {
+                    pm3ds_decode_msg(gItemTable[item].nameMsg, o->item, sizeof(o->item), false);
+                    o->icon = item_hud_script(item);
+                }
+                o->src = s->src;
+                o->found = evt_get_variable(nullptr, s->flag) != 0;
+                o->here = here;
+                o->room = (unsigned char)atoi(s->map + 4);
+            }
+        }
+        return out->count;
+    }
+    return 0;
+}
+
 /* ---- recipes --------------------------------------------------------------- */
 /* Tayce T.'s tables (src/world/area_mac/mac_02/npc/tayce_t.inc.c, recipes.inc.c);
  * the game sets one discovered flag per dish it hands out */

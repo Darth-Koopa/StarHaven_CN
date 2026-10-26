@@ -1430,8 +1430,18 @@ void update_encounters_pre_battle(void) {
             sfx_stop_sound(SOUND_SPIN_ATTACK);
             sfx_stop_sound(SOUND_SPEEDY_SPIN_ATTACK);
             set_battle_formation(nullptr);
+#ifdef _3DS
+            {   // 3DS port: the randomizer may swap the formation (n64_shim/rando.c, PM3DS_RANDO_ENEMIES)
+                extern s32 pm3ds_rando_battle(s32 battle, s32* stage);
+                s32 stage = encounter->stage;
+                s32 battle = pm3ds_rando_battle(encounter->battle, &stage);
+                set_battle_stage(stage);
+                load_battle(battle);
+            }
+#else
             set_battle_stage(encounter->stage);
             load_battle(encounter->battle);
+#endif
             currentEncounter->unk_07 = 1;
             currentEncounter->unk_08 = 0;
             currentEncounter->hasMerleeCoinBonus = false;

@@ -36,6 +36,7 @@
  * on load; a spoiler log goes to <SD folder>/spoiler_<seed>.txt.
  */
 #include "common.h"
+#include "battle/battle.h"
 #include "message_ids.h"
 
 #include <stdio.h>
@@ -112,7 +113,7 @@ static const u32 sV1Flags[4] = {
     0,
     PM3DS_RANDO_ON | PM3DS_RANDO_SHOPS | PM3DS_RANDO_GIFTS,
     PM3DS_RANDO_ON | PM3DS_RANDO_COINS | PM3DS_RANDO_SHOPS | PM3DS_RANDO_GIFTS,
-    PM3DS_RANDO_ALL,
+    PM3DS_RANDO_ALL_V3,
 };
 
 static u32 sFlags;             /* 0: off */
@@ -326,11 +327,12 @@ static void write_spoiler(void) {
     if (f == nullptr) {
         return;
     }
-    fprintf(f, "%s randomizer, seed %08lX\nShuffled: items, badges%s%s%s%s%s\n\n", PM3DS_APP_NAME,
+    fprintf(f, "%s randomizer, seed %08lX\nShuffled: items, badges%s%s%s%s%s%s\n\n", PM3DS_APP_NAME,
             (unsigned long)sSeed, (sFlags & PM3DS_RANDO_COINS) ? ", coins, star pieces" : "",
             (sFlags & PM3DS_RANDO_KEYS) ? ", key items" : "",
             (sFlags & PM3DS_RANDO_KEYS) && (sFlags & PM3DS_RANDO_HIDDEN) ? " (hidden spots too)" : "",
-            (sFlags & PM3DS_RANDO_SHOPS) ? ", shops" : "", (sFlags & PM3DS_RANDO_GIFTS) ? ", NPC gifts" : "");
+            (sFlags & PM3DS_RANDO_SHOPS) ? ", shops" : "", (sFlags & PM3DS_RANDO_GIFTS) ? ", NPC gifts" : "",
+            (sFlags & PM3DS_RANDO_ENEMIES) ? ", enemies" : "");
     if (sFlags & PM3DS_RANDO_KEYS) {
         fprintf(f, "Key items:\n");
         for (i = 0; i < NUM_LOCS; i++) {
@@ -376,11 +378,35 @@ static s32 item_type(s32 item) {
     return ITEM_TYPE_CONSUMABLE;
 }
 
+/* Spots whose map clears their flag on every visit, so they drop again: the
+ * goomnut and Koopa Leaf bushes, the oasis fruit trees, Shiver City's potato.
+ * Their randomized item comes once (a key item there was handed out on every
+ * visit and filled the key item list); after that, the vanilla one. Which ones
+ * were taken is kept in its own block of the save's tail (TAKEN_BLOCK_OFS). */
+static const s32 sRespawnFlags[] = {
+    GF_KMR02_Tree1_Goomnut, GF_NOK01_Bush4_KoopaLeaf, GF_NOK02_Bush1_KoopaLeaf,
+    GF_SAM02_Item_IcedPotato, GF_SBK56_Tree1_Lemon, GF_SBK56_Tree2_Lime,
+};
+static u32 sTaken;                 /* bit per sRespawnFlags entry */
+#define TAKEN_MAGIC 0x53485254     /* "SHRT" */
+#define TAKEN_BLOCK_OFS 0x30       /* after quicksave.c's block */
+
+static s32 respawn_index(s32 flagIndex) {
+    s32 k;
+    for (k = 0; k < ARRAY_COUNT(sRespawnFlags); k++) {
+        if (EVT_INDEX_OF_GAME_FLAG(sRespawnFlags[k]) == flagIndex) {
+            return k;
+        }
+    }
+    return -1;
+}
+
 /* ---- game hooks ------------------------------------------------------------- */
 /* src/item_entity.c, make_item_entity: the item this flagged spot holds now */
 s32 pm3ds_rando_item(s32 itemID, s32 flagIndex, s32* spawnMode) {
     s32 i;
     s32 newItem;
+    s32 r;
 
     if (sFlags == 0 || flagIndex <= 0 || flagIndex == 0xFFFF) {
         return itemID;
@@ -392,6 +418,10 @@ s32 pm3ds_rando_item(s32 itemID, s32 flagIndex, s32* spawnMode) {
     }
     if (i == NUM_LOCS || sItem[i] == sLocs[i].item) {
         return itemID;
+    }
+    r = respawn_index(flagIndex);
+    if (r >= 0 && (sTaken & (1u << r))) {
+        return itemID;   // its randomized item was picked up already: back to what grows here
     }
     newItem = sItem[i];
     log_swap(i);
@@ -425,6 +455,37 @@ s32 pm3ds_rando_item(s32 itemID, s32 flagIndex, s32* spawnMode) {
             break;
     }
     return newItem;
+}
+
+/* n64_shim/journal.c, the Found tab's spoiler: the item a flagged spot holds in this seed */
+s32 pm3ds_rando_spot_item(s32 flag, s32 vanillaItem) {
+    s32 i;
+
+    if (sFlags == 0) {
+        return vanillaItem;
+    }
+    for (i = 0; i < NUM_LOCS; i++) {
+        if (sLocs[i].flag == flag && sLocs[i].item == vanillaItem) {
+            return sItem[i];
+        }
+    }
+    return vanillaItem;
+}
+
+/* src/item_entity.c, an item picked up: a respawning spot's randomized item is taken for good */
+void pm3ds_rando_picked(s32 flagIndex, s32 itemID) {
+    s32 i, r;
+
+    if (sFlags == 0 || flagIndex <= 0 || (r = respawn_index(flagIndex)) < 0) {
+        return;
+    }
+    for (i = 0; i < NUM_LOCS; i++) {
+        if (sLocs[i].flag == sRespawnFlags[r] && sItem[i] != sLocs[i].item && sItem[i] == itemID) {
+            sTaken |= 1u << r;
+            pm3ds_log(PM3DS_LOG_INFO, "rando: %s %s taken", sLocs[i].map, item_name(itemID));
+            return;
+        }
+    }
 }
 
 /* world/common/entity/Chest.inc.c: Call(pm3ds_RandoChest, GF_x) with LVarA
@@ -492,13 +553,12 @@ API_CALLABLE(pm3ds_RandoAddGift) {
         add_star_pieces(1);
     } else if (type == ITEM_TYPE_KEY) {
         if (item == ITEM_KOOPA_FORTRESS_KEY) {
-            playerData->fortressKeyCount++;
-        } else {
-            for (i = 0; i < ARRAY_COUNT(playerData->keyItems) && playerData->keyItems[i] != ITEM_NONE; i++) {
-            }
-            if (i < ARRAY_COUNT(playerData->keyItems)) {
-                playerData->keyItems[i] = item;
-            }
+            playerData->fortressKeyCount++;   // and into the list: the fortress doors look there
+        }
+        for (i = 0; i < ARRAY_COUNT(playerData->keyItems) && playerData->keyItems[i] != ITEM_NONE; i++) {
+        }
+        if (i < ARRAY_COUNT(playerData->keyItems)) {
+            playerData->keyItems[i] = item;
         }
     } else if (type == ITEM_TYPE_BADGE) {
         idx = add_badge(item);
@@ -575,11 +635,84 @@ void pm3ds_rando_rowf(ShopItemData* entry) {
     }
 }
 
+/* ---- enemies (PM3DS_RANDO_ENEMIES) ------------------------------------------ */
+/* A battle you start by touching an enemy becomes another regular formation of
+ * the same chapter, on that formation's own stage: the same one every time in
+ * this seed (a permutation per chapter, so every formation still turns up).
+ * Bosses, story fights and the special ones a regular area holds (Kent C.
+ * Koopa, Tubba Blubba, Buzzar, Anti Guy...) are left out of the pools, so they
+ * stay what they are. A separate stream of the seed: the items don't change. */
+static const struct { u8 area, from, to, tier; } sEnemyRanges[] = {
+    { BTL_AREA_KMR_1, 0x00, 0x0B, 0 },
+    { BTL_AREA_NOK, 0x00, 0x17, 1 },  { BTL_AREA_TRD_1, 0x00, 0x1A, 1 },
+    { BTL_AREA_IWA, 0x00, 0x0B, 2 },  { BTL_AREA_SBK, 0x00, 0x10, 2 },   { BTL_AREA_ISK_1, 0x00, 0x13, 2 },
+    { BTL_AREA_MIM, 0x00, 0x11, 3 },  { BTL_AREA_ARN, 0x00, 0x0E, 3 },   { BTL_AREA_DGB, 0x00, 0x03, 3 },
+    { BTL_AREA_OMO, 0x00, 0x2B, 4 },  { BTL_AREA_TIK, 0x00, 0x18, 4 },   { BTL_AREA_TIK3, 0x00, 0x03, 4 },
+    { BTL_AREA_JAN, 0x00, 0x10, 5 },  { BTL_AREA_JAN2, 0x00, 0x03, 5 },  { BTL_AREA_KZN, 0x00, 0x14, 5 },
+    { BTL_AREA_FLO, 0x00, 0x24, 6 },  { BTL_AREA_FLO2, 0x01, 0x04, 6 },
+    { BTL_AREA_SAM, 0x00, 0x0D, 7 },  { BTL_AREA_PRA, 0x00, 0x0D, 7 },   { BTL_AREA_PRA3, 0x00, 0x0B, 7 },
+    { BTL_AREA_KPA, 0x00, 0x37, 8 },  { BTL_AREA_KPA3, 0x01, 0x02, 8 },  { BTL_AREA_KPA4, 0x00, 0x04, 8 },
+};
+#define MAX_ENEMY_BATTLES 512
+#define ENEMY_TIERS 9
+static u16 sEnemyFrom[MAX_ENEMY_BATTLES], sEnemyTo[MAX_ENEMY_BATTLES];
+static s32 sNumEnemy;
+
+static void build_enemies(void) {
+    u32 st = sSeed ^ 0x454E4D59u;   /* "ENMY" */
+    s32 tier, r, k, n;
+
+    sNumEnemy = 0;
+    if (!(sFlags & PM3DS_RANDO_ENEMIES)) {
+        return;
+    }
+    for (tier = 0; tier < ENEMY_TIERS; tier++) {
+        s32 first = sNumEnemy;
+        for (r = 0; r < ARRAY_COUNT(sEnemyRanges); r++) {
+            if (sEnemyRanges[r].tier != tier) {
+                continue;
+            }
+            for (k = sEnemyRanges[r].from; k <= sEnemyRanges[r].to && sNumEnemy < MAX_ENEMY_BATTLES; k++) {
+                sEnemyFrom[sNumEnemy] = sEnemyTo[sNumEnemy] = (u16)((sEnemyRanges[r].area << 8) | k);
+                sNumEnemy++;
+            }
+        }
+        n = sNumEnemy - first;
+        for (k = n - 1; k > 0; k--) {   /* Fisher-Yates over this tier's targets */
+            s32 j = (s32)(next_rand(&st) % (u32)(k + 1));
+            u16 t = sEnemyTo[first + k];
+            sEnemyTo[first + k] = sEnemyTo[first + j];
+            sEnemyTo[first + j] = t;
+        }
+    }
+}
+
+/* src/encounter.c, a battle started by touching an enemy: the battle to fight, and its stage (-1: its own) */
+s32 pm3ds_rando_battle(s32 battle, s32* stage) {
+    s32 i;
+
+    if (!(sFlags & PM3DS_RANDO_ENEMIES)) {
+        return battle;
+    }
+    for (i = 0; i < sNumEnemy; i++) {
+        if (sEnemyFrom[i] == battle) {
+            if (sEnemyTo[i] != battle) {
+                pm3ds_log(PM3DS_LOG_INFO, "rando: battle %04X -> %04X", (unsigned)battle, (unsigned)sEnemyTo[i]);
+                *stage = -1;
+            }
+            return sEnemyTo[i];
+        }
+    }
+    return battle;
+}
+
 /* src/main_loop.c etc., clear_saved_variables: a fresh state is unrandomized */
 void pm3ds_rando_off(void) {
     sFlags = 0;
     sSeed = 0;
+    sTaken = 0;
     build();
+    build_enemies();
 }
 
 /* platform/bottom_screen.c, new-game picker */
@@ -593,33 +726,45 @@ void pm3ds_rando_new_game(void) {
     extern unsigned int pm3ds_random_seed(void);
 #ifdef PM3DS_RANDO_TEST
     sNextFlags = PM3DS_RANDO_ALL;
+#ifdef PM3DS_RANDO_SEED
+    sNextFlags = PM3DS_RANDO_ON | PM3DS_RANDO_COINS | PM3DS_RANDO_KEYS | PM3DS_RANDO_SHOPS | PM3DS_RANDO_GIFTS;
+    sNextSeed = PM3DS_RANDO_SEED;
+#endif
 #endif
     if (sNextFlags == 0) {
         pm3ds_rando_off();
         return;
     }
     sFlags = sNextFlags;
+    sTaken = 0;
     sSeed = sNextSeed != 0 ? sNextSeed : pm3ds_random_seed();
     if (sSeed == 0) {
         sSeed = 1;
     }
     build();
+    build_enemies();
     write_spoiler();
 }
 
 /* src/fio.c */
 void pm3ds_rando_serialize(void* dst) {
     RandoSaveBlock b = { RANDO_MAGIC, 3, (s32)sFlags, sSeed };
+    u32 taken[2] = { TAKEN_MAGIC, sTaken };
     memcpy(dst, &b, sizeof(b));
+    memcpy((u8*)dst + TAKEN_BLOCK_OFS, taken, sizeof(taken));
 }
 
 void pm3ds_rando_deserialize(const void* src) {
     RandoSaveBlock b;
+    u32 taken[2];
     memcpy(&b, src, sizeof(b));
+    memcpy(taken, (const u8*)src + TAKEN_BLOCK_OFS, sizeof(taken));
+    sTaken = taken[0] == TAKEN_MAGIC ? taken[1] : 0;
     if (b.magic == RANDO_MAGIC && b.version == 1 && b.flags > 0 && b.flags < ARRAY_COUNT(sV1Flags)) {
         sFlags = sV1Flags[b.flags];
         sSeed = b.seed;
         build();
+    build_enemies();
     } else if (b.magic == RANDO_MAGIC && (b.version == 2 || b.version == 3) && (b.flags & PM3DS_RANDO_ON)) {
         sFlags = (u32)b.flags & PM3DS_RANDO_ALL;
         if (b.version == 2) {
@@ -627,6 +772,7 @@ void pm3ds_rando_deserialize(const void* src) {
         }
         sSeed = b.seed;
         build();
+    build_enemies();
     } else {
         pm3ds_rando_off();
     }
@@ -666,6 +812,50 @@ void pm3ds_rando_test_tick(void) {
         return;
     }
     timer++;
+#ifdef PM3DS_RANDO_TEST_FLAG
+    /* -DPM3DS_RANDO_TEST_FLAG=GF_x [-DPM3DS_RANDO_TEST_MODE=ITEM_SPAWN_MODE_x]: that spot's drop,
+     * made the way its bush/tree makes it, lands on Mario; the log follows it and the key items */
+    {
+        static s32 id = -1, loc = -1;
+        if (timer == 120) {
+            for (k = 0; k < NUM_LOCS; k++) {
+                if (sLocs[k].flag == PM3DS_RANDO_TEST_FLAG) loc = k;
+            }
+            if (loc >= 0) {
+#ifndef PM3DS_RANDO_TEST_MODE
+#define PM3DS_RANDO_TEST_MODE ITEM_SPAWN_MODE_TOSS_SPAWN_ONCE
+#endif
+                id = make_item_entity_nodelay(sLocs[loc].item, gPlayerStatus.pos.x, gPlayerStatus.pos.y + 10,
+                                              gPlayerStatus.pos.z, PM3DS_RANDO_TEST_MODE, sLocs[loc].flag);
+            }
+            pm3ds_log(2, "RANDOSPOT: %s %s %s -> item %d (%s): entity %d", loc >= 0 ? sLocs[loc].map : "?",
+                      loc >= 0 ? s_src_names[sLocs[loc].src] : "?", loc >= 0 ? sLocs[loc].itemName : "?",
+                      loc >= 0 ? sItem[loc] : -1, loc >= 0 ? item_name(sItem[loc]) : "?", id);
+        }
+        if ((timer == 600 || timer == 840) && loc >= 0) {   // the map's script clears the flag on the next visit: drop again
+            set_global_flag(sLocs[loc].flag);
+            clear_global_flag(sLocs[loc].flag);
+            if (id >= 0 && get_item_entity(id) != nullptr) {
+                remove_item_entity_by_index(id);
+            }
+            id = make_item_entity_nodelay(sLocs[loc].item, gPlayerStatus.pos.x, gPlayerStatus.pos.y + 10,
+                                          gPlayerStatus.pos.z, PM3DS_RANDO_TEST_MODE, sLocs[loc].flag);
+            pm3ds_log(2, "RANDOSPOT again: entity %d item %d (taken bits %x)", id,
+                      id >= 0 && get_item_entity(id) ? get_item_entity(id)->itemID : -1, sTaken);
+        }
+        if (timer > 120 && timer <= 900 && timer % 60 == 0 && loc >= 0) {
+            ItemEntity* e = id >= 0 ? get_item_entity(id) : nullptr;
+            s32 nk = 0, last = 0;
+            for (k = 0; k < ARRAY_COUNT(gPlayerData.keyItems); k++) {
+                if (gPlayerData.keyItems[k] != ITEM_NONE) { nk++; last = gPlayerData.keyItems[k]; }
+            }
+            pm3ds_log(2, "RANDOSPOT t=%d: entity %s item %d state %d flags %08X | flag %d | %d key items, last %d | coins %d",
+                      (int)timer, e ? "there" : "gone", e ? e->itemID : -1, e ? e->state : -1, e ? (unsigned)e->flags : 0,
+                      get_global_flag(sLocs[loc].flag), nk, last, gPlayerData.coins);
+        }
+        return;
+    }
+#endif
     if (timer == 120) {
         locs[0] = test_find(true);
         locs[1] = test_find(false);
