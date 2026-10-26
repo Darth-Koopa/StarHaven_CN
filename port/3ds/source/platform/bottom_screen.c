@@ -1451,7 +1451,7 @@ static void draw_log(void) {
         float x0, y0, x1, y1;
         log_entry_rect(slot, &x0, &y0, &x1, &y1);
         tile(x0, y0, x1, y1, 6, COL_TAB_ON);
-        ui_native_glyph_text_fit(x0 + 7, y0 + 3, s_log.name[i], 1.0f, x1 - x0 - 14, COL_WHITE);
+        ui_native_glyph_text_fit(x0 + 7, y0 + 3, s_log.name[i], 0.83f, x1 - x0 - 14, COL_WHITE);
     }
 }
 
@@ -1513,7 +1513,7 @@ static void draw_found(void) {
         float avail = (f->rando ? 262 : 158) - x;
         /* Area names are button labels too; keep them readable without crossing
          * the fixed collection counters on the non-randomizer page. */
-        ui_native_glyph_text_fit(x, y0 + 3, a->name, 1.0f, avail - 4, done ? COL_DONE : COL_WHITE);
+        ui_native_glyph_text_fit(x, y0 + 3, a->name, 0.83f, avail - 4, done ? COL_DONE : COL_WHITE);
         if (!f->rando) {
             count_cell(178, y0 + 1, a->sp_found, a->sp_total, 0.72f);
             count_cell(212, y0 + 1, a->badge_found, a->badge_total, 0.72f);
@@ -2189,7 +2189,7 @@ static const char *const s_text_names[TEXT_SPEEDS] = { "Normal", "Fast", "Instan
 static void opt_row(int i, const char *label, const char *value) {
     float y = OPT_Y0 + i * OPT_ROW_H;
     tile(CX0, y, CX1, y + OPT_ROW_H - 3, 6, COL_TAB_ON);
-    ui_native_glyph_text_fit(CX0 + 7, y + 3, label, 1.0f, 150, COL_WHITE);
+    ui_native_glyph_text_fit(CX0 + 7, y + 3, label, 0.83f, 150, COL_WHITE);
     float bx0 = 226, by0 = y + 2, bx1 = CX1 - 4, by1 = y + OPT_ROW_H - 5;
     round_rect(bx0, by0, bx1, by1, 7, COL_PANEL_EDGE);
     round_rect(bx0 + 2, by0 + 2, bx1 - 2, by1 - 2, 5, COL_SEL);
