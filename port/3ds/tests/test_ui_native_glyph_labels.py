@@ -61,9 +61,9 @@ if "float label_scale = strlen(tabs[i].name)" in source:
 for label in (
     "ui_native_glyph_text_center_fit(cx, y0 + 19, tabs[i].name, label_scale",
     'ui_native_glyph_text_center_fit(vx0 + 58, vy1 - 20, "Drag to look", 0.7f',
-    "ui_native_glyph_text_fit(x0 + 7, y0 + 3, s_log.name[i], 1.0f",
-    "ui_native_glyph_text_fit(x, y0 + 3, a->name, 1.0f",
-    "ui_native_glyph_text_fit(CX0 + 7, y + 3, label, 1.0f",
+    "ui_native_glyph_text_fit(x0 + 7, y0 + 3, s_log.name[i], 0.83f",
+    "ui_native_glyph_text_fit(x, y0 + 3, a->name, 0.83f",
+    "ui_native_glyph_text_fit(CX0 + 7, y + 3, label, 0.83f",
     "ui_native_glyph_text_center_fit((bx0 + bx1) / 2, (by0 + by1) / 2 - 6.5f, value, 0.75f",
 ):
     if label not in source:
