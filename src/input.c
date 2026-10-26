@@ -112,6 +112,26 @@ void update_input(void) {
     gGameStatusPtr->stickX[0] = stickX;
     gGameStatusPtr->stickY[0] = stickY;
     buttons = contData->button;
+#ifdef _3DS
+    {   // 3DS port: in battle the console's buttons reach the game one step late. The
+        // port shows each step sooner than the N64 did, so a press timed by eye came a
+        // step early and action commands and blocks failed as "too early"; the touch
+        // pad, read once a frame, was a step later and worked (Discord, YouTube)
+        extern u16 pm3ds_pad_phys, pm3ds_pad_other;
+        static u16 prevPhys;
+        if (gGameStatusPtr->context == CONTEXT_BATTLE && gGameStatusPtr->demoState == DEMO_STATE_NONE) {
+            buttons = prevPhys | pm3ds_pad_other;
+        }
+#ifdef PM3DS_BLOCK_DBG
+        if ((pm3ds_pad_phys & BUTTON_A) && !(prevPhys & BUTTON_A)) {
+            extern void pm3ds_log(int, const char*, ...);
+            pm3ds_log(2, "BLOCKDBG physical A down at frame %d (battle %d)", gGameStatusPtr->frameCounter,
+                      gGameStatusPtr->context == CONTEXT_BATTLE);
+        }
+#endif
+        prevPhys = pm3ds_pad_phys;
+    }
+#endif
 
     // check if stickX is over the 'digital' threshold for a right stick 'button' press
     stickButtonDetected = false;

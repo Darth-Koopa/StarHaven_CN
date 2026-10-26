@@ -92,6 +92,7 @@ typedef struct gfx_state {
     uint16_t tex_scale_s, tex_scale_t;
     uint8_t  tex_tile;              /* render tile from G_TEXTURE */
     uint8_t  tex_on;
+    uint8_t  tex_levels;            /* G_TEXTURE level: mipmap tiles after the render tile */
 
     gfx_vtx_t vtx[GFX_VTX_POOL_SIZE];
 
@@ -188,6 +189,7 @@ typedef struct {
 /* Program the PICA TexEnv stages for the current combine mode. */
 void gfx_combiner_apply(const gfx_state_t *st, bool two_cycle, gfx_cc_info_t *info);
 void gfx_combiner_invalidate(void);   /* the TexEnv stages were set elsewhere */
+bool gfx_combiner_uses_lod(const gfx_state_t *st);   /* texture LOD on and LOD_FRACTION read */
 void gfx_combiner_info(const gfx_state_t *st, bool two_cycle, gfx_cc_info_t *info);
 
 #endif /* PM3DS_GFX_STATE_H */

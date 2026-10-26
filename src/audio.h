@@ -105,7 +105,13 @@ typedef u8* WaveData;
 #define AU_SONG_NONE -1
 
 #define MUS_QUEUE_SIZE 16
+#ifdef _3DS
+// 3DS port: fast-forward runs several game steps per audio frame (the N64 had about two
+// audio frames per step), and each step re-sends every env sound's ADJUST (GitHub #54)
+#define SFX_QUEUE_SIZE 64
+#else
 #define SFX_QUEUE_SIZE 16
+#endif
 
 // semitone pitch interval in cents
 #define AU_SEMITONE_CENTS 100

@@ -12,12 +12,12 @@
 # precedence over upstream decomp versions where the port uses a different ABI.
 #
 # Needs ver/<version>/baserom.z64 and Splat-extracted assets first.
-# usage: gen_version_headers.sh us|ique
+# usage: gen_version_headers.sh us|ique|jp
 set -euo pipefail
-VER=${1:?version (us|ique)}
+VER=${1:?version (us|ique|jp)}
 case "$VER" in
-  us|ique) ;;
-  *) echo "unsupported version '$VER' (expected us or ique)" >&2; exit 2 ;;
+  us|ique|jp) ;;
+  *) echo "unsupported version '$VER' (expected us, ique or jp)" >&2; exit 2 ;;
 esac
 PORT=$(realpath "$(dirname "$0")/..")
 ROOT=$(realpath "$PORT/../..")

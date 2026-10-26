@@ -39,6 +39,7 @@ typedef enum {
     S_KC0, S_KC1, S_KC2, S_KC3,      /* constants folded at build time (g_kc) */
     S_NOISE,                         /* per-pixel random: texture unit 1 */
     S_BUF,                           /* the combiner buffer as a stage left it */
+    S_LODF,                          /* LOD_FRACTION: decode_cycle turns it into shade alpha or 0 */
 } src_t;
 
 typedef struct { uint8_t s; uint8_t alpha; } in_t;      /* alpha: read the source's alpha (2/3/4: its R/G/B, alpha lane only) */
@@ -54,6 +55,18 @@ typedef struct {
 #define MAX_UOPS 4
 
 static const in_t Z = { S_ZERO, 0 };
+
+/* LOD_FRACTION reads 0: with texture LOD on, the RDP blends a texture's
+ * levels (tiles) by how many texels land on a pixel; the backend binds those
+ * levels as one mipmapped texture on unit 0 instead (gfx_texture.c
+ * gfx_tex_get_mip), so the GPU does that blend and TEXEL0 is all a
+ * "lerp(TEXEL0, TEXEL1, LOD_FRACTION)" needs. Star Haven's rainbow floor. */
+bool gfx_combiner_uses_lod(const gfx_state_t *st) {
+    if (!(st->othermode_h & 0x10000u)) return false;   /* G_TL_LOD */
+    uint32_t w0 = st->combine_w0, w1 = st->combine_w1;
+    return ((w0 >> 15) & 0x1F) == 13 || (w0 & 0x1F) == 13 ||   /* RGB c: LOD_FRACTION */
+           ((w0 >> 9) & 7) == 0 || ((w1 >> 18) & 7) == 0;     /* alpha c: LOD_FRACTION */
+}
 
 /* NOISE samples a random texture on unit 1, so a combine mode that also
  * reads TEXEL1 gets a flat 0.5 for it instead (set by gfx_combiner_apply) */
@@ -79,7 +92,8 @@ static in_t rgb_c(uint32_t v) {
         case 6: return (in_t){ S_KEYS, 0 };
         case 14: return (in_t){ S_PRIM_LODF, 0 };
         case 15: return (in_t){ S_K5, 0 };
-        default: return Z;                     /* LOD_FRAC (0 without mipmaps), 0 */
+        case 13: return (in_t){ S_LODF, 0 };
+        default: return Z;
     }
 }
 static in_t rgb_d(uint32_t v) {
@@ -95,7 +109,8 @@ static in_t a_c(uint32_t v) {
         case 1: return (in_t){ S_T0, 1 };    case 2: return (in_t){ S_T1, 1 };
         case 3: return (in_t){ S_PRIM, 1 };  case 4: return (in_t){ S_SHADE, 1 };
         case 5: return (in_t){ S_ENV, 1 };   case 6: return (in_t){ S_PRIM_LODF, 1 };
-        default: return Z;                     /* LOD_FRAC (0 without mipmaps), 0 */
+        case 0: return (in_t){ S_LODF, 1 };
+        default: return Z;
     }
 }
 
@@ -308,6 +323,10 @@ static void decode_cycle(const gfx_state_t *st, int cyc, in_t rgb[4], in_t al[4]
             if (rgb[i].s == S_T0) rgb[i].s = S_T1; else if (rgb[i].s == S_T1) rgb[i].s = S_T0;
             if (al[i].s == S_T0) al[i].s = S_T1; else if (al[i].s == S_T1) al[i].s = S_T0;
         }
+    }
+    for (int i = 0; i < 4; i++) {
+        if (rgb[i].s == S_LODF) rgb[i] = Z;
+        if (al[i].s == S_LODF) al[i] = Z;
     }
 }
 

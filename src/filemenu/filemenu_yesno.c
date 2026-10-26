@@ -382,6 +382,7 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
                             extern void pm3ds_cheats_new_game(void);
                             pm3ds_rando_new_game();
                             pm3ds_cheats_new_game();
+                            { extern void pm3ds_qs_new_game(void); pm3ds_qs_new_game(); }
                         }
 #endif
                         gGameStatusPtr->areaID = AREA_KMR;
@@ -410,6 +411,9 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
                         gPlayerData.hammerLevel = 0;
                         gPlayerData.partners[PARTNER_GOOMBARIO].enabled = true;
                         gPlayerData.curPartner = PARTNER_GOOMBARIO;
+#endif
+#ifdef PM3DS_START_HP   /* e.g. -DPM3DS_START_HP=5: low HP (its warning beep) */
+                        gPlayerData.curHP = PM3DS_START_HP;
 #endif
 #ifdef PM3DS_START_PARTNER   /* e.g. -DPM3DS_START_PARTNER=PARTNER_BOW for scenes that need one */
                         gPlayerData.partners[PM3DS_START_PARTNER].enabled = true;

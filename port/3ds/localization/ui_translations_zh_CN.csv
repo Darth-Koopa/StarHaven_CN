@@ -63,6 +63,7 @@ Battle touch UI,touch_menu.c,Target,目标,
 Options,bottom_screen.c,Original,原始,也可用“原始”
 Options,bottom_screen.c,Fill,填充,
 Options,bottom_screen.c,Wide,宽屏,
+Options,bottom_screen.c,Sharp wide,清晰宽屏,
 Options,bottom_screen.c,Screen,屏幕,
 Options,bottom_screen.c,Frame rate,速率,
 Options,bottom_screen.c,3D depth,3D 景深,

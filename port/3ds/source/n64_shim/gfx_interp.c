@@ -55,6 +55,39 @@ static const site_t *site_of(const void *gfx) {
     return NULL;
 }
 
+/* sprite components (src/sprite.c spr_appendGfx_component): M = local x parent.
+ * local = the sprite animation's own offset/rotation/scale for the component,
+ * which snaps together with its raster on N64; blending it drew the new raster
+ * at a half-way offset (Bzzap's wing frames are wider and re-centred by +8:
+ * GitHub #53). Only the parent (facing yaw x the NPC/actor/player) is blended. */
+#define LOCAL_SLOTS 1024   /* power of two */
+typedef struct { const void *gfx; uint32_t tick; float l[4][4], p[4][4]; } local_t;
+static local_t s_local[LOCAL_SLOTS];
+
+void pm3ds_mtx_local(const void *gfx, float l[4][4], float p[4][4]) {
+    uint32_t h = hash_ptr(gfx);
+    for (int probe = 0; probe < 16; probe++) {
+        local_t *s = &s_local[(h + probe) & (LOCAL_SLOTS - 1)];
+        if (s->tick != s_tick || s->gfx == gfx) {
+            s->gfx = gfx;
+            s->tick = s_tick;
+            memcpy(s->l, l, sizeof s->l);
+            memcpy(s->p, p, sizeof s->p);
+            return;
+        }
+    }
+}
+
+static const local_t *local_of(const void *gfx) {
+    uint32_t h = hash_ptr(gfx);
+    for (int probe = 0; probe < 16; probe++) {
+        const local_t *s = &s_local[(h + probe) & (LOCAL_SLOTS - 1)];
+        if (s->tick != s_tick) return NULL;
+        if (s->gfx == gfx) return s;
+    }
+    return NULL;
+}
+
 /* ---- render side ----------------------------------------------------------- */
 #define OCC_SLOTS 4096
 typedef struct { uint32_t k, n, walk; } occ_t;
@@ -188,6 +221,15 @@ void gfx_interp_matrix(const void *gfx, bool proj, float m[4][4]) {
     const site_t *s = site_of(gfx);
     if (!s) return;
     s_n_site += s_record;
+    /* a sprite component: save and blend its parent, then put its own part back
+     * on top. A copy: the second eye walks the same note again. */
+    const local_t *lo = proj ? NULL : local_of(gfx);
+    float pt[4][4];
+    float (*v)[4] = m;
+    if (lo) {
+        memcpy(pt, lo->p, sizeof pt);
+        v = pt;
+    }
     uint32_t k = s->site ^ hash_ptr(s->obj) ^ (proj ? 0x9E3779B9u : 0);
     uint32_t occ = next_occurrence(k);
     if (occ == 0xFFFFFFFFu) return;
@@ -197,17 +239,21 @@ void gfx_interp_matrix(const void *gfx, bool proj, float m[4][4]) {
         if (e) {
             e->key = key;
             e->tick = s_cur_tick;
-            memcpy(e->m, m, sizeof e->m);
+            memcpy(e->m, v, sizeof e->m);
         }
     }
     if (s_t >= 1.0f) return;
     const saved_t *p = slot(s_cur ^ 1, key, s_cur_tick - 1, false);
     if (!p) return;
-    if (!similar(p->m, m, proj)) {
+    if (!similar(p->m, v, proj)) {
         s_n_reject++;
         return;
     }
     for (int i = 0; i < 4; i++)
-        for (int j = 0; j < 4; j++) m[i][j] = p->m[i][j] + (m[i][j] - p->m[i][j]) * s_t;
+        for (int j = 0; j < 4; j++) v[i][j] = p->m[i][j] + (v[i][j] - p->m[i][j]) * s_t;
+    if (lo)   /* row vectors, as guMtxCatF: M = local x parent */
+        for (int i = 0; i < 4; i++)
+            for (int j = 0; j < 4; j++)
+                m[i][j] = lo->l[i][0] * pt[0][j] + lo->l[i][1] * pt[1][j] + lo->l[i][2] * pt[2][j] + lo->l[i][3] * pt[3][j];
     s_n_lerp++;
 }

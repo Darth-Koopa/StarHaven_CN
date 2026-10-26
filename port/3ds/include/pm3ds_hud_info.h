@@ -13,6 +13,7 @@ typedef struct {
     int in_game;          /* a save is loaded and the player is in the world/battle/pause */
     int in_battle;
     int demo;             /* attract demo running */
+    int ui_ready;         /* past the boot and logos: the ROM and the HUD graphics are there (page icons) */
     int hp, max_hp, fp, max_fp, bp, level;
     int star_points, coins, star_pieces;
     int star_power, max_star_power;   /* star power in 1/256 bars */

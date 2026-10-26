@@ -404,6 +404,8 @@ static void cmd_envmixer_ref(uint32_t w0, uint32_t w1) {
 #endif
 
 bool pm3ds_audio_no_reverb;   /* Old 3DS (audio_dsp.c) */
+unsigned pm3ds_alist_wet_mixes;   /* voice frames sent to the reverb, for the stat line */
+unsigned long long pm3ds_alist_aux_energy, pm3ds_alist_main_energy;
 
 /* ENVMIXER: one voice into the dry and wet buffers with two volume ramps.
  * Nearly always both ramps sit at their target (step 0), and then the four
@@ -437,6 +439,7 @@ static void cmd_envmixer(uint32_t w0, uint32_t w1) {
     int16_t *wl = dm16(NAUDIO_WET_L), *wr = dm16(NAUDIO_WET_R);
     int16_t wet_saved = wet;
     if (pm3ds_audio_no_reverb) wet = 0;   /* no reverb: nothing goes to it (the voice keeps its send) */
+    { extern unsigned pm3ds_alist_wet_mixes; pm3ds_alist_wet_mixes += wet != 0; }   /* stats (audio_system.c) */
     int k = 0;
     /* ramping, in 32 bits: ramp_step adds the step until the value passes
      * the target, then holds the target. Counting those adds up front keeps
@@ -649,6 +652,18 @@ void pm3ds_alist_run(const uint32_t *cmds, int nwords) {
                 int16_t gain = (int16_t)(w0 & 0xFFFF);
                 int16_t *src = dm16(NAUDIO_BASE + (w1 >> 16));
                 int16_t *dst = dm16(NAUDIO_BASE + (w1 & 0xFFFF));
+                {   /* stats: what the reverb (AUX out) and the dry mix (MAIN out) add, after their gain */
+                    extern unsigned long long pm3ds_alist_aux_energy, pm3ds_alist_main_energy;
+                    uint32_t from = w1 >> 16;
+                    if (from == 0x7C0 || from == 0x930 || from == 0x4E0 || from == 0x650) {
+                        unsigned long long e = 0;
+                        for (int k = 0; k < NAUDIO_COUNT / 2; k++) {
+                            int32_t v = (src[k] * gain) >> 15;
+                            e += (unsigned long long)(v < 0 ? -v : v);
+                        }
+                        if (from >= 0x7C0) pm3ds_alist_aux_energy += e; else pm3ds_alist_main_energy += e;
+                    }
+                }
                 for (int k = 0; k < NAUDIO_COUNT / 2; k++) mix_into(&dst[k], src[k], gain);
                 break;
             }

@@ -216,7 +216,13 @@ void load_map_by_IDs(s16 areaID, s16 mapID, s16 loadType) {
 
     gPlayerStatus.targetYaw = gPlayerStatus.curYaw;
 
+#ifdef _3DS
+    // the N64 read the s32 at 0x1C big-endian: its low byte is sfxReverb (0x1F). Little-endian
+    // the same read gives unk_1C[0], always 0, so every map lost its SFX echo (GitHub #36)
+    sfx_set_reverb_mode(WorldReverbModeMapping[mapConfig->sfxReverb & 0x3]);
+#else
     sfx_set_reverb_mode(WorldReverbModeMapping[*(s32*)mapConfig->unk_1C & 0x3]);
+#endif
     sfx_reset_door_sounds();
 
     if (!skipLoadingAssets) {

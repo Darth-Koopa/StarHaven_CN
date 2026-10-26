@@ -120,14 +120,19 @@ static void to_z64(uint8_t *p, size_t n, int order) {
 
 /* ---- the SD folder -------------------------------------------------------- */
 /* Builds before the rename kept the save, settings and ROM in /3ds/PaperMario3DS:
- * move that folder once, before anything else touches the SD card. */
+ * move that folder once, before anything else touches the SD card. Then make
+ * sure the folder exists, so a first start without a ROM leaves the folder the
+ * ROM goes into (GitHub #50). */
 void pm3ds_sd_migrate(void) {
     struct stat st;
-    if (stat(PM3DS_SD_DIR, &st) == 0 || stat(PM3DS_SD_DIR_OLD, &st) != 0) return;
-    if (rename(PM3DS_SD_DIR_OLD, PM3DS_SD_DIR) == 0)
-        pm3ds_log(PM3DS_LOG_INFO, "sd: moved " PM3DS_SD_DIR_OLD " to " PM3DS_SD_DIR);
-    else
-        pm3ds_log(PM3DS_LOG_ERROR, "sd: could not move " PM3DS_SD_DIR_OLD " to " PM3DS_SD_DIR);
+    if (stat(PM3DS_SD_DIR, &st) != 0 && stat(PM3DS_SD_DIR_OLD, &st) == 0) {
+        if (rename(PM3DS_SD_DIR_OLD, PM3DS_SD_DIR) == 0)
+            pm3ds_log(PM3DS_LOG_INFO, "sd: moved " PM3DS_SD_DIR_OLD " to " PM3DS_SD_DIR);
+        else
+            pm3ds_log(PM3DS_LOG_ERROR, "sd: could not move " PM3DS_SD_DIR_OLD " to " PM3DS_SD_DIR);
+    }
+    mkdir("sdmc:/3ds", 0777);
+    mkdir(PM3DS_SD_DIR, 0777);
 }
 
 /* ---- loading -------------------------------------------------------------- */

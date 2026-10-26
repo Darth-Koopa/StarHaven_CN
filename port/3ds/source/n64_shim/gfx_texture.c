@@ -922,4 +922,125 @@ void gfx_tex_bind_unit(gfx_tex_entry_t *e, int unit, int filter_linear, int cms,
     extern void pm3ds_tex_bind(int unit, C3D_Tex *t);
     pm3ds_tex_bind(unit, &e->c3d_tex);
 }
+
+/* ---- texture LOD: a tile chain as one mipmapped GPU texture -------------------
+ * With G_TL_LOD the RDP picks tile render_tile + floor(log2(texels per pixel))
+ * and blends it with the next one by the LOD fraction. Games put a mipmap chain
+ * in those tiles, each level half the size of the one before (Star Haven's floor
+ * has a different colour on each level: a rainbow with distance). The PICA does
+ * the same with a mipmapped texture, so the chain becomes one, and the combiner
+ * reads LOD_FRACTION as 0 (gfx_combiner.c): TEXEL0 alone, the GPU blending the
+ * levels. PICA levels are at least 8x8, so a chain ending smaller is uploaded
+ * scaled up (nearest) and the LOD bias takes the scale back out. */
+
+/* one tile, decoded to linear RGBA8 at its mask-limited size; NULL unless simple
+ * (power-of-two, no clamp expansion), which mipmap levels are */
+static uint8_t *mip_level(const gfx_state_t *st, const gfx_tile_t *t, int *ow, int *oh, uint32_t *key) {
+    int tile_w = (int)((t->lrs - t->uls) >> 2) + 1, tile_h = (int)((t->lrt - t->ult) >> 2) + 1;
+    if (t->lrs < t->uls || t->lrt < t->ult) return NULL;
+    int w = tile_w, h = tile_h;
+    if (t->masks && (1 << t->masks) < w) w = 1 << t->masks;
+    if (t->maskt && (1 << t->maskt) < h) h = 1 << t->maskt;
+    if (w <= 0 || h <= 0 || w > 256 || h > 256 || (w & (w - 1)) || (h & (h - 1))) return NULL;
+    const gfx_tmem_load_t *ld = find_load(st, t->tmem);
+    if (!ld || ld->addr < 0x00100000u) return NULL;
+    uint32_t bits = 4u << t->siz;
+    uint32_t row_bytes = ((uint32_t)w * bits + 7) / 8;
+    uint32_t src, stride;
+    if (ld->is_tile) {   /* as gfx_tex_get */
+        uint32_t lbits = 4u << ld->img_siz;
+        stride = ((uint32_t)ld->img_width * lbits) / 8;
+        src = ld->addr + (ld->ult >> 2) * stride + ((ld->uls >> 2) * lbits) / 8 + (uint32_t)(t->tmem - ld->tmem) * 8;
+    } else {
+        stride = t->line ? (uint32_t)t->line * 8 : row_bytes;
+        src = ld->addr + (uint32_t)(t->tmem - ld->tmem) * 8;
+    }
+    if (stride < row_bytes) stride = row_bytes;
+    uint32_t k = 2166136261u;
+    k = (k ^ src) * 16777619u;
+    k = (k ^ (uint32_t)(t->fmt << 8 | t->siz << 4 | t->palette)) * 16777619u;
+    k = (k ^ (uint32_t)(w << 16 | h)) * 16777619u;
+    if (t->fmt == 2) k = (k ^ st->tlut_hash[t->palette & 0xF] ^ (st->othermode_h & OMH_TT_MASK)) * 16777619u;
+    if (!tex_src_is_static(src)) k = (k ^ tex_sample(src, stride, row_bytes, h)) * 16777619u;
+    uint8_t *row = (uint8_t *)malloc(stride);
+    uint8_t *rgba = (uint8_t *)malloc((size_t)w * h * 4);
+    if (!row || !rgba) { free(row); free(rgba); return NULL; }
+    for (int y = 0; y < h; y++) {
+        pm3ds_pi_read(src + (uint32_t)y * stride, row, row_bytes);
+        decode_row(st, t, row, rgba + (size_t)y * w * 4, w);
+    }
+    free(row);
+    *ow = w; *oh = h; *key = k;
+    return rgba;
+}
+
+#define MIP_CACHE 8
+static struct { bool used; uint32_t key; uint32_t frame; int scale; C3D_Tex tex; } s_mip[MIP_CACHE];
+
+C3D_Tex *gfx_tex_get_mip(const gfx_state_t *st, int tile0, int levels, unsigned *out_w, unsigned *out_h, int *out_scale) {
+    if (levels < 1 || levels > 7) return NULL;
+    uint8_t *img[8] = { 0 };
+    int w[8], h[8];
+    uint32_t key = 2166136261u;
+    C3D_Tex *ret = NULL;
+    int n = levels + 1;
+    for (int k = 0; k < n; k++) {
+        uint32_t lk;
+        img[k] = mip_level(st, &st->tiles[(tile0 + k) & 7], &w[k], &h[k], &lk);
+        if (!img[k] || (k > 0 && (w[k] * 2 != w[k - 1] || h[k] * 2 != h[k - 1]))) {   /* not a chain */
+#ifdef PM3DS_LOD_DBG
+            static int nlog;
+            if (nlog++ < 8) pm3ds_log(PM3DS_LOG_INFO, "LODDBG chain stops at level %d (%s %dx%d)", k, img[k] ? "size" : "decode",
+                                      img[k] ? w[k] : 0, img[k] ? h[k] : 0);
+#endif
+            goto out;
+        }
+        key = (key ^ lk) * 16777619u;
+    }
+    int scale = 1;
+    while ((w[n - 1] < h[n - 1] ? w[n - 1] : h[n - 1]) * scale < 8) scale *= 2;
+    if (w[0] * scale > 1024 || h[0] * scale > 1024) goto out;
+    uint32_t frame = pm3ds_gfx_frame_number();
+    int slot = -1, oldest = 0;
+    for (int i = 0; i < MIP_CACHE; i++) {
+        if (s_mip[i].used && s_mip[i].key == key) { slot = i; break; }
+        if (!s_mip[i].used || s_mip[i].frame < s_mip[oldest].frame) oldest = i;
+    }
+    if (slot < 0) {
+        slot = oldest;
+        if (s_mip[slot].used) C3D_TexDelete(&s_mip[slot].tex);
+        s_mip[slot].used = false;
+        int W = w[0] * scale, H = h[0] * scale;
+        if (!C3D_TexInitWithParams(&s_mip[slot].tex, NULL,
+                                   (C3D_TexInitParams){ (u16)W, (u16)H, (u8)levels, GPU_RGBA8, GPU_TEX_2D, false })) goto out;
+        for (int k = 0; k < n; k++) {
+            int lw = W >> k, lh = H >> k;
+            uint8_t *lin = (uint8_t *)malloc((size_t)lw * lh * 4);
+            uint8_t *tiled = (uint8_t *)malloc((size_t)lw * lh * 4);
+            if (!lin || !tiled) { free(lin); free(tiled); C3D_TexDelete(&s_mip[slot].tex); goto out; }
+            for (int y = 0; y < lh; y++)
+                for (int x = 0; x < lw; x++)
+                    memcpy(lin + ((size_t)y * lw + x) * 4, img[k] + ((size_t)(y / scale) * w[k] + x / scale) * 4, 4);
+            gfx_tex_swizzle_to_pica_padded(lin, tiled, lw, lh, lw, lh);
+            C3D_TexLoadImage(&s_mip[slot].tex, tiled, GPU_TEXFACE_2D, k);
+            free(lin);
+            free(tiled);
+        }
+        C3D_TexFlush(&s_mip[slot].tex);
+#ifdef PM3DS_LOD_DBG
+        pm3ds_log(PM3DS_LOG_INFO, "LODDBG mip texture %dx%d levels %d scale %d", W, H, levels, scale);
+#endif
+        s_mip[slot].used = true;
+        s_mip[slot].key = key;
+        s_mip[slot].scale = scale;
+    }
+    s_mip[slot].frame = frame;
+    *out_w = (unsigned)w[0];
+    *out_h = (unsigned)h[0];
+    *out_scale = s_mip[slot].scale;
+    ret = &s_mip[slot].tex;
+out:
+    for (int k = 0; k < n; k++) free(img[k]);
+    return ret;
+}
 #endif

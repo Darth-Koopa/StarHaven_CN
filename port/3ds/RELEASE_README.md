@@ -50,11 +50,13 @@ Your saves are on the SD card and are kept.
 | Select | L |
 | Start | Start |
 | X | C-Down (partner ability) |
-| Y, ZL | C-Left |
+| Y | C-Left |
+| ZL (hold) | Turbo A: presses A over and over, for mashing |
 | D-Pad, C-Stick | C buttons |
 | ZR (hold) | Fast-forward |
 
-Every button can be changed under **Options → Controls**. The 3D slider works (not on the
+Every button can be changed under **Options → Controls** (Turbo A can go on any button; earlier
+versions' saved controls keep ZL as C-Left until you change it there). The 3D slider works (not on the
 original 3DS and 2DS).
 
 ## Bottom screen

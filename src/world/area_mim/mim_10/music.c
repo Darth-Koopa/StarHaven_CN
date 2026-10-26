@@ -16,11 +16,18 @@ EvtScript N(EVS_SetupMusic) = {
         Exec(N(EVS_SetToadTownMusic))
         Return
     EndIf
+#ifndef _3DS
+    // 3DS port: no special case for a loaded save. N64 played the Toad Town song and
+    // returned for the whole visit, so after loading a save made on this map (its save
+    // block, or the port's quick save anywhere) the forest side kept the Toad Town song,
+    // also right after Bootler's invitation re-runs this script (GitHub #52). The
+    // position check below gives the save block (x = -175) the Toad Town song anyway.
     Call(GetLoadType, LVar1)
     IfEq(LVar1, LOAD_FROM_FILE_SELECT)
         Exec(N(EVS_SetToadTownMusic))
         Return
     EndIf
+#endif
     Call(GetPlayerPos, LVar1, LVar2, LVar3)
     IfLt(LVar1, 0)
         Exec(N(EVS_SetToadTownMusic))

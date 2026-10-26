@@ -29,6 +29,35 @@ void pm3ds_decode_msg(s32 msgID, char* out, s32 size, bool dialogue);   /* touch
 /* ---- tattle log ------------------------------------------------------------ */
 #define NUM_ACTOR_TYPES (ACTOR_TYPE_SLOT_MACHINE_START_DUP3 + 1)
 
+/* types whose tattle is its own message but with the same name and (up to
+ * spaces and line breaks) the same text as another type: the flying
+ * Magikoopas and the boss's copies. They log under the base type (GitHub #55). */
+static const u8 sTattleAlias[][2] = {
+    { ACTOR_TYPE_FLYING_MAGIKOOPA,        ACTOR_TYPE_MAGIKOOPA },
+    { ACTOR_TYPE_FLYING_MAGICLONE,        ACTOR_TYPE_MAGICLONE },
+    { ACTOR_TYPE_FLYING_RED_MAGIKOOPA,    ACTOR_TYPE_RED_MAGIKOOPA },
+    { ACTOR_TYPE_FLYING_GREEN_MAGIKOOPA,  ACTOR_TYPE_GREEN_MAGIKOOPA },
+    { ACTOR_TYPE_FLYING_YELLOW_MAGIKOOPA, ACTOR_TYPE_YELLOW_MAGIKOOPA },
+    { ACTOR_TYPE_FLYING_GRAY_MAGIKOOPA,   ACTOR_TYPE_GRAY_MAGIKOOPA },
+    { ACTOR_TYPE_FLYING_WHITE_MAGIKOOPA,  ACTOR_TYPE_WHITE_MAGIKOOPA },
+    { ACTOR_TYPE_FLYING_MAGIKOOPA_BOSS,   ACTOR_TYPE_MAGIKOOPA_BOSS },
+    { ACTOR_TYPE_MAGIKOOPA_DUP2,          ACTOR_TYPE_MAGIKOOPA_BOSS },
+};
+
+static s32 tattle_base_type(s32 t) {
+    for (u32 i = 0; i < ARRAY_COUNT(sTattleAlias); i++) {
+        if (sTattleAlias[i][0] == t) {
+            return sTattleAlias[i][1];
+        }
+    }
+    return t;
+}
+
+/* the message a type is logged under */
+static s32 tattle_msg(s32 t) {
+    return bActorTattles[tattle_base_type(t)];
+}
+
 /* one entry per tattle message (types that share one, share the entry), in
  * actor-type order */
 static u8 sEntryType[NUM_ACTOR_TYPES];
@@ -38,16 +67,16 @@ static char sEntryName[NUM_ACTOR_TYPES][PM3DS_TATTLE_NAME];
 static void list_entries(void) {
     sNumEntries = 0;
     for (s32 t = 0; t < NUM_ACTOR_TYPES; t++) {
-        s32 msg = bActorTattles[t];
+        s32 msg = tattle_msg(t);
         bool dup = false;
         if (msg == MSG_NONE || msg == 0) {
             continue;
         }
         for (s32 e = 0; e < sNumEntries && !dup; e++) {
-            dup = bActorTattles[sEntryType[e]] == msg;
+            dup = tattle_msg(sEntryType[e]) == msg;
         }
         if (!dup) {
-            sEntryType[sNumEntries++] = t;
+            sEntryType[sNumEntries++] = tattle_base_type(t);
         }
     }
 }
@@ -59,9 +88,9 @@ static bool type_tattled(s32 t) {
 
 /* every type with this entry's message counts */
 static bool entry_known(s32 e) {
-    s32 msg = bActorTattles[sEntryType[e]];
+    s32 msg = tattle_msg(sEntryType[e]);
     for (s32 t = 0; t < NUM_ACTOR_TYPES; t++) {
-        if (bActorTattles[t] == msg && type_tattled(t)) {
+        if (tattle_msg(t) == msg && type_tattled(t)) {
             return true;
         }
     }
@@ -100,7 +129,8 @@ void pm3ds_tattle_text(int entry, char* out, int size) {
 }
 
 /* ---- item tracker ---------------------------------------------------------- */
-enum { SRC_ITEM, SRC_BLOCK, SRC_TREE, SRC_BUSH, SRC_PANEL, SRC_CHEST, SRC_GIFT, SRC_HIDDEN_BLOCK };   /* rando.c */
+enum { SRC_ITEM, SRC_BLOCK, SRC_TREE, SRC_BUSH, SRC_PANEL, SRC_CHEST, SRC_GIFT, SRC_HIDDEN_BLOCK,   /* rando.c */
+       SRC_CRATE, SRC_SUPER_BLOCK };                                                                  /* tracker only */
 
 typedef struct {
     s32 flag;
@@ -113,9 +143,35 @@ typedef struct {
 static const TrackedSpot sSpots[] = {
 #if VERSION_US || VERSION_IQUE
 #include "rando_locations_us.inc"
+#elif VERSION_JP
+#include "rando_locations_jp.inc"
 #else
 #include "rando_locations.inc"
 #endif
+    /* not randomizer spots, but things to find all the same: items in crates
+     * (GitHub #44; the obk_05 apples have no flag and come back) and the Super
+     * Blocks (GitHub #43) */
+    { GF_KPA17_Crate_TastyTonic, ITEM_TASTY_TONIC, SRC_CRATE, "kpa_17" },
+    { GF_KPA17_Crate_LifeShroom, ITEM_LIFE_SHROOM, SRC_CRATE, "kpa_17" },
+    { GF_OBK03_Crate_SuperShroom, ITEM_SUPER_SHROOM, SRC_CRATE, "obk_03" },
+    { GF_OBK04_Crate_MapleSyrup, ITEM_MAPLE_SYRUP, SRC_CRATE, "obk_04" },
+    { GF_OBK06_Crate_StarPiece, ITEM_STAR_PIECE, SRC_CRATE, "obk_06" },
+    { GF_TIK07_SuperBlock, ITEM_NONE, SRC_SUPER_BLOCK, "tik_07" },
+    { GF_TIK10_SuperBlock, ITEM_NONE, SRC_SUPER_BLOCK, "tik_10" },
+    { GF_TIK02_SuperBlock, ITEM_NONE, SRC_SUPER_BLOCK, "tik_12" },
+    { GF_TIK17_SuperBlock, ITEM_NONE, SRC_SUPER_BLOCK, "tik_17" },
+    { GF_TIK19_SuperBlock, ITEM_NONE, SRC_SUPER_BLOCK, "tik_19" },
+    { GF_IWA10_SuperBlock, ITEM_NONE, SRC_SUPER_BLOCK, "iwa_10" },
+    { GF_SBK56_SuperBlock, ITEM_NONE, SRC_SUPER_BLOCK, "sbk_56" },
+    { GF_ISK10_SuperBlock, ITEM_NONE, SRC_SUPER_BLOCK, "isk_10" },
+    { GF_DGB04_SuperBlock, ITEM_NONE, SRC_SUPER_BLOCK, "dgb_04" },
+    { GF_OMO11_SuperBlock, ITEM_NONE, SRC_SUPER_BLOCK, "omo_11" },
+    { GF_JAN08_SuperBlock, ITEM_NONE, SRC_SUPER_BLOCK, "jan_08" },
+    { GF_KZN04_SuperBlock, ITEM_NONE, SRC_SUPER_BLOCK, "kzn_04" },
+    { GF_KZN09_SuperBlock, ITEM_NONE, SRC_SUPER_BLOCK, "kzn_09" },
+    { GF_FLO08_SuperBlock, ITEM_NONE, SRC_SUPER_BLOCK, "flo_08" },
+    { GF_FLO16_SuperBlock, ITEM_NONE, SRC_SUPER_BLOCK, "flo_16" },
+    { GF_SAM08_SuperBlock, ITEM_NONE, SRC_SUPER_BLOCK, "sam_08" },
 };
 #undef LOC
 
@@ -133,6 +189,22 @@ static const struct { const char* prefix; const char* name; } sTrackedAreas[] = 
 
 MapConfig* get_current_map_config(void);
 
+/* spots whose map clears their flag again, so the item comes back (GitHub #41):
+ * they never stay found, so they don't count */
+static const s32 sRegrowing[] = {
+    GF_KMR02_Tree1_Goomnut, GF_NOK01_Bush4_KoopaLeaf, GF_NOK02_Bush1_KoopaLeaf,
+    GF_SAM02_Item_IcedPotato, GF_SBK56_Tree1_Lemon, GF_SBK56_Tree2_Lime,
+};
+
+static bool regrows(s32 flag) {
+    for (u32 i = 0; i < ARRAY_COUNT(sRegrowing); i++) {
+        if (sRegrowing[i] == flag) {
+            return true;
+        }
+    }
+    return false;
+}
+
 int pm3ds_tracker_query(pm3ds_tracker_t* out) {
     memset(out, 0, sizeof(*out));
     out->here = -1;
@@ -147,7 +219,7 @@ int pm3ds_tracker_query(pm3ds_tracker_t* out) {
         snprintf(r->name, sizeof(r->name), "%s", sTrackedAreas[a].name);
         for (u32 i = 0; i < ARRAY_COUNT(sSpots); i++) {
             const TrackedSpot* s = &sSpots[i];
-            if (s->flag == 0 || strncmp(s->map, sTrackedAreas[a].prefix, 3) != 0) {
+            if (s->flag == 0 || strncmp(s->map, sTrackedAreas[a].prefix, 3) != 0 || regrows(s->flag)) {
                 continue;
             }
             bool got = evt_get_variable(nullptr, s->flag) != 0;
@@ -160,7 +232,7 @@ int pm3ds_tracker_query(pm3ds_tracker_t* out) {
             if (s->item == ITEM_STAR_PIECE) {
                 r->sp_total++;
                 r->sp_found += got;
-            } else if (gItemTable[s->item].typeFlags & ITEM_TYPE_FLAG_BADGE) {
+            } else if (s->item != ITEM_NONE && (gItemTable[s->item].typeFlags & ITEM_TYPE_FLAG_BADGE)) {
                 r->badge_total++;
                 r->badge_found += got;
             }

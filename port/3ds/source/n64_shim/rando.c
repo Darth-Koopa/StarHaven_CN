@@ -63,6 +63,8 @@ typedef struct {
 static const RandoLoc sLocs[] = {
 #if VERSION_US || VERSION_IQUE
 #include "rando_locations_us.inc"
+#elif VERSION_JP
+#include "rando_locations_jp.inc"
 #else
 #include "rando_locations.inc"
 #endif
@@ -83,6 +85,8 @@ typedef struct {
 static const RandoShop sShops[] = {
 #if VERSION_US || VERSION_IQUE
 #include "rando_shops_us.inc"
+#elif VERSION_JP
+#include "rando_shops_jp.inc"
 #else
 #include "rando_shops.inc"
 #endif

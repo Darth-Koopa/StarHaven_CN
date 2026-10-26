@@ -590,6 +590,7 @@ static void handle_geometrymode(gfx_state_t *st, const gfx_cmd_t *g) {
 
 static void handle_texture(gfx_state_t *st, const gfx_cmd_t *g) {
     st->tex_tile = (uint8_t)bf(g->w0, 8, 3);
+    st->tex_levels = (uint8_t)bf(g->w0, 11, 3);
     st->tex_on = (uint8_t)bf(g->w0, 1, 7);
     st->tex_scale_s = (uint16_t)(g->w1 >> 16);
     st->tex_scale_t = (uint16_t)(g->w1 & 0xFFFF);

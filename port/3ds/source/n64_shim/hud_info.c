@@ -76,6 +76,7 @@ void pm3ds_hud_query(pm3ds_hud_info_t* out) {
                    gGameStatusPtr->demoState == 0 && gGameStatusPtr->introPart < 0;
     out->in_battle = mode == GAME_MODE_BATTLE;
     out->demo = gGameStatusPtr->demoState != 0;
+    out->ui_ready = mode != GAME_MODE_STARTUP && mode != GAME_MODE_LOGOS;
     if (!out->in_game) {
         return;
     }
@@ -233,4 +234,11 @@ int pm3ds_ui_get_font(pm3ds_ui_font_t* out) {
     out->palettes = &D_802F4560[0][0];
     out->glyph_count = 0x5100 / 128;
     return 1;
+}
+
+/* every game step must be drawn: the ending's credits animate their lines in a
+ * render callback but start new ones from scripts, so undrawn steps (fast-forward,
+ * Old 3DS catch-up) piled the lines on top of each other (GitHub #58) */
+bool pm3ds_steps_must_draw(void) {
+    return gGameStatusPtr != nullptr && gGameStatusPtr->areaID == AREA_END;
 }

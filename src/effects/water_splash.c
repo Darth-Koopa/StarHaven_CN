@@ -1,6 +1,9 @@
 #include "common.h"
 #include "nu/nusys.h"
 #include "effects_internal.h"
+#ifdef _3DS
+#include "pm3ds_gfx_tags.h"
+#endif
 
 extern Gfx D_09000100_3BCB90[];
 extern Gfx D_09000268_3BCCF8[];
@@ -186,6 +189,14 @@ void water_splash_appendGfx(void* effect) {
     gSPMatrix(gMainGfxPos++, currentCamera->mtxBillboard, G_MTX_NOPUSH | G_MTX_MUL | G_MTX_MODELVIEW);
     gSPDisplayList(gMainGfxPos++, D_09000100_3BCB90);
 
+#ifdef _3DS
+    // 3DS port: the GPU draws the frame, so the N64 framebuffer read below holds
+    // no picture (black squares, GitHub #40, #49). Copy the screen drawn so far
+    // into the texture that stands for it (gfx_present.c), then draw on as before.
+    gDPNoOpTag(gMainGfxPos++, PM3DS_GFX_TAG_SCREEN_COPY);
+    gDPSetColorImage(gMainGfxPos++, G_IM_FMT_RGBA, G_IM_SIZ_16b, SCREEN_WIDTH, VIRTUAL_TO_PHYSICAL(nuGfxCfb_ptr));
+    gDPSetColorImage(gMainGfxPos++, G_IM_FMT_RGBA, G_IM_SIZ_16b, SCREEN_WIDTH, VIRTUAL_TO_PHYSICAL(nuGfxCfb_ptr));
+#endif
     data++;
     for (i = 1; i < ((EffectInstance*)effect)->numParts; i++, data++) {
         s32 temp_t2 = (s32)data->unk_04.x + sp94;

@@ -31,7 +31,7 @@ import zlib
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(TOOLS, "..", "..", ".."))
-# PM3DS_VERSION=pal, us or ique, as for make
+# PM3DS_VERSION=pal, us, ique or jp, as for make
 VER = os.environ.get("PM3DS_VERSION", "pal")
 ASSETS = os.path.join(ROOT, "assets", VER)
 BUILD_ASSETS = os.path.join(ROOT, "port", "3ds", "build_assets" + ("" if VER == "pal" else "_" + VER))
@@ -50,11 +50,12 @@ STATE = "pm3ds_romdata_state"
 PREFIX = os.environ.get("ROMDATA_PREFIX", "")
 COPY_PREFIXES = ("us_", "ique_")
 # The ROM range retained by each build. PAL dumps repeat the last 16 MB;
-# US and iQue are both 40 MiB.
+# US, iQue and JP dumps use the first 40 MiB.
 ROM_NAME, ROM_DATA_SIZE = {
     "pal": (b"Paper Mario (Europe)", 0x3000000),
     "us": (b"Paper Mario (USA)", 0x2800000),
     "ique": (b"Paper Mario (iQue China)", 0x2800000),
+    "jp": (b"Mario Story (Japan)", 0x2800000),
 }[VER]
 
 SHT_SYMTAB, SHT_REL = 2, 9

@@ -6,8 +6,8 @@
 # SD card (/3ds/StarHaven/baserom.z64), see source/platform/pm3ds_rom.c.
 #
 # usage: package.sh <game.elf> <outdir> [3dsx] [cia]     (default: both)
-#   PM3DS_VERSION  pal (default), us or ique; universal for the ELF of
-#            tools/universal.py (all three copies stripped, one table per ROM)
+#   PM3DS_VERSION  pal (default), us, ique or jp; universal for the ELF of
+#            tools/universal.py (PAL, US and iQue copies stripped, one table per ROM)
 #   BASEROM  the developer's ROM, only to locate the data (ver/<version>/baserom.z64;
 #            universal reads ver/pal, ver/us and ver/ique)
 #   MAKEROM  makerom binary (port/3ds/local/bin/makerom)
@@ -28,6 +28,7 @@ case "$PM3DS_VERSION" in
     pal|universal) NAME=${NAME:-StarHaven} ;;
     us) NAME=${NAME:-StarHaven_US} ;;
     ique) NAME=${NAME:-StarHaven_iQue} ;;
+    jp) NAME=${NAME:-StarHaven_JP} ;;
     *) echo "unknown PM3DS_VERSION: $PM3DS_VERSION" >&2; exit 2 ;;
 esac
 SMDH=$(basename "${ELF%.elf}").smdh            # made by make next to the ELF's twin in port/3ds

@@ -1,5 +1,8 @@
 #include "common.h"
 #include "effects_internal.h"
+#ifdef _3DS
+#include "pm3ds_gfx_tags.h"
+#endif
 #include "nu/nusys.h"
 
 extern Gfx D_09000200_3A35D0[];
@@ -232,6 +235,14 @@ void motion_blur_flame_appendGfx(void* effect) {
             var_t2_2 = var_v1 / height;
             sp54 = (var_a0 - t3) / height;
 
+#ifdef _3DS
+            // 3DS port: the GPU draws the frame, so the N64 framebuffer read below holds
+            // no picture (black squares, GitHub #40, #49). Copy the screen drawn so far
+            // into the texture that stands for it (gfx_present.c), then draw on as before.
+            gDPNoOpTag(gMainGfxPos++, PM3DS_GFX_TAG_SCREEN_COPY);
+            gDPSetColorImage(gMainGfxPos++, G_IM_FMT_RGBA, G_IM_SIZ_16b, SCREEN_WIDTH, VIRTUAL_TO_PHYSICAL(nuGfxCfb_ptr));
+            gDPSetColorImage(gMainGfxPos++, G_IM_FMT_RGBA, G_IM_SIZ_16b, SCREEN_WIDTH, VIRTUAL_TO_PHYSICAL(nuGfxCfb_ptr));
+#endif
             while (var_t2_2 < sp54) {
                 uly = t3 + var_t2_2 * height;
                 if (uly + height >= SCREEN_HEIGHT) {

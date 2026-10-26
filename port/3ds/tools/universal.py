@@ -19,6 +19,7 @@ import sys
 PORT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BIN = "/opt/devkitpro/devkitARM/bin/arm-none-eabi-"
 CTRU = "/opt/devkitpro/libctru"
+PORTLIBS = "/opt/devkitpro/portlibs/3ds"
 ARCH = ["-march=armv6k", "-mtune=mpcore", "-mfloat-abi=hard", "-mtp=soft"]
 WORK = os.path.join(PORT, "build_universal")
 COPIES = (
@@ -146,7 +147,8 @@ def main():
     cmd = ([BIN + "gcc", "-specs=3dsx.specs", "-g"] + ARCH +
            ["-Wl,-Map," + os.path.join(WORK, "universal.map")] + wrap_flags +
            ["@" + rsp, os.path.join(PORT, "m11_syms.ld")] + copied_linker_scripts +
-           ["-L" + CTRU + "/lib", "-lcitro3d", "-lctru", "-lm", "-o", out_elf])
+           ["-L" + PORTLIBS + "/lib", "-lcurl", "-lmbedtls", "-lmbedx509", "-lmbedcrypto", "-lz",
+            "-L" + CTRU + "/lib", "-lcitro3d", "-lctru", "-lm", "-o", out_elf])
     run(cmd)
     print("linked", out_elf)
     print(run([BIN + "size", out_elf]))

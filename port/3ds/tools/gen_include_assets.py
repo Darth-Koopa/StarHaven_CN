@@ -17,7 +17,7 @@ import sys
 import yaml
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-# PM3DS_VERSION=pal (build_assets/), us, or ique, as for make
+# PM3DS_VERSION=pal (build_assets/), us, ique or jp, as for make
 VER = os.environ.get("PM3DS_VERSION", "pal")
 SPLAT = os.path.join(ROOT, "ver", VER, "splat.yaml")
 ROM = os.path.join(ROOT, "ver", VER, "baserom.z64")
@@ -49,6 +49,20 @@ CHARSET = {
         "charset/subtitle.dat": (0x15E580, 0x15F108),
         "charset/subtitle/palette.dat": (0x15F120, 0x15F130),
         "charset/title/palette.dat": (0x15F130, 0x15F140),
+    },
+    # JP: kana, latin, kanji and menu fonts instead of the one standard font (ver/jp/splat.yaml)
+    "jp": {
+        "charset/kana.dat": (0x10F330, 0x114A40),
+        "charset/latin.dat": (0x114A40, 0x115610),
+        "charset/kanji.dat": (0x115610, 0x118B00),
+        "charset/buttons.dat": (0x118B00, 0x118F60),
+        "charset/menu_kana.dat": (0x118F60, 0x11C7A0),
+        "charset/menu_latin.dat": (0x11C7A0, 0x11CF38),
+        "charset/standard/palette.dat": (0x11CF38, 0x11D438),
+        "charset/title.dat": (0x11D438, 0x11E398),
+        "charset/subtitle.dat": (0x11E398, 0x11EF20),
+        "charset/subtitle/palette.dat": (0x11EF20, 0x11EF30),
+        "charset/title/palette.dat": (0x11EF30, 0x11EF40),
     },
 }
 
@@ -150,8 +164,13 @@ def main():
         with open(dst, "wb") as fh:
             fh.write(rom[a:b])
         manifest.append(("RAW", path, a, b - a))
+    # Some versions' source still references the other versions' charset names.
+    # Supply tiny link-time placeholders only when this ROM has no real segment
+    # for that path. In particular, never overwrite JP's extracted glyph tables.
     for path in ("charset/kana.dat", "charset/kanji.dat", "charset/latin.dat", "charset/menu_kana.dat",
                  "charset/menu_latin.dat", "charset/buttons.dat"):
+        if path in charset:
+            continue
         dst = os.path.join(OUT, "raw", path)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         with open(dst, "wb") as fh:

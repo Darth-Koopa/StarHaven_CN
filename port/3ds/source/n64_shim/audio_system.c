@@ -224,19 +224,31 @@ static void render_audio_frame(void) {
     sFifoPos = 0;
     nuAuFrameCounter++;
     {   /* one stat line every ~10 s of audio */
-        extern unsigned pm3ds_alist_cmds;
+        extern unsigned pm3ds_alist_cmds, pm3ds_alist_wet_mixes;
+        extern unsigned long long pm3ds_alist_aux_energy, pm3ds_alist_main_energy;
         static s32 peak;
+        static u64 sum_lr, sum_diff;   /* stereo check: how far left and right differ */
         for (s32 i = 0; i < PM3DS_AU_FRAME * 2; i++) {
             s32 v = sFrameOut[i] < 0 ? -sFrameOut[i] : sFrameOut[i];
             if (v > peak) {
                 peak = v;
             }
         }
+        for (s32 i = 0; i < PM3DS_AU_FRAME; i++) {
+            s32 l = sFrameOut[2 * i], r = sFrameOut[2 * i + 1];
+            sum_lr += (u64)(l < 0 ? -l : l) + (u64)(r < 0 ? -r : r);
+            sum_diff += (u64)(l > r ? l - r : r - l);
+        }
         if (nuAuFrameCounter % 580 == 0) {
-            pm3ds_log(2, "audio: frame %u cmds=%u (last list %d words) peak=%d bgmA=%d",
+            pm3ds_log(2, "audio: frame %u cmds=%u (last list %d words) peak=%d bgmA=%d stereo=%u/1000 wetmix=%u reverb=%u/1000",
                       (unsigned)nuAuFrameCounter, pm3ds_alist_cmds, (int)nwords, (int)peak,
-                      gBGMPlayerA != nullptr ? gBGMPlayerA->masterState : -1);
+                      gBGMPlayerA != nullptr ? gBGMPlayerA->masterState : -1,
+                      sum_lr ? (unsigned)(sum_diff * 1000 / sum_lr) : 0u, pm3ds_alist_wet_mixes,
+                      pm3ds_alist_main_energy ? (unsigned)(pm3ds_alist_aux_energy * 1000 / pm3ds_alist_main_energy) : 0u);
+            pm3ds_alist_aux_energy = pm3ds_alist_main_energy = 0;
             peak = 0;
+            sum_lr = sum_diff = 0;
+            pm3ds_alist_wet_mixes = 0;
         }
     }
 #ifdef PM3DS_AUDIO_WAVDUMP

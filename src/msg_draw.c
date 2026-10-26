@@ -444,14 +444,15 @@ void appendGfx_message(MessagePrintState* printer, s16 posX, s16 posY, u16 addit
                                 // unless the tail would only be drawn from the N64 spot (a tall
                                 // speaker like Bowser: see pm3ds_tail_fits). Decided when the bubble
                                 // opens, so it does not jump while the speaker moves.
-                                // Original view keeps the N64 spot.
+                                // Original and Sharp wide (1:1, no crop) keep the N64 spot.
                                 extern int pm3ds_view_mode(void);
                                 static s8 lowered[8];
                                 s32 slot = ((u32)printer / sizeof(*printer)) % ARRAY_COUNT(lowered);   // one per printer
                                 if (printer->windowState == MSG_WINDOW_STATE_OPENING && printer->fadeInCounter == 0) {
                                     lowered[slot] = pm3ds_tail_fits(printer, 20) || !pm3ds_tail_fits(printer, 13);
                                 }
-                                printer->windowBasePos.y = (pm3ds_view_mode() != 0 && lowered[slot]) ? 20 : 13;
+                                s32 cropped = pm3ds_view_mode() == 1 || pm3ds_view_mode() == 2;   // Fill, Wide
+                                printer->windowBasePos.y = (cropped && lowered[slot]) ? 20 : 13;
                             }
 #else
                             printer->windowBasePos.y = 13;

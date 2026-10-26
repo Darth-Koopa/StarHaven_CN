@@ -213,7 +213,11 @@ static void publish(s32 kind) {
             }
             sMenu.cursor = BattleMenu_CurPos + BattleMenu_HomePos;
             set_name(PM3DS_TM_MAX, sMenu.partner ? PartnerNameMessages[gPlayerData.curPartner] : MSG_NONE);
-            if (!sMenu.partner) {
+            if (gBattleState == BATTLE_STATE_PEACH_MENU || gBattleState == BATTLE_STATE_TWINK_MENU) {
+                // the final battle: Peach's and Twink's turns use the same wheel (GitHub #58)
+                strcpy(sMenu.title, gBattleState == BATTLE_STATE_PEACH_MENU ? "Peach" : "Twink");
+                sNameMsg[PM3DS_TM_MAX] = -2;
+            } else if (!sMenu.partner) {
                 strcpy(sMenu.title, "Mario");
                 sNameMsg[PM3DS_TM_MAX] = -2;
             }
@@ -332,15 +336,16 @@ static void target_place(pm3ds_tm_entry_t* e, Actor* t, SelectableTarget* target
     }
     e->enemy = (target->actorID & ACTOR_CLASS_MASK) == ACTOR_CLASS_ENEMY;
     if (part != nullptr && part->size.y != 0) {
-        x = part->absolutePos.x; y = part->absolutePos.y; z = part->absolutePos.z;
         w = part->size.x; h = part->size.y;
     } else {
-        x = t->curPos.x; y = t->curPos.y; z = t->curPos.z;
         w = t->size.x; h = t->size.y;
     }
-    if (t->flags & ACTOR_FLAG_UPSIDE_DOWN) {
-        y -= h;   /* hangs down from its position */
-    }
+    /* where the game's own target cursor goes (create_current_pos_target_list):
+     * the top of the target as it stands now. A part's absolutePos can lag (a
+     * Paratroopa knocked to the ground, Mario and the partner), GitHub #42 */
+    x = target->truePos.x;
+    y = target->truePos.y - h;
+    z = target->truePos.z;
     get_screen_coords(CAM_BATTLE, x, y + h * 0.5f, z, &sx, &sy, &sz);
     get_screen_coords(CAM_BATTLE, x, y + h, z, &tx_, &ty_, &tz);
     pm3ds_gfx_n64_to_top(sx, sy, &cx, &cy);

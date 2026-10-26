@@ -111,6 +111,29 @@ void quizmo_stage_appendGfx(void* effect) {
     Matrix4f sp18;
     Matrix4f sp58;
 
+#ifdef _3DS
+    {
+        // 3DS port: the stage's four static matrices sit in the effect data (gfx/quizmo_stage.c)
+        // as the N64 stores them: big-endian, the 16 integer halves first, then the 16 fraction
+        // halves. The port's Mtx is 16 plain s15.16 words (gu_impl.c), so convert each one once;
+        // read as is they placed the side walls, the backdrop and the bulb arc anywhere
+        // (GitHub #59, #61).
+        static bool converted;
+        if (!converted) {
+            u8* b = (u8*)D_09004148_39CD08;
+            for (s32 n = 0; n < 4; n++, b += 64) {
+                s32 fixed[16];
+                for (s32 k = 0; k < 16; k++) {
+                    u16 hi = (u16)(b[2 * k] << 8 | b[2 * k + 1]);
+                    u16 lo = (u16)(b[32 + 2 * k] << 8 | b[32 + 2 * k + 1]);
+                    fixed[k] = (s32)((u32)hi << 16 | lo);
+                }
+                memcpy(b, fixed, sizeof(fixed));
+            }
+            converted = true;
+        }
+    }
+#endif
     gDPPipeSync(gMainGfxPos++);
     gSPSegment(gMainGfxPos++, 0x09, VIRTUAL_TO_PHYSICAL(((EffectInstance*)effect)->shared->graphics));
 

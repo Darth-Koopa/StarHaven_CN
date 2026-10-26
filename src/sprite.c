@@ -357,6 +357,58 @@ void spr_appendGfx_component(
     guMtxF2L(mtxTransform, &gDisplayContext->matrixStack[gMatrixListPos]);
     gSPMatrix(gMainGfxPos++, VIRTUAL_TO_PHYSICAL(&gDisplayContext->matrixStack[gMatrixListPos++]),
               G_MTX_PUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+#ifdef _3DS
+    {
+        // 60 fps: mtxTransform = local x parent, with parent = the facing yaw x mtx (blended,
+        // so turns stay smooth) and local = this component's own offset, rotation and scale
+        // from the sprite animation, which snap with its raster as on N64 (GitHub #53: Bzzap's
+        // wider wing frames are re-centred by +8, and a half-way offset jittered).
+        // dx/dy/dz is the offset turned by the facing yaw; turned back, T(p) x Ry(yaw) =
+        // Ry(yaw) x T(d), so local x parent is exactly mtxTransform.
+        extern void pm3ds_mtx_local(const void* gfx, float local[4][4], float parent[4][4]);
+        Matrix4f local, parent, yaw, tmp;
+        f32 base = (SpriteCurBaseRot[0] == 0 && SpriteCurBaseRot[2] == 0) ? SpriteCurBaseRot[1] : 0.0f;
+        guRotateF(yaw, base, 0.0f, 1.0f, 0.0f);
+        guTranslateF(local, dx * yaw[0][0] + dy * yaw[0][1] + dz * yaw[0][2],
+                     dx * yaw[1][0] + dy * yaw[1][1] + dz * yaw[1][2],
+                     dx * yaw[2][0] + dy * yaw[2][1] + dz * yaw[2][2]);
+        if (rotY - base != 0.0f) {
+            guRotateF(tmp, rotY - base, 0.0f, 1.0f, 0.0f);
+            guMtxCatF(tmp, local, local);
+        }
+        if (rotZ != 0.0f) {
+            guRotateF(tmp, rotZ, 0.0f, 0.0f, 1.0f);
+            guMtxCatF(tmp, local, local);
+        }
+        if (rotX != 0.0f) {
+            guRotateF(tmp, rotX, 1.0f, 0.0f, 0.0f);
+            guMtxCatF(tmp, local, local);
+        }
+        if (scaleX != 1.0f || scaleY != 1.0f || scaleZ != 1.0f) {
+            guScaleF(tmp, scaleX, scaleY, scaleZ);
+            guMtxCatF(tmp, local, local);
+        }
+        guMtxCatF(yaw, mtx, parent);
+#ifdef PM3DS_SPR_DBG
+        {   // local x parent must be mtxTransform
+            static u32 n;
+            Matrix4f chk;
+            f32 err = 0.0f;
+            guMtxCatF(local, parent, chk);
+            for (s32 i = 0; i < 4; i++)
+                for (s32 j = 0; j < 4; j++) {
+                    f32 d = chk[i][j] - mtxTransform[i][j];
+                    err = MAX(err, d < 0.0f ? -d : d);
+                }
+            if (n++ % 2000 == 0 || err > 0.01f) {
+                extern void pm3ds_log(int, const char*, ...);
+                pm3ds_log(2, "SPRDBG n=%u err=%.5f base=%.1f rotY=%.1f", n, err, base, rotY);
+            }
+        }
+#endif
+        pm3ds_mtx_local(gMainGfxPos - 1, local, parent);
+    }
+#endif
 
     if (gSpriteShadingProfile->flags & SPR_SHADING_FLAG_ENABLED) {
         if ((u8) opacity == 255) {

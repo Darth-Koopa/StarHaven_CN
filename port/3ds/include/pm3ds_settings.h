@@ -10,6 +10,7 @@ enum {
     ACT_A, ACT_B, ACT_Z, ACT_R, ACT_L, ACT_START,
     ACT_C_UP, ACT_C_DOWN, ACT_C_LEFT, ACT_C_RIGHT,
     ACT_FAST_FORWARD,
+    ACT_TURBO_A,        /* held: A pressed and released on alternate reads (os_cont.c) */
     ACT_COUNT
 };
 
@@ -30,7 +31,7 @@ extern const float pm3ds_depth3d_shift[DEPTH3D_LEVELS];   /* pixels per eye at i
 extern const char *const pm3ds_depth3d_names[DEPTH3D_LEVELS];
 
 typedef struct {
-    int view_mode;              /* 0 Original, 1 Fill, 2 Wide */
+    int view_mode;              /* 0 Original, 1 Fill, 2 Wide, 3 Sharp wide (1:1, world to the edges) */
     bool fps60;                 /* in-between frames (n64_shim/gfx_interp.c) */
     int depth3d;                /* 0..DEPTH3D_LEVELS-1 */
     int text_speed;             /* TEXT_* */
@@ -41,6 +42,8 @@ typedef struct {
     bool update_check;          /* ask GitHub for a newer release at launch (pm3ds_update.c) */
     int update_skip;            /* a release the player said not to mention again (version code) */
     bool map_dragged;           /* the player has dragged the bottom-screen map, so "Drag to look" is not shown */
+    bool stat_drops;            /* enemies drop hearts and flowers (off: only the Finder badges' ones, GitHub #39) */
+    bool hp_beep;               /* the HP icon's warning beep at 5 HP or less (src/hud_element.c) */
 } pm3ds_settings_t;
 
 extern pm3ds_settings_t pm3ds_cfg;

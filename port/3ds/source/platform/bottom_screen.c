@@ -45,9 +45,9 @@
 #include "../../gen/ui_small_font.h"
 #endif
 
-extern void pm3ds_set_view_mode(int mode);   /* 0 Original, 1 Fill, 2 Wide */
+extern void pm3ds_set_view_mode(int mode);   /* 0 Original, 1 Fill, 2 Wide, 3 Sharp wide */
 extern int pm3ds_view_mode(void);
-static const char *const s_view_names[3] = { "Original", "Fill", "Wide" };
+static const char *const s_view_names[4] = { "Original", "Fill", "Wide", "Sharp wide" };
 extern shaderProgram_s *pm3ds_gfx_program(void);
 extern int pm3ds_gfx_uloc_screen(void);
 extern const char *pm3ds_log_recent(int i);   /* 0 = newest */
@@ -813,6 +813,9 @@ static void bar(float x, float y, float w, float h, int v, int max, u32 col) {
 #define BTN_Y1 234
 static const float s_btn_opt[2] = { 8, 104 };
 static const float s_btn_items[2] = { 112, 208 };
+/* in the world the middle button is two: Items and Badges (the pause menu's Badges page) */
+static const float s_btn_items_half[2] = { 112, 158 };
+static const float s_btn_badges[2] = { 162, 208 };
 static const float s_btn_ff[2] = { 216, 312 };
 
 #define COL_CARD      RGBA(250, 236, 204, 255)
@@ -836,7 +839,8 @@ static void small_text_center(float cx, float y, const char *str, float scale, u
 static float ui_native_glyph_text_fit(float x, float y, const char *str, float scale, float max_width, u32 c);
 static void ui_native_glyph_text_center_fit(float cx, float y, const char *str, float scale, float max_width, u32 c);
 
-/* shortcut for the game (src/world/menus.c): 1 = item menu, 2 = quick save, 0x100 + id = switch partner */
+/* shortcut for the game (src/world/menus.c): 1 = item menu, 2 = quick save, 3 = pause menu on the
+ * Badges page, 0x100 + id = switch partner */
 volatile int pm3ds_touch_req;
 
 /* Stats page Save button: a tap arms it, a second one asks the game to save
@@ -1726,7 +1730,8 @@ static void disc(float cx, float cy, float r, u32 c) { round_rect(cx - r, cy - r
  * HudScripts (pm3ds_tm_icon_rgba), so no art ships with the port: 64 cells of
  * 32x32 in one texture, filled as menus show icons they haven't shown before.
  * The first UI_ICON_COUNT cells hold the pages' own icons (pm3ds_ui_icon_script),
- * decoded once a game is running and never given away. */
+ * decoded once the title is up (the Options rail shows them there too, GitHub
+ * #51) and never given away. */
 #define ICON_CELLS 64
 #define ICON_TEX 256
 static C3D_Tex s_icons;
@@ -1766,7 +1771,7 @@ static int icon_cell(const void *script) {
 
 /* decode what the open menu needs and upload once (from the tick) */
 static void icons_update(void) {
-    if (!s_ui_icons && s_info.in_game &&
+    if (!s_ui_icons && (s_info.in_game || s_info.ui_ready) &&
         (s_icon_canvas || (s_icon_canvas = (u8 *)calloc(ICON_TEX * ICON_TEX, 4)))) {
         for (int i = 0; i < UI_ICON_COUNT; i++) icon_decode(pm3ds_ui_icon_script(i), i);
         s_ui_icons = true;
@@ -1886,8 +1891,11 @@ static void draw_battle_rail(void) {
 #define TGT_TY0 170
 #define TGT_TY1 200
 #define TGT_TILES 4
+#define TGT_FY1_2ROWS 147   /* the picture's bottom with two rows of tiles */
 extern C3D_Tex *pm3ds_gfx_top_copy(void);
 static float s_tgt_x0, s_tgt_y0, s_tgt_k;   /* the top-screen area shown: origin and scale to the strip */
+static int tgt_tiles(void);
+static float tgt_fy1(void) { return tgt_tiles() > 2 ? TGT_FY1_2ROWS : TGT_FY1; }   /* the picture's bottom */
 
 /* top-screen area X0..X1, Y0..Y1 into the bottom-screen rect x0..x1, y0..y1;
  * the copy is the framebuffer turned a quarter: pixel X, Y at
@@ -1912,7 +1920,7 @@ static void tgt_area(void) {
         if (e->py - e->pr < miny) miny = e->py - e->pr;
         if (e->py + e->pr > maxy) maxy = e->py + e->pr;
     }
-    const float aspect = (TGT_FX1 - TGT_FX0) / (float)(TGT_FY1 - TGT_FY0);
+    const float aspect = (TGT_FX1 - TGT_FX0) / (float)(tgt_fy1() - TGT_FY0);
     if (minx > maxx) { minx = 200; maxx = 400; miny = 60; maxy = 200; }
     float cx = (minx + maxx) / 2, cy = (miny + maxy) / 2;
     float w = maxx - minx + 24, h = maxy - miny + 24;
@@ -1934,14 +1942,21 @@ static float tgt_bx(float X) { return TGT_FX0 + (X - s_tgt_x0) * s_tgt_k; }
 static float tgt_by(float Y) { return TGT_FY0 + (Y - s_tgt_y0) * s_tgt_k; }
 
 static int tgt_tiles(void) { return s_tm.count < TGT_TILES ? s_tm.count : TGT_TILES; }
+/* 3 or 4 targets: two rows of two, wide enough for long names (GitHub #60) */
+static int tgt_cols(void) { return tgt_tiles() > 2 ? 2 : tgt_tiles(); }
 
 static void tgt_tile_rect(int slot, float *x0, float *y0, float *x1, float *y1) {
-    int n = tgt_tiles();
-    float gap = 5, w = (TGT_FX1 - TGT_FX0 - (n - 1) * gap) / n;
-    *x0 = TGT_FX0 + slot * (w + gap);
+    int cols = tgt_cols(), col = slot % cols, row = slot / cols;
+    float gap = 5, w = (TGT_FX1 - TGT_FX0 - (cols - 1) * gap) / cols;
+    *x0 = TGT_FX0 + col * (w + gap);
     *x1 = *x0 + w;
-    *y0 = TGT_TY0;
-    *y1 = TGT_TY1;
+    if (tgt_tiles() > 2) {
+        *y0 = TGT_FY1_2ROWS + 5 + row * 29;
+        *y1 = *y0 + 26;
+    } else {
+        *y0 = TGT_TY0;
+        *y1 = TGT_TY1;
+    }
 }
 
 static void draw_targets(void) {
@@ -1959,12 +1974,12 @@ static void draw_targets(void) {
     /* the stage */
     tgt_area();
     C3D_Tex *t = pm3ds_gfx_top_copy();
-    round_rect(TGT_FX0 - 2, TGT_FY0 - 2, TGT_FX1 + 2, TGT_FY1 + 2, 6, COL_PANEL_EDGE);
+    round_rect(TGT_FX0 - 2, TGT_FY0 - 2, TGT_FX1 + 2, tgt_fy1() + 2, 6, COL_PANEL_EDGE);
     if (t) {
-        float w = (TGT_FX1 - TGT_FX0) / s_tgt_k, h = (TGT_FY1 - TGT_FY0) / s_tgt_k;
-        top_area(t, s_tgt_x0, s_tgt_y0, s_tgt_x0 + w, s_tgt_y0 + h, TGT_FX0, TGT_FY0, TGT_FX1, TGT_FY1);
+        float w = (TGT_FX1 - TGT_FX0) / s_tgt_k, h = (tgt_fy1() - TGT_FY0) / s_tgt_k;
+        top_area(t, s_tgt_x0, s_tgt_y0, s_tgt_x0 + w, s_tgt_y0 + h, TGT_FX0, TGT_FY0, TGT_FX1, tgt_fy1());
     } else {
-        fill(TGT_FX0, TGT_FY0, TGT_FX1, TGT_FY1, RGBA(90, 70, 60, 255));
+        fill(TGT_FX0, TGT_FY0, TGT_FX1, tgt_fy1(), RGBA(90, 70, 60, 255));
     }
     for (int i = 0; i < s_tm.count; i++) {
         const pm3ds_tm_entry_t *e = &s_tm.e[i];
@@ -1973,12 +1988,12 @@ static void draw_targets(void) {
         float bx = tgt_bx(e->px), r = e->pr * s_tgt_k;
         if (sel) {   /* a soft box around the chosen one */
             float bt = tgt_by(e->py) - r, bb = tgt_by(e->py) + r;
-            round_rect(bx - r * 0.8f, bt < TGT_FY0 ? TGT_FY0 : bt, bx + r * 0.8f, bb > TGT_FY1 ? TGT_FY1 : bb, 8,
+            round_rect(bx - r * 0.8f, bt < TGT_FY0 ? TGT_FY0 : bt, bx + r * 0.8f, bb > tgt_fy1() ? tgt_fy1() : bb, 8,
                        RGBA(255, 214, 120, 70));
         }
         float my = tgt_by(e->py - e->pr * 0.75f) - 6;
         if (my < TGT_FY0 + 10) my = TGT_FY0 + 10;
-        if (my > TGT_FY1 - 10) my = TGT_FY1 - 10;
+        if (my > tgt_fy1() - 10) my = tgt_fy1() - 10;
         snprintf(buf, sizeof buf, "%d", i + 1);
         disc(bx, my, 9, sel ? RGBA(230, 120, 30, 255) : COL_PANEL_EDGE);
         disc(bx, my, 7, sel ? COL_SEL : COL_PANEL);
@@ -1996,17 +2011,18 @@ static void draw_targets(void) {
         bool sel = s_tm.all_targets || i == s_tm.cursor;
         tile(x0, y0, x1, y1, 7, sel ? COL_SEL : COL_TAB_ON);
         float right = x1 - 5;
-        if (n <= 2 && e->enemy) {   /* room for the HP: known once tattled */
+        float ty = y0 + (y1 - y0) / 2 - 9;   /* text centred in the tile (30 or 26 high) */
+        if (tgt_cols() <= 2 && e->enemy) {   /* room for the HP: known once tattled */
             bool known = e->cost_kind == PM3DS_TM_COST_HP;
             if (known) snprintf(buf, sizeof buf, ui_text("HP %d/%d"), e->cost, e->max_hp);
             else strcpy(buf, "HP ?");
-            text_right(right, y0 + 9, buf, 0.62f, known ? RGBA(200, 40, 40, 255) : COL_SUB);
+            text_right(right, ty + 3, buf, 0.62f, known ? RGBA(200, 40, 40, 255) : COL_SUB);
             right -= 52;
         }
         snprintf(buf, sizeof buf, "%d", i + 1);
-        text(x0 + 6, y0 + 6, buf, 0.85f, 0, COL_WHITE);
+        text(x0 + 6, ty, buf, 0.85f, 0, COL_WHITE);
         float left = x0 + 18;
-        text(left, y0 + 7, e->name, fit(e->name, right - left, 0.8f, 0.5f), 0, COL_WHITE);
+        text(left, ty + 1, e->name, fit(e->name, right - left, 0.8f, 0.5f), 0, COL_WHITE);
     }
 }
 
@@ -2017,7 +2033,7 @@ static bool targets_tap(int px, int py) {
         s_tm_page = np;
         return true;
     }
-    if (in(px, py, TGT_FX0, TGT_FY0, TGT_FX1, TGT_FY1) && s_tgt_k > 0) {   /* the nearest one in the picture */
+    if (in(px, py, TGT_FX0, TGT_FY0, TGT_FX1, tgt_fy1()) && s_tgt_k > 0) {   /* the nearest one in the picture */
         int best = -1;
         float bd = 1e9f;
         for (int i = 0; i < s_tm.count; i++) {
@@ -2160,9 +2176,10 @@ static bool tmenu_tap(int px, int py) {
 
 /* ---- Options and Controls pages ------------------------------------------ */
 /* their own rail: Settings, Controls, Debug */
-#define OPT_ROWS 7
+#define OPT_ROWS 9
 #define OPT_Y0 BODY_Y
-#define OPT_ROW_H 22
+#define OPT_ROW_H 18.5f   /* nine rows end just above the buttons */
+#define CHEAT_ROW_H 21
 static const char *const s_fps_names[2] = { "30 fps", "60 fps" };
 static const char *const s_text_names[TEXT_SPEEDS] = { "Normal", "Fast", "Instant" };
 
@@ -2181,7 +2198,7 @@ static void opt_row(int i, const char *label, const char *value) {
 static void draw_options(void) {
     char buf[16];
     page_title("Settings", "Tap a value to change it");
-    opt_row(0, "Screen", s_view_names[pm3ds_cfg.view_mode % 3]);
+    opt_row(0, "Screen", s_view_names[pm3ds_cfg.view_mode % 4]);
     opt_row(1, "Frame rate", s_fps_names[pm3ds_cfg.fps60]);
     {   /* Old 3DS: no 3D (gfx_present.c), say so instead of a setting that does nothing */
         extern bool pm3ds_lite_effects;
@@ -2192,6 +2209,8 @@ static void draw_options(void) {
     opt_row(4, "Fast-forward speed", buf);
     opt_row(5, "Fast-forward button", pm3ds_cfg.ff_toggle ? "Toggle" : "Hold");
     opt_row(6, "Update check", pm3ds_cfg.update_check ? "On" : "Off");
+    opt_row(7, "Heart & flower drops", pm3ds_cfg.stat_drops ? "On" : "Off");
+    opt_row(8, "Low HP beep", pm3ds_cfg.hp_beep ? "On" : "Off");
     small_text(12, 219, PM3DS_APP_NAME " v" PM3DS_VERSION_STR, 40, COL_PANEL_EDGE);
     button(s_btn_ff, "Back");
 }
@@ -2231,16 +2250,16 @@ static const char *const s_cheat_help[PM3DS_CHEAT_COUNT] = {
 static void draw_cheats(void) {
     page_title("Cheats", "Tap one to switch it");
     for (int i = 0; i < PM3DS_CHEAT_COUNT; i++) {
-        float y = OPT_Y0 + i * OPT_ROW_H;
+        float y = OPT_Y0 + i * CHEAT_ROW_H;
         bool on = pm3ds_cheat_on(i);
-        tile(CX0, y, CX1, y + OPT_ROW_H - 3, 6, on ? COL_SEL : COL_TAB_ON);
+        tile(CX0, y, CX1, y + CHEAT_ROW_H - 3, 6, on ? COL_SEL : COL_TAB_ON);
         ui_native_glyph_text(CX0 + 7, y + 3, s_cheat_names[i],
                              fit(s_cheat_names[i], 112, 0.82f, 0.6f), COL_WHITE);
         ui_native_glyph_text(CX0 + 124, y + 4, s_cheat_help[i],
                              fit(s_cheat_help[i], 96, 0.62f, 0.5f), COL_HINT);
-        chip(266, y + 2, CX1 - 4, y + OPT_ROW_H - 5, on ? "On" : "Off", on ? COL_GOLD : COL_OFF, 0.75f);
+        chip(266, y + 2, CX1 - 4, y + CHEAT_ROW_H - 5, on ? "On" : "Off", on ? COL_GOLD : COL_OFF, 0.75f);
     }
-    small_text_center((CX0 + CX1) / 2, OPT_Y0 + PM3DS_CHEAT_COUNT * OPT_ROW_H + 8, "Saved with this file.", 1.0f, COL_PANEL_EDGE);
+    small_text_center((CX0 + CX1) / 2, OPT_Y0 + PM3DS_CHEAT_COUNT * CHEAT_ROW_H + 8, "Saved with this file.", 1.0f, COL_PANEL_EDGE);
     button(s_btn_ff, "Back");
 }
 
@@ -2248,7 +2267,7 @@ static void button(const float x[2], const char *label) {
     round_rect(x[0] + 2, BTN_Y0 + 2, x[1] + 2, BTN_Y1 + 2, 10, COL_SHADOW);
     round_rect(x[0], BTN_Y0, x[1], BTN_Y1, 10, COL_PANEL_EDGE);
     round_rect(x[0] + 2, BTN_Y0 + 2, x[1] - 2, BTN_Y1 - 2, 8, COL_TAB_ON);
-    text_center((x[0] + x[1]) / 2, BTN_Y0 + 3, label, 1.0f, 0, COL_WHITE);
+    text_center((x[0] + x[1]) / 2, BTN_Y0 + 3, label, fit(label, x[1] - x[0] - 8, 1.0f, 0.6f), 0, COL_WHITE);
 }
 
 /* the middle button: Items in the world; with a menu open it holds B (Back),
@@ -2268,7 +2287,12 @@ static void draw_buttons(void) {
     uint16_t mid_pad;
     const char *mid = mid_button(&mid_pad);
     button(s_btn_opt, "Options");
-    if (mid) button(s_btn_items, mid);
+    if (mid && !mid_pad && s_info.in_game) {     /* the world: Items and Badges */
+        button(s_btn_items_half, mid);
+        button(s_btn_badges, "Badges");
+    } else if (mid) {
+        button(s_btn_items, mid);
+    }
     if (pm3ds_ff_button_on) {   /* lit while on */
         round_rect(s_btn_ff[0], BTN_Y0, s_btn_ff[1], BTN_Y1, 10, COL_PANEL_EDGE);
         round_rect(s_btn_ff[0] + 2, BTN_Y0 + 2, s_btn_ff[1] - 2, BTN_Y1 - 2, 8, RGBA(255, 196, 64, 255));
@@ -2781,7 +2805,7 @@ static void handle_touch(void) {
         }
     }
     if (s_tab == TAB_CHEATS) {
-        int row = (tp.py - OPT_Y0) / OPT_ROW_H;
+        int row = (tp.py - OPT_Y0) / CHEAT_ROW_H;
         if (back) s_tab = TAB_OPTIONS;
         else if (tp.px >= CX0 - 4 && tp.py >= OPT_Y0 && row < PM3DS_CHEAT_COUNT) pm3ds_cheat_toggle(row);
         return;
@@ -2794,7 +2818,7 @@ static void handle_touch(void) {
         int row = (tp.py - OPT_Y0) / OPT_ROW_H;
         if (tp.px < CX0 - 4 || tp.py < OPT_Y0 || row >= OPT_ROWS) return;
         switch (row) {
-            case 0: pm3ds_cfg.view_mode = (pm3ds_cfg.view_mode + 1) % 3; break;   /* Original -> Fill -> Wide */
+            case 0: pm3ds_cfg.view_mode = (pm3ds_cfg.view_mode + 1) % 4; break;   /* Original -> Fill -> Wide -> Sharp wide */
             case 1: pm3ds_cfg.fps60 = !pm3ds_cfg.fps60; break;
             case 2: {
                 extern bool pm3ds_lite_effects;
@@ -2805,6 +2829,8 @@ static void handle_touch(void) {
             case 4: pm3ds_cfg.ff_speed = pm3ds_cfg.ff_speed >= 4 ? 2 : pm3ds_cfg.ff_speed + 1; break;
             case 5: pm3ds_cfg.ff_toggle = !pm3ds_cfg.ff_toggle; break;
             case 6: pm3ds_cfg.update_check = !pm3ds_cfg.update_check; break;   /* from the next launch */
+            case 7: pm3ds_cfg.stat_drops = !pm3ds_cfg.stat_drops; break;
+            case 8: pm3ds_cfg.hp_beep = !pm3ds_cfg.hp_beep; break;
         }
         pm3ds_settings_save();
         return;
@@ -2833,7 +2859,8 @@ static void handle_touch(void) {
     } else if (s_info.in_game && in(tp.px, tp.py, s_btn_items[0], BTN_Y0, s_btn_items[1], BTN_Y1)) {
         uint16_t mid_pad;
         const char *mid = mid_button(&mid_pad);
-        if (mid && !mid_pad) pm3ds_touch_req = 1;   /* Items; Back/Swap are held above */
+        if (mid && !mid_pad)   /* Items or Badges; Back/Swap are held above */
+            pm3ds_touch_req = in(tp.px, tp.py, s_btn_badges[0], BTN_Y0, s_btn_badges[1], BTN_Y1) ? 3 : 1;
     } else if (battle_page()) {
         tmenu_tap(tp.px, tp.py);
     } else if (s_info.in_game && s_tab <= TAB_GAME_LAST && (r = rail_hit(tp.px, tp.py, NUM_GAME_TABS)) >= 0) {

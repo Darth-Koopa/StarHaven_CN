@@ -299,6 +299,8 @@ int main(void) {
               extern int pm3ds_gfx_extra_steps(void);
               int extra = pm3ds_gfx_extra_steps();   /* Old 3DS: frames behind, made up without drawing them */
               int steps = pm3ds_fast_forward() ? pm3ds_cfg.ff_speed : 1 + extra;
+              { extern bool pm3ds_steps_must_draw(void);
+                if (pm3ds_steps_must_draw()) steps = 1; }   /* the credits (hud_info.c) */
               for (int s = 0; s < steps; s++) {
                   if (s > 0) {   /* drop the lists of the step before (the queue is bounded) */
                       const void *skipped[16];

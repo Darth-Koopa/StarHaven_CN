@@ -260,6 +260,10 @@ void check_input_open_menus(void) {
             } else if (WorldMenuState == WORLD_MENU_STATE_NONE && evt_get_variable(nullptr, GB_StoryProgress) < STORY_EPILOGUE) {
                 if (req == 1) {
                     pressedButtons |= BUTTON_C_LEFT;    // the item menu, as its button opens it
+                } else if (req == 3) {                  // the pause menu, then its Badges page (pause_tabs.c)
+                    extern u32 pm3ds_pause_to_badges;
+                    pressedButtons |= BUTTON_START;
+                    pm3ds_pause_to_badges = gGameStatusPtr->frameCounter | 1;
                 } else if (req == 2) {                  // quick save: whenever the pause menu could open
                     // and not inside a house: rooms load closed, a save block map would put Mario back in one
                     if (partnerStatus->partnerActionState == PARTNER_ACTION_NONE && !pm3ds_player_in_room &&
@@ -269,7 +273,12 @@ void check_input_open_menus(void) {
                         gGameStatusPtr->savedPos.x = playerStatus->pos.x;
                         gGameStatusPtr->savedPos.y = playerStatus->pos.y;
                         gGameStatusPtr->savedPos.z = playerStatus->pos.z;
-                        fio_save_game(gGameStatusPtr->saveSlot);
+                        {   // marked, so loading it puts Mario back here on any map (quicksave.c, #37)
+                            extern bool pm3ds_qs_saving;
+                            pm3ds_qs_saving = true;
+                            fio_save_game(gGameStatusPtr->saveSlot);
+                            pm3ds_qs_saving = false;
+                        }
                         sfx_play_sound(SOUND_SAVE_CONFIRM);
                         pm3ds_quicksave_result = 1;
 #ifdef PM3DS_ROOM_DBG

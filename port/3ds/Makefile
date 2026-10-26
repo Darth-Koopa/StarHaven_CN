@@ -16,7 +16,7 @@
 # host-tests must NOT exist there — otherwise it'd be the first-listed
 # target in that scope and steal the implicit default goal from the .3dsx
 # / .elf rules.
-ifeq ($(filter build build_us build_ique,$(notdir $(CURDIR))),)
+ifeq ($(filter build build_us build_ique build_jp,$(notdir $(CURDIR))),)
 .PHONY: host-tests
 host-tests:
 	$(MAKE) -C tests run
@@ -51,10 +51,10 @@ include $(DEVKITARM)/3ds_rules
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
-# ROM target: pal = Europe, us = USA, ique = official Chinese iQue release.
+# ROM target: pal = Europe, us = USA, jp = Japan, ique = official Chinese iQue release.
 # Each target has its own build directory, generated assets, symbol script,
-# world-file list and ROM-data manifest.  Keep the iQue build independent
-# until it has been tested on hardware; the universal launcher can combine it.
+# world-file list and ROM-data manifest; include/pm3ds_rom_layout.h holds offsets.
+# The universal launcher currently combines PAL, US and iQue builds.
 PM3DS_VERSION	?=	pal
 ifeq ($(PM3DS_VERSION),pal)
 PM3DS_VFLAG	:=	-DVERSION_PAL=1
@@ -65,8 +65,11 @@ PM3DS_VSUFFIX	:=	_us
 else ifeq ($(PM3DS_VERSION),ique)
 PM3DS_VFLAG	:=	-DVERSION_IQUE=1
 PM3DS_VSUFFIX	:=	_ique
+else ifeq ($(PM3DS_VERSION),jp)
+PM3DS_VFLAG	:=	-DVERSION_JP=1
+PM3DS_VSUFFIX	:=	_jp
 else
-$(error PM3DS_VERSION must be pal, us or ique)
+$(error PM3DS_VERSION must be pal, us, jp or ique)
 endif
 TARGET		:=	PaperMario3DS$(PM3DS_VSUFFIX)
 BUILD		:=	build$(PM3DS_VSUFFIX)
@@ -259,12 +262,12 @@ LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map) \
 				-Wl,--wrap=set_background \
 				-Wl,--wrap=C3D_UpdateUniforms
 
-LIBS	:=	-lcitro3d -lctru -lm
+LIBS	:=	-lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lz -lcitro3d -lctru -lm
 
 #---------------------------------------------------------------------------------
 # libctru path
 #---------------------------------------------------------------------------------
-LIBDIRS	:=	$(CTRULIB)
+LIBDIRS	:=	$(PORTLIBS) $(CTRULIB)
 
 #---------------------------------------------------------------------------------
 # no real need to edit anything past this point unless you need to add additional
