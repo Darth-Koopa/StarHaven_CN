@@ -15,7 +15,7 @@
 #if defined(PM3DS_SHOP_TEST) || defined(PM3DS_HUD_TEST)
 #include "hud_element.h"
 #endif
-#if defined(PM3DS_BATTLE_SWEEP) || defined(PM3DS_STORY_SWEEP) || defined(PM3DS_AUTO_WIN) || defined(PM3DS_ENEMY_HP1)
+#if defined(PM3DS_BATTLE_SWEEP) || defined(PM3DS_STORY_SWEEP) || defined(PM3DS_AUTO_WIN) || defined(PM3DS_AUTO_LOSE) || defined(PM3DS_ENEMY_HP1)
 #include "../../../../src/battle/battle.h"
 #endif
 #ifdef PM3DS_BATTLE_SWEEP
@@ -29,7 +29,7 @@ void set_battle_formation(Battle* battle);
     defined(PM3DS_STORY_SWEEP) || defined(PM3DS_FX_SWEEP) || defined(PM3DS_NO_BATTLES) || \
     defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST) || defined(PM3DS_ENC_TEST) || defined(PM3DS_FX_LIST) || \
     defined(PM3DS_JOURNAL_TEST) || defined(PM3DS_NO_TITLE_DEMO) || defined(PM3DS_QUICKSAVE_EVERY) || \
-    defined(PM3DS_SHOP_DIALOG) || defined(PM3DS_MODEL_DUMP) || defined(PM3DS_TOUR) || defined(PM3DS_AUTO_WIN) || \
+    defined(PM3DS_SHOP_DIALOG) || defined(PM3DS_MODEL_DUMP) || defined(PM3DS_TOUR) || defined(PM3DS_AUTO_WIN) || defined(PM3DS_AUTO_LOSE) || \
     defined(PM3DS_ENEMY_HP1) || defined(PM3DS_RANDO_TEST) || defined(PM3DS_FLAME_TEST) || defined(PM3DS_MUS_DBG) || defined(PM3DS_GOTO)
 /* make_cia.sh refuses to publish a binary containing this string */
 __attribute__((used)) const char pm3ds_debug_build_marker[] = "PM3DS-DEBUG-BUILD";
@@ -388,6 +388,21 @@ static void pm3ds_auto_win_tick(void) {
 }
 #endif
 
+#ifdef PM3DS_AUTO_LOSE
+/* Debug: lose every battle PM3DS_AUTO_LOSE frames after it starts (game over and continue) */
+static void pm3ds_auto_lose_tick(void) {
+    static s32 timer;
+    if (get_game_mode() != GAME_MODE_BATTLE) {
+        timer = 0;
+        return;
+    }
+    if (++timer == PM3DS_AUTO_LOSE) {
+        pm3ds_log(2, "AUTOLOSE state=%d", (int)gBattleState);
+        btl_set_state(BATTLE_STATE_DEFEAT);
+    }
+}
+#endif
+
 #ifdef PM3DS_STORY_SWEEP
 /* Debug: visit maps with chosen story progress so their cutscenes run.
  * <SD folder>/story_sweep.txt holds "<map> <entry> <story>" per
@@ -552,7 +567,7 @@ void pm3ds_game_debug_tick(u32 frame) {
     defined(PM3DS_STORY_SWEEP) || defined(PM3DS_FX_SWEEP) || defined(PM3DS_NO_BATTLES) || \
     defined(PM3DS_SHOP_TEST) || defined(PM3DS_FX_DUST) || defined(PM3DS_ENC_TEST) || defined(PM3DS_FX_LIST) || \
     defined(PM3DS_JOURNAL_TEST) || defined(PM3DS_NO_TITLE_DEMO) || defined(PM3DS_QUICKSAVE_EVERY) || \
-    defined(PM3DS_SHOP_DIALOG) || defined(PM3DS_MODEL_DUMP) || defined(PM3DS_TOUR) || defined(PM3DS_AUTO_WIN) || \
+    defined(PM3DS_SHOP_DIALOG) || defined(PM3DS_MODEL_DUMP) || defined(PM3DS_TOUR) || defined(PM3DS_AUTO_WIN) || defined(PM3DS_AUTO_LOSE) || \
     defined(PM3DS_ENEMY_HP1) || defined(PM3DS_RANDO_TEST) || defined(PM3DS_FLAME_TEST) || defined(PM3DS_MUS_DBG) || defined(PM3DS_GOTO)
     if (frame == 1) {
         pm3ds_log(2, "%s", pm3ds_debug_build_marker);   /* keeps the marker linked */
@@ -602,6 +617,9 @@ void pm3ds_game_debug_tick(u32 frame) {
 #endif
 #ifdef PM3DS_BATTLE_SWEEP
     pm3ds_battle_sweep_tick(frame);
+#endif
+#ifdef PM3DS_AUTO_LOSE
+    pm3ds_auto_lose_tick();
 #endif
 #ifdef PM3DS_AUTO_WIN
     pm3ds_auto_win_tick();

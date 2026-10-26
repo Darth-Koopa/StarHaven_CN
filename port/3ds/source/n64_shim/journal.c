@@ -143,6 +143,8 @@ typedef struct {
 static const TrackedSpot sSpots[] = {
 #if VERSION_US
 #include "rando_locations_us.inc"
+#elif VERSION_JP
+#include "rando_locations_jp.inc"
 #else
 #include "rando_locations.inc"
 #endif

@@ -4,7 +4,8 @@
  * Cart offsets from ver/<version>/splat.yaml, for the data the port reads
  * straight from the ROM instead of through the decomp's link stubs. Only
  * #defines: assembly and the decomp's C include it too. Build with
- * -DVERSION_PAL=1 (Paper Mario (Europe)) or -DVERSION_US=1 (Paper Mario (USA)).
+ * -DVERSION_PAL=1 (Paper Mario (Europe)), -DVERSION_US=1 (Paper Mario (USA)) or
+ * -DVERSION_JP=1 (Mario Story (Japan)).
  */
 #ifndef PM3DS_ROM_LAYOUT_H
 #define PM3DS_ROM_LAYOUT_H
@@ -47,8 +48,28 @@
 #define PM3DS_ROM_GAME_ID       "NMQE"
 #define PM3DS_SAVE_NAME         "save_us.fla"   /* PAL saves have another layout */
 #define PM3DS_ROMDATA_PATH      "romfs:/romdata_us.bin"
+#elif VERSION_JP
+/* from ver/jp/splat.yaml; the CRC is filled in once a JP ROM has been checked */
+#define PM3DS_ROM_ICON          0x1D4720
+#define PM3DS_ROM_LOGOS         0x2065C0
+#define PM3DS_ROM_TITLE_BG_1    0x2215C0
+#define PM3DS_ROM_IMGFX_DATA    0x253C00
+#define PM3DS_ROM_SHADING       0x31DF90
+#define PM3DS_ROM_AUDIO         0xFC0000
+#define PM3DS_ROM_AUDIO_END     0x1A01AF0
+#define PM3DS_ROM_SPRITES       0x1A40000
+#define PM3DS_ROM_MAPFS         0x1E00000
+#define PM3DS_ROM_MAPFS_END     0x27BCB14
+#define PM3DS_ROM_MSG           0x1D40000
+#define PM3DS_ROM_DATA_SIZE     0x2800000
+#define PM3DS_ROM_CRC32         0           /* unknown yet: 0 = unchecked */
+#define PM3DS_ROM_NAME          "Mario Story (Japan)"
+#define PM3DS_ROM_SIZES         "40 MB"
+#define PM3DS_ROM_GAME_ID       "NMQJ"
+#define PM3DS_SAVE_NAME         "save_jp.fla"   /* JP saves have another layout */
+#define PM3DS_ROMDATA_PATH      "romfs:/romdata_jp.bin"
 #else
-#error "the 3DS port is built for VERSION_PAL or VERSION_US"
+#error "the 3DS port is built for VERSION_PAL, VERSION_US or VERSION_JP"
 #endif
 
 /* cart-tagged offset, as the decomp's DMA code takes it */

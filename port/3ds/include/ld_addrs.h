@@ -17,6 +17,8 @@
 #include "pm3ds_rom_layout.h"
 #if VERSION_PAL
 #include "../../../ver/pal/build/include/ld_addrs.h"
+#elif VERSION_JP
+#include "../../../ver/jp/build/include/ld_addrs.h"
 #else
 #include "../../../ver/us/build/include/ld_addrs.h"
 #endif

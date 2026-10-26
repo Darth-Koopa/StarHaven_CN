@@ -9,9 +9,9 @@
 #   sprite/player.h, sprite/npc/*.h   the port's generators, as for PAL
 #
 # Needs ver/<ver>/baserom.z64 split first (tools/extract_assets.py).
-# usage: gen_version_headers.sh us
+# usage: gen_version_headers.sh us|jp
 set -euo pipefail
-VER=${1:?version (us)}
+VER=${1:?version (us or jp)}
 PORT=$(realpath "$(dirname "$0")/..")
 ROOT=$(realpath "$PORT/../..")
 OUT=$PORT/gen/$VER

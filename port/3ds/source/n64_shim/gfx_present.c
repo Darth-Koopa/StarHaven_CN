@@ -554,6 +554,32 @@ static void apply_state(gfx_state_t *st, bool rect) {
             }
         }
         unsigned w = 0, h = 0;
+        if (u == 0 && st->tex_levels > 0 && gfx_combiner_uses_lod(st)) {
+            /* texture LOD: the tile chain as one mipmapped texture (gfx_texture.c) */
+            extern C3D_Tex *gfx_tex_get_mip(const gfx_state_t *st, int tile0, int levels, unsigned *w, unsigned *h, int *scale);
+            int scale = 1;
+            C3D_Tex *mt = gfx_tex_get_mip(st, tile, st->tex_levels, &w, &h, &scale);
+            if (mt) {
+                const gfx_tile_t *t = &st->tiles[tile];
+                extern void gfx_tex_wrap_modes(const gfx_tile_t *t, int *cms, int *cmt);
+                int cms, cmt;
+                gfx_tex_wrap_modes(t, &cms, &cmt);
+                GPU_TEXTURE_FILTER_PARAM f = linear ? GPU_LINEAR : GPU_NEAREST;
+                C3D_TexSetFilter(mt, f, f);
+                C3D_TexSetFilterMipmap(mt, GPU_LINEAR);
+                C3D_TexSetWrap(mt, (cms & 2) ? GPU_CLAMP_TO_EDGE : (cms & 1) ? GPU_MIRRORED_REPEAT : GPU_REPEAT,
+                               (cmt & 2) ? GPU_CLAMP_TO_EDGE : (cmt & 1) ? GPU_MIRRORED_REPEAT : GPU_REPEAT);
+                /* the GPU measures texels of the scaled-up texture per 3DS pixel; the
+                 * RDP measured level-0 texels per N64 pixel */
+                C3D_TexSetLodBias(mt, log2f(g_view_s) - log2f((float)scale));
+                pm3ds_tex_bind(0, mt);
+                g_tex[0].on = true;
+                g_tex[0].tile = t;
+                g_tex[0].w = (float)w;
+                g_tex[0].h = (float)h;
+                continue;
+            }
+        }
         GP_BEGIN(tt);
         PROF_PHASE(PH_TEX);
         gfx_tex_entry_t *e = gfx_tex_get(st, tile, &w, &h);

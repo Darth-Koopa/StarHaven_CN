@@ -22,7 +22,7 @@ VER = os.environ.get("PM3DS_VERSION", "pal")
 SPLAT = os.path.join(ROOT, "ver", VER, "splat.yaml")
 ROM = os.path.join(ROOT, "ver", VER, "baserom.z64")
 OUT = os.path.join(ROOT, "port", "3ds", "build_assets" + ("" if VER == "pal" else "_" + VER))
-# INCLUDE_RAW charset segments (pm_charset in splat.yaml; JP-only fonts absent)
+# INCLUDE_RAW charset segments (pm_charset in splat.yaml)
 CHARSET = {
     "pal": {
         "charset/standard.dat": (0x110CB0, 0x115FB0),
@@ -39,6 +39,20 @@ CHARSET = {
         "charset/subtitle.dat": (0x115910, 0x116498),
         "charset/subtitle/palette.dat": (0x116498, 0x1164A8),
         "charset/title/palette.dat": (0x1164A8, 0x1164B8),
+    },
+    # JP: kana, latin, kanji and menu fonts instead of the one standard font (ver/jp/splat.yaml)
+    "jp": {
+        "charset/kana.dat": (0x10F330, 0x114A40),
+        "charset/latin.dat": (0x114A40, 0x115610),
+        "charset/kanji.dat": (0x115610, 0x118B00),
+        "charset/buttons.dat": (0x118B00, 0x118F60),
+        "charset/menu_kana.dat": (0x118F60, 0x11C7A0),
+        "charset/menu_latin.dat": (0x11C7A0, 0x11CF38),
+        "charset/standard/palette.dat": (0x11CF38, 0x11D438),
+        "charset/title.dat": (0x11D438, 0x11E398),
+        "charset/subtitle.dat": (0x11E398, 0x11EF20),
+        "charset/subtitle/palette.dat": (0x11EF20, 0x11EF30),
+        "charset/title/palette.dat": (0x11EF30, 0x11EF40),
     },
 }
 

@@ -113,17 +113,24 @@ void quizmo_stage_appendGfx(void* effect) {
 
 #ifdef _3DS
     {
-        // 3DS port: the stage's four static matrices are big-endian bytes in the effect data
-        // (gfx/quizmo_stage.c, a char array), read as native Mtx words they put the curtains,
-        // spotlights and backdrop anywhere (a giant brown wedge, the rest missing: GitHub #59).
-        // Each Mtx word holds two 16-bit halves, so reverse every 32-bit word once.
-        static bool swapped;
-        if (!swapped) {
-            u32* w = (u32*)D_09004148_39CD08;
-            for (s32 i = 0; i < 4 * (s32)(sizeof(Mtx) / sizeof(u32)); i++) {
-                w[i] = __builtin_bswap32(w[i]);
+        // 3DS port: the stage's four static matrices sit in the effect data (gfx/quizmo_stage.c)
+        // as the N64 stores them: big-endian, the 16 integer halves first, then the 16 fraction
+        // halves. The port's Mtx is 16 plain s15.16 words (gu_impl.c), so convert each one once;
+        // read as is they placed the side walls, the backdrop and the bulb arc anywhere
+        // (GitHub #59, #61).
+        static bool converted;
+        if (!converted) {
+            u8* b = (u8*)D_09004148_39CD08;
+            for (s32 n = 0; n < 4; n++, b += 64) {
+                s32 fixed[16];
+                for (s32 k = 0; k < 16; k++) {
+                    u16 hi = (u16)(b[2 * k] << 8 | b[2 * k + 1]);
+                    u16 lo = (u16)(b[32 + 2 * k] << 8 | b[32 + 2 * k + 1]);
+                    fixed[k] = (s32)((u32)hi << 16 | lo);
+                }
+                memcpy(b, fixed, sizeof(fixed));
             }
-            swapped = true;
+            converted = true;
         }
     }
 #endif

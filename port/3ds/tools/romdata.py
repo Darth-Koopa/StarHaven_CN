@@ -31,7 +31,7 @@ import zlib
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(TOOLS, "..", "..", ".."))
-# PM3DS_VERSION=pal or us, as for make
+# PM3DS_VERSION=pal, us or jp, as for make
 VER = os.environ.get("PM3DS_VERSION", "pal")
 ASSETS = os.path.join(ROOT, "assets", VER)
 BUILD_ASSETS = os.path.join(ROOT, "port", "3ds", "build_assets" + ("" if VER == "pal" else "_" + VER))
@@ -52,7 +52,8 @@ COPY_PREFIXES = ("us_",)
 # the game's data, which the game checks and keeps (pm3ds_rom_layout.h): PAL's
 # 64 MB dumps repeat 0x2000000-0x3000000 after it (splat.yaml)
 ROM_NAME, ROM_DATA_SIZE = {"pal": (b"Paper Mario (Europe)", 0x3000000),
-                           "us": (b"Paper Mario (USA)", 0x2800000)}[VER]
+                           "us": (b"Paper Mario (USA)", 0x2800000),
+                           "jp": (b"Mario Story (Japan)", 0x2800000)}[VER]
 
 SHT_SYMTAB, SHT_REL = 2, 9
 R_ARM_ABS32 = 2
