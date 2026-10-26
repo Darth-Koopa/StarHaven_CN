@@ -42,14 +42,28 @@ if "#define UI_NATIVE_GLYPH_INK_SCALE 1.20f" not in source:
     raise SystemExit("expected 1.20x glyph-ink enlargement without changing nominal scales or advances")
 if "const float label_scale = 0.62f;" not in source:
     raise SystemExit("all left-rail labels must share one nominal native-glyph scale")
+if "fit(title, 160, 1.0f, 0.7f)" not in source:
+    raise SystemExit("page titles must use a 1.00x native scale before fit-to-width")
+if "#define LOG_TEXT_SCALE 0.85f" not in source or "#define DISH_DESC_SCALE 0.85f" not in source:
+    raise SystemExit("Tattle and recipe-description bodies must use 0.85x")
+if 'fit(nm, 52, 0.85f, 0.55f)' not in source:
+    raise SystemExit("partner names must use 0.85x native scale")
+if 's_tm.kind == PM3DS_TM_POPUP ? 0.85f : 0.9f' not in source:
+    raise SystemExit("item/partner popup names must use 0.85x native scale")
+if 'fit(name, x1 - x0 - 26, 1.0f, 0.5f)' not in source:
+    raise SystemExit("recipe names must use a 1.00x native scale before fit-to-width")
+if 'fit(s_cheat_names[i], 112, 1.0f, 0.6f)' not in source:
+    raise SystemExit("cheat option names must use a 1.00x native scale before fit-to-width")
+if 'text_center(160, 124, s_info.demo ? "- Demo -" : "Press START to play", 1.0f' not in source:
+    raise SystemExit("startup Press START text must stay at 1.00x")
 if "float label_scale = strlen(tabs[i].name)" in source:
     raise SystemExit("left-rail labels must not vary in scale with English source length")
 for label in (
     "ui_native_glyph_text_center_fit(cx, y0 + 19, tabs[i].name, label_scale",
     'ui_native_glyph_text_center_fit(vx0 + 58, vy1 - 20, "Drag to look", 0.7f',
-    "ui_native_glyph_text_fit(x0 + 7, y0 + 3, s_log.name[i], 0.8f",
-    "ui_native_glyph_text_fit(x, y0 + 3, a->name, 0.75f",
-    "ui_native_glyph_text_fit(CX0 + 7, y + 3, label, 0.82f",
+    "ui_native_glyph_text_fit(x0 + 7, y0 + 3, s_log.name[i], 1.0f",
+    "ui_native_glyph_text_fit(x, y0 + 3, a->name, 1.0f",
+    "ui_native_glyph_text_fit(CX0 + 7, y + 3, label, 1.0f",
     "ui_native_glyph_text_center_fit((bx0 + bx1) / 2, (by0 + by1) / 2 - 6.5f, value, 0.75f",
 ):
     if label not in source:
@@ -72,4 +86,7 @@ with translation_csv.open("r", encoding="utf-8-sig", newline="") as stream:
     rows = list(csv.DictReader(stream))
 if not any(r["source_file"] == "bottom_screen.c" and r["english_source"] == "Checked" and r["proposed_simplified_chinese"] == "已完成" for r in rows):
     raise SystemExit("Checked translation must be 已完成")
-print("Unified row renderers and Checked translation checks passed")
+for source_text, expected_text in (("Heart & flower drops", "心 & 鲜花掉落"), ("Low HP beep", "低HP哔哔")):
+    if not any(r["source_file"] == "bottom_screen.c" and r["english_source"] == source_text and r["proposed_simplified_chinese"] == expected_text for r in rows):
+        raise SystemExit(f"missing settings translation: {source_text} -> {expected_text}")
+print("Unified row renderers, scale targets, and settings translations checks passed")

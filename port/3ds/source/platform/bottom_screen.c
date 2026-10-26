@@ -937,7 +937,7 @@ static void chip(float x0, float y0, float x1, float y1, const char *label, u32 
 }
 
 static void page_title(const char *title, const char *sub) {
-    text(CX0 + 2, HEAD_Y, title, fit(title, 160, 1.05f, 0.7f), 0, COL_WHITE);
+    text(CX0 + 2, HEAD_Y, title, fit(title, 160, 1.0f, 0.7f), 0, COL_WHITE);
     if (sub) text(CX0 + 2, SUB_Y, sub, 0.8f, 0, COL_SUB);
 }
 
@@ -1247,7 +1247,7 @@ static void draw_party(void) {
         image(owned ? UI_IMG_PARTNER_FIRST + i : UI_IMG_PARTNER_DISABLED_FIRST + i, (x0 + x1) / 2 - 18, y0 + 6, 1.125f,
               COL_WHITE);
         const char *nm = owned ? names[i] : "???";
-        text_center((x0 + x1) / 2, y0 + 47, nm, fit(nm, 52, 0.8f, 0.55f), 0,
+        text_center((x0 + x1) / 2, y0 + 47, nm, fit(nm, 52, 0.85f, 0.55f), 0,
                     owned ? COL_WHITE : RGBA(255, 255, 255, 140));
     }
     if (h->partners_owned) text_center((CX0 + CX1) / 2, 191, "Tap a partner to switch", 0.7f, 0, COL_HINT);
@@ -1289,7 +1289,7 @@ static char s_log_display[4096]; /* includes translated inline stat labels */
 static int s_log_hp, s_log_atk, s_log_def;                 /* from the open tattle, -1 if it has none */
 #define LOG_ROWS 7
 #define LOG_PER_PAGE (LOG_ROWS * 2)
-#define LOG_TEXT_SCALE 0.8f
+#define LOG_TEXT_SCALE 0.85f
 #define LOG_LINE_H 15
 #define LOG_TEXT_Y1 200
 
@@ -1403,7 +1403,7 @@ static void draw_log(void) {
         if (s_log_text_page >= pages) s_log_text_page = 0;
         chip(CX0, HEAD_Y - 1, CX0 + 50, HEAD_Y + 19, "Back", COL_SEL, 0.85f);
         const char *name = s_log.name[s_log_open];
-        text(CX0 + 58, HEAD_Y, name, fit(name, 190 - (pages > 1 ? 30 : 0), 1.05f, 0.6f), 0, COL_WHITE);
+        text(CX0 + 58, HEAD_Y, name, fit(name, 190 - (pages > 1 ? 30 : 0), 1.0f, 0.6f), 0, COL_WHITE);
         if (pages > 1) {
             snprintf(buf, sizeof buf, "%d/%d", s_log_text_page + 1, pages);
             text_right(CX1, HEAD_Y + 3, buf, 0.75f, COL_HINT);
@@ -1451,7 +1451,7 @@ static void draw_log(void) {
         float x0, y0, x1, y1;
         log_entry_rect(slot, &x0, &y0, &x1, &y1);
         tile(x0, y0, x1, y1, 6, COL_TAB_ON);
-        ui_native_glyph_text_fit(x0 + 7, y0 + 3, s_log.name[i], 0.8f, x1 - x0 - 14, COL_WHITE);
+        ui_native_glyph_text_fit(x0 + 7, y0 + 3, s_log.name[i], 1.0f, x1 - x0 - 14, COL_WHITE);
     }
 }
 
@@ -1513,7 +1513,7 @@ static void draw_found(void) {
         float avail = (f->rando ? 262 : 158) - x;
         /* Area names are button labels too; keep them readable without crossing
          * the fixed collection counters on the non-randomizer page. */
-        ui_native_glyph_text_fit(x, y0 + 3, a->name, 0.75f, avail - 4, done ? COL_DONE : COL_WHITE);
+        ui_native_glyph_text_fit(x, y0 + 3, a->name, 1.0f, avail - 4, done ? COL_DONE : COL_WHITE);
         if (!f->rando) {
             count_cell(178, y0 + 1, a->sp_found, a->sp_total, 0.72f);
             count_cell(212, y0 + 1, a->badge_found, a->badge_total, 0.72f);
@@ -1540,9 +1540,9 @@ static int s_dish_lines;
 #define COOK_ALL_X0 150
 #define COOK_ALL_X1 214
 #define DISH_DESC_Y 58
-#define DISH_DESC_SCALE 0.7f
-#define DISH_DESC_LINE_H 12
-#define DISH_DESC_LINES 3
+#define DISH_DESC_SCALE 0.85f
+#define DISH_DESC_LINE_H 13
+#define DISH_DESC_LINES 6
 #define DISH_WAY_H 19
 
 static bool cook_known(int i) { return s_cook.done[i] || s_cook_all; }
@@ -1661,7 +1661,7 @@ static void draw_cook(void) {
         draw_icon(s_cook.icon[i], x0 + 4, y0 + 2, 14, s_cook.done[i] ? COL_WHITE : RGBA(70, 45, 25, known ? 200 : 150));
         const char *name = known ? s_cook.name[i] : "???";
         ui_native_glyph_text(x0 + 21, y0 + 3, name,
-                             fit(name, x1 - x0 - 26, 0.75f, 0.5f),
+                             fit(name, x1 - x0 - 26, 1.0f, 0.5f),
                              known ? COL_WHITE : RGBA(255, 255, 255, 170));
     }
 }
@@ -2109,8 +2109,11 @@ static void draw_tmenu(void) {
         }
         float left = x0 + 6;
         if (draw_icon(e->icon, x0 + 4, y0 + 3, 20, e->enabled ? COL_WHITE : RGBA(255, 255, 255, 160))) left += 22;
-        float sc = fit(e->name, right - left, 0.9f, 0.55f);
-        text(left, y0 + 5 + (0.9f - sc) * 8, e->name, sc, 0, tc);
+        /* Popup entries include item and partner names; use their requested
+         * 0.85x native scale while leaving battle move labels unchanged. */
+        float name_base_scale = s_tm.kind == PM3DS_TM_POPUP ? 0.85f : 0.9f;
+        float sc = fit(e->name, right - left, name_base_scale, 0.55f);
+        text(left, y0 + 5 + (name_base_scale - sc) * 8, e->name, sc, 0, tc);
     }
 }
 
@@ -2186,7 +2189,7 @@ static const char *const s_text_names[TEXT_SPEEDS] = { "Normal", "Fast", "Instan
 static void opt_row(int i, const char *label, const char *value) {
     float y = OPT_Y0 + i * OPT_ROW_H;
     tile(CX0, y, CX1, y + OPT_ROW_H - 3, 6, COL_TAB_ON);
-    ui_native_glyph_text_fit(CX0 + 7, y + 3, label, 0.82f, 150, COL_WHITE);
+    ui_native_glyph_text_fit(CX0 + 7, y + 3, label, 1.0f, 150, COL_WHITE);
     float bx0 = 226, by0 = y + 2, bx1 = CX1 - 4, by1 = y + OPT_ROW_H - 5;
     round_rect(bx0, by0, bx1, by1, 7, COL_PANEL_EDGE);
     round_rect(bx0 + 2, by0 + 2, bx1 - 2, by1 - 2, 5, COL_SEL);
@@ -2254,7 +2257,7 @@ static void draw_cheats(void) {
         bool on = pm3ds_cheat_on(i);
         tile(CX0, y, CX1, y + CHEAT_ROW_H - 3, 6, on ? COL_SEL : COL_TAB_ON);
         ui_native_glyph_text(CX0 + 7, y + 3, s_cheat_names[i],
-                             fit(s_cheat_names[i], 112, 0.82f, 0.6f), COL_WHITE);
+                             fit(s_cheat_names[i], 112, 1.0f, 0.6f), COL_WHITE);
         ui_native_glyph_text(CX0 + 124, y + 4, s_cheat_help[i],
                              fit(s_cheat_help[i], 96, 0.62f, 0.5f), COL_HINT);
         chip(266, y + 2, CX1 - 4, y + CHEAT_ROW_H - 5, on ? "On" : "Off", on ? COL_GOLD : COL_OFF, 0.75f);

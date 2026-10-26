@@ -81,6 +81,8 @@ Options,bottom_screen.c,Fast-forward button,快进按键,
 Options,bottom_screen.c,Toggle,切换,
 Options,bottom_screen.c,Hold,按住,
 Options,bottom_screen.c,Update check,检查更新,
+Options,bottom_screen.c,Heart & flower drops,心 & 鲜花掉落,
+Options,bottom_screen.c,Low HP beep,低HP哔哔,
 Options / New game,bottom_screen.c,On,开启,同一短标签同时用于设置页和新游戏随机模式页。
 Options / New game,bottom_screen.c,Off,关闭,同一短标签同时用于设置页和新游戏随机模式页。
 Options,bottom_screen.c,Defaults,恢复默认,
