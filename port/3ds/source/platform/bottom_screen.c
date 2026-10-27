@@ -94,9 +94,9 @@ static C3D_Tex s_small;      /* libctru's 8x8 console font: crisp small text */
 static bool s_small_ok;
 
 /* ---- state --------------------------------------------------------------- */
-enum { TAB_STATS, TAB_MAP, TAB_PARTY, TAB_LOG, TAB_FOUND, TAB_COOK, TAB_DEBUG, TAB_OPTIONS, TAB_CONTROLS, TAB_CHEATS };
-#define TAB_GAME_LAST TAB_COOK    /* the tabs on the rail in game */
-#define NUM_GAME_TABS (TAB_GAME_LAST + 1)
+enum { TAB_STATS, TAB_MAP, TAB_PARTY, TAB_LOG, TAB_FOUND, TAB_COOK, TAB_BADGES, TAB_DEBUG, TAB_OPTIONS, TAB_CONTROLS, TAB_CHEATS };
+#define TAB_GAME_LAST TAB_BADGES  /* the game's pages (Badges opens from its button, not the rail) */
+#define NUM_GAME_TABS (TAB_COOK + 1)
 static int s_tab = TAB_STATS;
 static pm3ds_hud_info_t s_info;
 static unsigned s_frame;
@@ -562,7 +562,7 @@ static void bar(float x, float y, float w, float h, int v, int max, u32 col) {
 #define BTN_Y1 234
 static const float s_btn_opt[2] = { 8, 104 };
 static const float s_btn_items[2] = { 112, 208 };
-/* in the world the middle button is two: Items and Badges (the pause menu's Badges page) */
+/* in the world the middle button is two: Items and Badges (the Badges page) */
 static const float s_btn_items_half[2] = { 112, 158 };
 static const float s_btn_badges[2] = { 162, 208 };
 static const float s_btn_ff[2] = { 216, 312 };
@@ -1488,6 +1488,66 @@ static void cook_tap(int px, int py) {
 static const float s_pad_stick[4] = { 60, 56, 156, 100 };   /* x0 y0 x1 y1: hold the stick left */
 
 static bool tm_open(void) { return s_tm.kind != PM3DS_TM_NONE && s_info.in_game; }
+/* ---- Badges: the pause menu's badge list, a tap puts one on or takes it off ---- */
+static pm3ds_badge_list_t s_badges;
+static int s_badge_page, s_badge_msg, s_badge_msg_timer;   /* s_badge_msg: PM3DS_BADGE_* of the last tap */
+
+/* the Recipes grid, a little tighter so a line fits under it */
+static void badge_entry_rect(int slot, float *x0, float *y0, float *x1, float *y1) {
+    *x0 = CX0 + (slot / COOK_ROWS) * 126;
+    *y0 = 53 + (slot % COOK_ROWS) * 20;
+    *x1 = *x0 + 122;
+    *y1 = *y0 + 18;
+}
+
+static void draw_badges(void) {
+    char buf[48];
+    int pages = pages_of(s_badges.count, COOK_PER_PAGE), left = s_badges.bp_max - s_badges.bp_used;
+    if (s_badge_page >= pages) s_badge_page = 0;
+    snprintf(buf, sizeof buf, T("BP left: %d of %d"), left, s_badges.bp_max);
+    page_title("Badges", buf);
+    pager(s_badge_page, pages);
+    bar(CX0 + 2, BODY_Y, CX1 - CX0 - 2, 5, s_badges.bp_used, s_badges.bp_max, COL_GOLD);
+    if (s_badges.count == 0) {
+        text_center((CX0 + CX1) / 2, 100, "No badges yet.", 0.8f, 0, COL_HINT);
+    }
+    for (int slot = 0; slot < COOK_PER_PAGE; slot++) {
+        int i = s_badge_page * COOK_PER_PAGE + slot;
+        if (i >= s_badges.count) break;
+        float x0, y0, x1, y1;
+        badge_entry_rect(slot, &x0, &y0, &x1, &y1);
+        bool on = s_badges.on[i], fits = on || s_badges.cost[i] <= left;
+        tile(x0, y0, x1, y1, 6, on ? COL_SEL : fits ? COL_TAB_ON : COL_OFF);
+        draw_icon(s_badges.icon[i], x0 + 4, y0 + 2, 14, fits ? COL_WHITE : RGBA(255, 255, 255, 150));
+        text(x0 + 21, y0 + 1, s_badges.name[i], fit(s_badges.name[i], x1 - x0 - 42, 0.75f, 0.45f), 0, COL_WHITE);
+        snprintf(buf, sizeof buf, "%d", s_badges.cost[i]);
+        text_right(x1 - 5, y0 + 2, buf, 0.75f, on ? COL_WHITE : COL_HINT);
+    }
+    const char *msg = NULL;
+    if (!s_badges.can_change) msg = "Badges change outside battles and menus.";
+    else if (s_badge_msg_timer > 0 && s_badge_msg == PM3DS_BADGE_NO_BP) msg = "Not enough BP.";
+    else if (s_badge_msg_timer > 0 && s_badge_msg == PM3DS_BADGE_TOO_MANY) msg = "Too many badges on.";
+    else if (s_badges.count > 0) msg = "Tap a badge to put it on or take it off.";
+    if (msg) text_center((CX0 + CX1) / 2, 53 + COOK_ROWS * 20 - 1, msg, fit(msg, CX1 - CX0 - 8, 0.62f, 0.45f), 0, COL_HINT);
+}
+
+static void badges_tap(int px, int py) {
+    int np = pager_tap(px, py, s_badge_page, pages_of(s_badges.count, COOK_PER_PAGE));
+    if (np >= 0) { s_badge_page = np; return; }
+    for (int slot = 0; slot < COOK_PER_PAGE; slot++) {
+        int i = s_badge_page * COOK_PER_PAGE + slot;
+        if (i >= s_badges.count) break;
+        float x0, y0, x1, y1;
+        badge_entry_rect(slot, &x0, &y0, &x1, &y1);
+        if (in(px, py, x0, y0 - 1, x1, y1 + 2)) {
+            s_badge_msg = pm3ds_badge_toggle(s_badges.item[i]);
+            s_badge_msg_timer = 120;
+            pm3ds_badge_query(&s_badges);
+            return;
+        }
+    }
+}
+
 static bool battle_page(void) { return s_info.in_battle && s_tab <= TAB_GAME_LAST; }
 
 static int tm_pages(void) { return (s_tm.count + TM_PER_PAGE - 1) / TM_PER_PAGE; }
@@ -1972,7 +2032,7 @@ static const char *const s_opt_sections[] = { "Display", "Gameplay", "System" };
 #define OPT_LIST_N (int)(sizeof s_opt_list / sizeof s_opt_list[0])
 #define OPT_ROW_PX 23             /* a setting */
 #define OPT_HEAD_PX 17            /* a section title */
-#define OPT_LIST_Y1 202           /* the list's bottom (the panel face ends at 204) */
+#define OPT_LIST_Y1 198           /* the list's bottom, a line above the panel face's end (204) */
 #define OPT_LIST_X1 (CX1 - 9)     /* the scroll bar to its right */
 static float s_opt_scroll;
 
@@ -2010,12 +2070,75 @@ static const char *const s_opt_labels[OPT_COUNT] = {
     "Heart & flower drops", "Low HP beep", "Update check",
 };
 
+/* Quit game (in game, GitHub #67): back to the title, saving first or not.
+ * Saving goes through src/world/menus.c (pm3ds_touch_req 5, the quick save's
+ * checks); quitting without saving is the game's soft reset, which the N64
+ * reset button started at any moment. */
+volatile int pm3ds_quit_result;   /* menus.c: 1 saved and quitting, -1 can't save now */
+static int s_quit;                /* 0 closed, 1 asking, 2 waiting for the save, 3 can't save now */
+static int s_quit_timer;
+#define QUIT_X0 74
+#define QUIT_X1 300
+#define QUIT_ROW_Y(i) (96 + (i) * 30)
+
+static void quit_now(void) {
+    extern void pm3ds_quit_to_title(void);
+    pm3ds_quit_to_title();
+    s_quit = 0;
+    s_tab = TAB_STATS;
+}
+
+static void draw_quit(void) {
+    static const char *const rows[3] = { "Save and quit", "Quit without saving", "Cancel" };
+    panel(QUIT_X0 - 6, 52, QUIT_X1 + 6, 196, COL_PANEL);
+    text_center((QUIT_X0 + QUIT_X1) / 2, 62, "Quit to the title screen?", 0.9f, 0, COL_WHITE);
+    for (int i = 0; i < 3; i++) {
+        u32 face = i == 0 && s_quit == 2 ? RGBA(255, 196, 64, 255) : i == 2 ? COL_OFF : COL_SEL;
+        chip(QUIT_X0 + 20, QUIT_ROW_Y(i), QUIT_X1 - 20, QUIT_ROW_Y(i) + 22, rows[i], face, 0.8f);
+    }
+    if (s_quit == 3) text_center((QUIT_X0 + QUIT_X1) / 2, 182, "Can't save right now.", 0.62f, 0, COL_HINT);
+}
+
+static void quit_tap(int px, int py) {
+    for (int i = 0; i < 3; i++) {
+        if (!in(px, py, QUIT_X0 + 16, QUIT_ROW_Y(i) - 3, QUIT_X1 - 16, QUIT_ROW_Y(i) + 25)) continue;
+        if (i == 0 && s_quit != 2) {
+            pm3ds_quit_result = 0;
+            pm3ds_touch_req = 5;
+            s_quit = 2;
+            s_quit_timer = 0;
+        } else if (i == 1) {
+            quit_now();
+        } else if (i == 2) {
+            s_quit = 0;
+        }
+        return;
+    }
+}
+
+static void quit_tick(void) {
+    if (s_quit != 2) return;
+    if (pm3ds_quit_result == 0 && ++s_quit_timer > 45) {   /* the world menus didn't run: a battle, a cutscene */
+        if (pm3ds_touch_req == 5) pm3ds_touch_req = 0;
+        pm3ds_quit_result = -1;
+    }
+    if (pm3ds_quit_result > 0) {
+        s_quit = 0;
+        s_tab = TAB_STATS;
+    } else if (pm3ds_quit_result < 0) {
+        s_quit = 3;
+    }
+}
+
 static void draw_options(void) {
     char buf[48];
     float max = opt_scroll_max();
     if (s_opt_scroll > max) s_opt_scroll = max;
     if (s_opt_scroll < 0) s_opt_scroll = 0;
     float y = OPT_Y0 - s_opt_scroll;
+    /* rows cut at the list's edges (rotated framebuffer: x = 240 - screen y) */
+    flush();
+    C3D_SetScissor(GPU_SCISSOR_NORMAL, 240 - OPT_LIST_Y1, 0, 240 - (OPT_Y0 - 2), 320);
     for (int k = 0; k < OPT_LIST_N; k++) {
         float h = opt_item_h(k);
         if (y + h > OPT_Y0 - 4 && y < OPT_LIST_Y1 + 4) {
@@ -2034,9 +2157,13 @@ static void draw_options(void) {
         }
         y += h;
     }
+    flush();
+    C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
     /* what scrolled past the list's edges: the panel face over it again, then the title */
     fill(CX0 - 4, PANEL_Y0 + 3, CX1 + 4, OPT_Y0 - 2, COL_PANEL);
     fill(CX0 - 4, OPT_LIST_Y1, CX1 + 4, PANEL_Y1 - 2, COL_PANEL);
+    if (s_opt_scroll < max)   /* more below: a line where the list is cut */
+        fill(CX0, OPT_LIST_Y1 + 1, OPT_LIST_X1, OPT_LIST_Y1 + 2, COL_PANEL_EDGE);
     page_title("Settings", "Drag to scroll, tap to change");
     if (max > 0) {   /* the scroll bar */
         float track = OPT_LIST_Y1 - OPT_Y0, view = track / (track + max);
@@ -2044,8 +2171,10 @@ static void draw_options(void) {
         round_rect(CX1 - 5, OPT_Y0, CX1 - 1, OPT_LIST_Y1, 2, COL_PANEL_EDGE);
         round_rect(CX1 - 5, ty, CX1 - 1, ty + th, 2, COL_SEL);
     }
-    small_text(12, 219, PM3DS_APP_NAME " v" PM3DS_VERSION_STR, 40, COL_PANEL_EDGE);
+    if (s_info.in_game) button(s_btn_opt, "Quit game");
+    else small_text(12, 219, PM3DS_APP_NAME " v" PM3DS_VERSION_STR, 40, COL_PANEL_EDGE);
     button(s_btn_ff, "Back");
+    if (s_quit) draw_quit();
 }
 
 /* a tap on the list (released without dragging): the setting at y */
@@ -2562,6 +2691,7 @@ static void draw_menu_page(void) {
             case TAB_LOG:   draw_log();   break;
             case TAB_FOUND: draw_found(); break;
             case TAB_COOK:  draw_cook();  break;
+            case TAB_BADGES: draw_badges(); break;
         }
     }
     draw_buttons();
@@ -2582,6 +2712,7 @@ static void select_tab(int tab) {
     if (tab == TAB_FOUND) s_found_open = -1;
     if (tab == TAB_MAP) s_map_follow = true;
     if (tab == TAB_COOK) { s_cook_open = -1; pm3ds_recipe_query(&s_cook); }
+    if (tab == TAB_BADGES) { s_badge_msg_timer = 0; pm3ds_badge_query(&s_badges); }
 }
 
 static void handle_touch(void) {
@@ -2598,7 +2729,7 @@ static void handle_touch(void) {
     {   /* the Settings list: drag to scroll, a tap acts on release */
         static bool opt_held;
         static int opt_x0, opt_y0, opt_prev_y, opt_moved;
-        bool on_list = s_tab == TAB_OPTIONS && s_ng_page == NG_CLOSED && !import_notice_up() && !update_notice_up();
+        bool on_list = s_tab == TAB_OPTIONS && !s_quit && s_ng_page == NG_CLOSED && !import_notice_up() && !update_notice_up();
         if (pressed && on_list && in(tp.px, tp.py, CX0 - 4, OPT_Y0, CX1 + 4, OPT_LIST_Y1)) {
             opt_held = true;
             opt_x0 = tp.px; opt_y0 = opt_prev_y = tp.py;
@@ -2669,7 +2800,7 @@ static void handle_touch(void) {
     bool back = in(tp.px, tp.py, s_btn_ff[0], BTN_Y0, s_btn_ff[1], BTN_Y1);
     if (s_tab == TAB_OPTIONS || s_tab == TAB_CONTROLS || s_tab == TAB_CHEATS) {
         rail_tab_t tabs[4];
-        int ids[4], r = rail_hit(tp.px, tp.py, opt_rail(tabs, ids));
+        int ids[4], r = s_quit ? -1 : rail_hit(tp.px, tp.py, opt_rail(tabs, ids));
         if (r >= 0) {
             s_tab = ids[r];
             return;
@@ -2682,10 +2813,16 @@ static void handle_touch(void) {
         return;
     }
     if (s_tab == TAB_OPTIONS) {
+        if (s_quit) {
+            if (back) s_quit = 0;
+            else quit_tap(tp.px, tp.py);
+            return;
+        }
         if (back) {
             s_tab = s_tab_before_options;
             return;
         }
+        if (s_info.in_game && in(tp.px, tp.py, s_btn_opt[0], BTN_Y0, s_btn_opt[1], BTN_Y1)) s_quit = 1;
         return;   /* the list acts on release (handle_touch) */
     }
     if (s_tab == TAB_CONTROLS) {
@@ -2712,8 +2849,10 @@ static void handle_touch(void) {
     } else if (s_info.in_game && in(tp.px, tp.py, s_btn_items[0], BTN_Y0, s_btn_items[1], BTN_Y1)) {
         uint16_t mid_pad;
         const char *mid = mid_button(&mid_pad);
-        if (mid && !mid_pad)   /* Items or Badges; Back/Swap are held above */
-            pm3ds_touch_req = in(tp.px, tp.py, s_btn_badges[0], BTN_Y0, s_btn_badges[1], BTN_Y1) ? 3 : 1;
+        if (mid && !mid_pad) {   /* Items or Badges; Back/Swap are held above */
+            if (in(tp.px, tp.py, s_btn_badges[0], BTN_Y0, s_btn_badges[1], BTN_Y1)) select_tab(TAB_BADGES);
+            else pm3ds_touch_req = 1;
+        }
     } else if (battle_page()) {
         tmenu_tap(tp.px, tp.py);
     } else if (s_info.in_game && s_tab <= TAB_GAME_LAST && (r = rail_hit(tp.px, tp.py, NUM_GAME_TABS)) >= 0) {
@@ -2726,6 +2865,8 @@ static void handle_touch(void) {
         log_tap(tp.px, tp.py);
     } else if (s_info.in_game && s_tab == TAB_COOK) {
         cook_tap(tp.px, tp.py);
+    } else if (s_info.in_game && s_tab == TAB_BADGES) {
+        badges_tap(tp.px, tp.py);
     } else if (s_info.in_game && s_tab == TAB_FOUND) {
         found_tap(tp.px, tp.py);
     } else if (s_info.in_game && s_tab == TAB_PARTY && partner_at(tp.px, tp.py)) {
@@ -2784,12 +2925,16 @@ void pm3ds_bottom_screen_tick(unsigned frame) {
     if (!s_font_ok && (frame % 30) == 0) build_font();
     if (frame % 5 == 0) pm3ds_hud_query(&s_info);
     qs_tick();
+    if (!s_info.in_game) s_quit = 0;
+    quit_tick();
+    if (s_badge_msg_timer > 0) s_badge_msg_timer--;
     /* the log and tracker read a few hundred flags: only while shown, twice a second */
     if (s_info.in_game && frame % 30 == 0) {
         if (s_tab == TAB_LOG && s_log_open < 0) pm3ds_tattle_query(&s_log);
         if (s_tab == TAB_STATS || s_tab == TAB_MAP || s_tab == TAB_FOUND) pm3ds_tracker_query(&s_found);
         if (s_tab == TAB_FOUND && s_found_open >= 0) pm3ds_tracker_spots(s_found_open, &s_spots);
         if (s_tab == TAB_COOK && s_cook_open < 0) pm3ds_recipe_query(&s_cook);
+        if (s_tab == TAB_BADGES) pm3ds_badge_query(&s_badges);
     }
     pm3ds_tm_get(&s_tm);
     if (s_tm.kind == PM3DS_TM_TARGET && s_info.in_battle) pm3ds_gfx_request_top_copy();   /* the portraits */

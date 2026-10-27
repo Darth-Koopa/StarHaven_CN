@@ -87,6 +87,23 @@ typedef struct {
     char name[PM3DS_RECIPE_MAX][PM3DS_RECIPE_NAME];
 } pm3ds_recipe_list_t;
 int pm3ds_recipe_query(pm3ds_recipe_list_t *out);
+
+/* Badges (n64_shim/journal.c): the badges Mario has, in the pause menu's order,
+ * and switching one on or off from the bottom screen */
+#define PM3DS_BADGE_MAX  128
+#define PM3DS_BADGE_NAME 24
+typedef struct {
+    int count, bp_max, bp_used;
+    int can_change;                               /* in the world, no menu or battle open */
+    short item[PM3DS_BADGE_MAX];
+    unsigned char cost[PM3DS_BADGE_MAX];
+    unsigned char on[PM3DS_BADGE_MAX];            /* equipped */
+    const void *icon[PM3DS_BADGE_MAX];            /* HudScript */
+    char name[PM3DS_BADGE_MAX][PM3DS_BADGE_NAME];
+} pm3ds_badge_list_t;
+int pm3ds_badge_query(pm3ds_badge_list_t *out);
+enum { PM3DS_BADGE_REMOVED, PM3DS_BADGE_EQUIPPED, PM3DS_BADGE_NO_BP, PM3DS_BADGE_TOO_MANY, PM3DS_BADGE_NOT_NOW };
+int pm3ds_badge_toggle(int item);
 /* one dish: what it does and every way to cook it */
 #define PM3DS_RECIPE_WAYS  48
 #define PM3DS_RECIPE_INGR  36

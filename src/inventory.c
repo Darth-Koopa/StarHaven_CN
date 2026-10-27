@@ -1,5 +1,11 @@
 #include "common.h"
 #include "hud_element.h"
+#ifdef _3DS
+#include "pm3ds_keyitems.h"   // key item slots past PlayerData's 32
+#else
+#define KEY_SLOTS ARRAY_COUNT(gPlayerData.keyItems)
+#define KEY_ITEM(i) (gPlayerData.keyItems[i])
+#endif
 
 #define FULLY_EXTENDED_Y  18
 #define FULLY_RETRACTED_Y -100
@@ -90,8 +96,8 @@ void clear_player_data(void) {
         playerData->partners[i].unk_02[2] = 0;
     }
 
-    for (i = 0; i < ARRAY_COUNT(playerData->keyItems); i++) {
-        playerData->keyItems[i] = ITEM_NONE;
+    for (i = 0; i < KEY_SLOTS; i++) {
+        KEY_ITEM(i) = ITEM_NONE;
     }
 
     for (i = 0; i < ARRAY_COUNT(playerData->badges); i++) {
@@ -195,13 +201,13 @@ s32 find_item(s32 itemID) {
 
     if (item->typeFlags & ITEM_TYPE_FLAG_KEY) {
         // check key items
-        for (i = 0; i < ARRAY_COUNT(playerData->keyItems); i++) {
-            if (playerData->keyItems[i] == itemID) {
+        for (i = 0; i < KEY_SLOTS; i++) {
+            if (KEY_ITEM(i) == itemID) {
                 break;
             }
         }
 
-        if (i >= ARRAY_COUNT(playerData->keyItems)) {
+        if (i >= KEY_SLOTS) {
             return -1;
         }
 

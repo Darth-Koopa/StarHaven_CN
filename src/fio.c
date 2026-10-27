@@ -386,6 +386,7 @@ void fio_deserialize_state(void) {
         pm3ds_rando_deserialize(saveData->unk_1304);
         pm3ds_cheats_deserialize(saveData->unk_1304);
         { extern void pm3ds_qs_deserialize(const void* tail); pm3ds_qs_deserialize(saveData->unk_1304); }
+        { extern void pm3ds_keys_deserialize(const void* tail); pm3ds_keys_deserialize(saveData->unk_1304); }
     }
 #endif
 }
@@ -431,6 +432,7 @@ void fio_serialize_state(void) {
         pm3ds_rando_serialize(saveData->unk_1304);
         pm3ds_cheats_serialize(saveData->unk_1304);
         { extern void pm3ds_qs_serialize(void* tail); pm3ds_qs_serialize(saveData->unk_1304); }
+        { extern void pm3ds_keys_serialize(void* tail); pm3ds_keys_serialize(saveData->unk_1304); }
     }
 #endif
 }

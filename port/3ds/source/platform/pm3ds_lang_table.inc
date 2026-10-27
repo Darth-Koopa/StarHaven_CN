@@ -237,3 +237,17 @@ TR("Coin", "Münze", "Pièce", "Moneda", "Moneta", "コイン")
 /* randomizer: enemies */
 TR("Enemies", "Gegner", "Ennemis", "Enemigos", "Nemici", "てき")
 TR("Every enemy group fights as another group from the same chapter.", "Jede Gegnergruppe kämpft als eine andere aus demselben Kapitel.", "Chaque groupe d'ennemis devient un autre du même chapitre.", "Cada grupo de enemigos lucha como otro del mismo capítulo.", "Ogni gruppo di nemici combatte come un altro dello stesso capitolo.", "てきのグループが、おなじ章のべつのグループになる。")
+/* bottom screen: Badges page */
+TR("BP left: %d of %d", "BP frei: %d von %d", "PB libres : %d sur %d", "PM libres: %d de %d", "PM liberi: %d su %d", "のこりBP %d／%d")
+TR("No badges yet.", "Noch keine Orden.", "Pas encore de badges.", "Aún no tienes medallas.", "Ancora nessuna medaglia.", "バッジは まだ ありません")
+TR("Badges change outside battles and menus.", "Orden wechseln außerhalb von Kämpfen und Menüs.", "Badges modifiables hors combat et hors menu.", "Cambia medallas fuera de combates y menús.", "Cambia medaglie fuori da lotte e menu.", "バトルとメニューの そとで つけかえ")
+TR("Not enough BP.", "Nicht genug BP.", "Pas assez de PB.", "No tienes suficientes PM.", "PM insufficienti.", "BPが たりません")
+TR("Too many badges on.", "Zu viele Orden angelegt.", "Trop de badges équipés.", "Demasiadas medallas puestas.", "Troppe medaglie equipaggiate.", "バッジを つけすぎです")
+TR("Tap a badge to put it on or take it off.", "Orden antippen zum Anlegen oder Ablegen.", "Touche un badge pour l'équiper ou le retirer.", "Toca una medalla para ponerla o quitarla.", "Tocca una medaglia per metterla o toglierla.", "バッジを タッチで つけはずし")
+/* bottom screen: Quit game */
+TR("Quit game", "Spiel beenden", "Quitter", "Salir", "Esci", "やめる")
+TR("Quit to the title screen?", "Zurück zum Titelbild?", "Revenir à l'écran titre ?", "¿Volver a la pantalla de título?", "Tornare alla schermata del titolo?", "タイトルに もどりますか？")
+TR("Save and quit", "Speichern und beenden", "Sauvegarder et quitter", "Guardar y salir", "Salva ed esci", "セーブして やめる")
+TR("Quit without saving", "Ohne Speichern beenden", "Quitter sans sauvegarder", "Salir sin guardar", "Esci senza salvare", "セーブしないで やめる")
+TR("Cancel", "Abbrechen", "Annuler", "Cancelar", "Annulla", "キャンセル")
+TR("Can't save right now.", "Speichern geht gerade nicht.", "Impossible de sauvegarder maintenant.", "Ahora no se puede guardar.", "Ora non si può salvare.", "いまは セーブできません")

@@ -242,6 +242,7 @@ void check_input_open_menus(void) {
         // Mario never moved again)
         extern volatile s32 pm3ds_touch_req;
         extern volatile s32 pm3ds_quicksave_result;
+        extern volatile s32 pm3ds_quit_result;
         extern s32 NextPartnerCommand;
         extern s32 pm3ds_player_in_room;
         s32 req = pm3ds_touch_req;
@@ -249,6 +250,8 @@ void check_input_open_menus(void) {
             pm3ds_touch_req = 0;
             if (req == 2) {
                 pm3ds_quicksave_result = -1;   // unless it gets through below
+            } else if (req == 5) {
+                pm3ds_quit_result = -1;
             }
             // riding Lakilester/Sushie or hiding with Bow, the partner's input drives the menus
             s32 partnerDrives = partnerStatus->partnerActionState != PARTNER_ACTION_NONE &&
@@ -264,7 +267,7 @@ void check_input_open_menus(void) {
                     extern u32 pm3ds_pause_to_badges;
                     pressedButtons |= BUTTON_START;
                     pm3ds_pause_to_badges = gGameStatusPtr->frameCounter | 1;
-                } else if (req == 2) {                  // quick save: whenever the pause menu could open
+                } else if (req == 2 || req == 5) {      // quick save (5: then quit to the title): whenever the pause menu could open
                     // and not inside a house: rooms load closed, a save block map would put Mario back in one
                     if (partnerStatus->partnerActionState == PARTNER_ACTION_NONE && !pm3ds_player_in_room &&
                         can_open_world_menu(currentButtons, BUTTON_START)) {
@@ -280,7 +283,13 @@ void check_input_open_menus(void) {
                             pm3ds_qs_saving = false;
                         }
                         sfx_play_sound(SOUND_SAVE_CONFIRM);
-                        pm3ds_quicksave_result = 1;
+                        if (req == 5) {
+                            extern void pm3ds_quit_to_title(void);
+                            pm3ds_quit_result = 1;
+                            pm3ds_quit_to_title();
+                        } else {
+                            pm3ds_quicksave_result = 1;
+                        }
 #ifdef PM3DS_ROOM_DBG
                         { extern void pm3ds_log(int, const char*, ...); pm3ds_log(2, "ROOMDBG quicksave ok"); }
 #endif

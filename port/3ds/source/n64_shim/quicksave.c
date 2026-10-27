@@ -84,3 +84,10 @@ void pm3ds_qs_step(void) {
 void pm3ds_qs_new_game(void) {
     sRestore = false;
 }
+
+/* platform/bottom_screen.c, Quit game (GitHub #67): the game's soft reset (src/main_loop.c), as the
+ * N64 reset button started it: the screen fades out, then startup clears the state for the title */
+void pm3ds_quit_to_title(void) {
+    sfx_play_sound(SOUND_MENU_NEXT);
+    gOverrideFlags |= GLOBAL_OVERRIDES_SOFT_RESET;
+}

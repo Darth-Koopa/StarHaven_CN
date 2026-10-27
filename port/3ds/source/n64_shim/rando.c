@@ -44,6 +44,7 @@
 
 #include "pm3ds_brand.h"
 #include "pm3ds_log.h"
+#include "pm3ds_keyitems.h"
 #include "pm3ds_rando.h"
 
 enum { SRC_ITEM, SRC_BLOCK, SRC_TREE, SRC_BUSH, SRC_PANEL, SRC_CHEST, SRC_GIFT, SRC_HIDDEN_BLOCK };
@@ -555,10 +556,10 @@ API_CALLABLE(pm3ds_RandoAddGift) {
         if (item == ITEM_KOOPA_FORTRESS_KEY) {
             playerData->fortressKeyCount++;   // and into the list: the fortress doors look there
         }
-        for (i = 0; i < ARRAY_COUNT(playerData->keyItems) && playerData->keyItems[i] != ITEM_NONE; i++) {
+        for (i = 0; i < KEY_SLOTS && KEY_ITEM(i) != ITEM_NONE; i++) {
         }
-        if (i < ARRAY_COUNT(playerData->keyItems)) {
-            playerData->keyItems[i] = item;
+        if (i < KEY_SLOTS) {
+            KEY_ITEM(i) = item;
         }
     } else if (type == ITEM_TYPE_BADGE) {
         idx = add_badge(item);
@@ -846,8 +847,8 @@ void pm3ds_rando_test_tick(void) {
         if (timer > 120 && timer <= 900 && timer % 60 == 0 && loc >= 0) {
             ItemEntity* e = id >= 0 ? get_item_entity(id) : nullptr;
             s32 nk = 0, last = 0;
-            for (k = 0; k < ARRAY_COUNT(gPlayerData.keyItems); k++) {
-                if (gPlayerData.keyItems[k] != ITEM_NONE) { nk++; last = gPlayerData.keyItems[k]; }
+            for (k = 0; k < KEY_SLOTS; k++) {
+                if (KEY_ITEM(k) != ITEM_NONE) { nk++; last = KEY_ITEM(k); }
             }
             pm3ds_log(2, "RANDOSPOT t=%d: entity %s item %d state %d flags %08X | flag %d | %d key items, last %d | coins %d",
                       (int)timer, e ? "there" : "gone", e ? e->itemID : -1, e ? e->state : -1, e ? (unsigned)e->flags : 0,

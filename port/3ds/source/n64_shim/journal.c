@@ -17,6 +17,7 @@
 #include "battle/battle.h"
 #include "hud_element.h"
 #include "map.h"
+#include "game_modes.h"
 
 #include <string.h>
 
@@ -409,6 +410,86 @@ int pm3ds_recipe_query(pm3ds_recipe_list_t* out) {
     }
     out->count = sNumRecipes;
     return out->count;
+}
+
+/* ---- Badges ------------------------------------------------------------------ */
+s32 pause_badges_try_equip(s16 badgeID);
+s32 pause_badges_try_remove(s16 badgeID);
+s32 pause_get_total_equipped_bp_cost(void);
+void enforce_hpfp_limits(void);
+s32 pm3ds_cheats_badge_bp(s32 bp);
+
+static char sBadgeName[ITEM_LAST_BADGE + 1][PM3DS_BADGE_NAME];   /* decoded on first use */
+
+static bool badge_can_change(void) {
+    return gGameStatusPtr != nullptr && get_game_mode() == GAME_MODE_WORLD;   /* not in battle or a menu */
+}
+
+static bool badge_on(s32 item) {
+    for (s32 i = 0; i < ARRAY_COUNT(gPlayerData.equippedBadges); i++) {
+        if (gPlayerData.equippedBadges[i] == item) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int pm3ds_badge_query(pm3ds_badge_list_t* out) {
+    out->count = 0;
+    if (gGameStatusPtr == nullptr) {
+        return 0;
+    }
+    for (s32 i = 0; i < ARRAY_COUNT(gPlayerData.badges) && out->count < PM3DS_BADGE_MAX; i++) {
+        s32 item = gPlayerData.badges[i];
+        if (!IS_BADGE(item)) {
+            continue;
+        }
+        /* in the pause menu's order (pause_badges_comparator), by insertion */
+        s32 k = out->count++;
+        while (k > 0 && gItemTable[out->item[k - 1]].sortValue > gItemTable[item].sortValue) {
+            out->item[k] = out->item[k - 1];
+            k--;
+        }
+        out->item[k] = item;
+    }
+    for (s32 k = 0; k < out->count; k++) {
+        s32 item = out->item[k];
+        if (sBadgeName[item][0] == 0) {
+            pm3ds_decode_msg(gItemTable[item].nameMsg, sBadgeName[item], PM3DS_BADGE_NAME, false);
+        }
+        memcpy(out->name[k], sBadgeName[item], PM3DS_BADGE_NAME);
+        out->cost[k] = gMoveTable[gItemTable[item].moveID].costBP;
+        out->on[k] = badge_on(item);
+        out->icon[k] = item_hud_script(item);
+    }
+    out->bp_max = pm3ds_cheats_badge_bp(gPlayerData.maxBP);
+    out->bp_used = pause_get_total_equipped_bp_cost();
+    out->can_change = badge_can_change();
+    return out->count;
+}
+
+/* platform/bottom_screen.c, a badge tapped: on if it fits, off if it was on (as the pause menu does) */
+int pm3ds_badge_toggle(int item) {
+    if (!badge_can_change() || !IS_BADGE(item)) {
+        return PM3DS_BADGE_NOT_NOW;
+    }
+    switch (pause_badges_try_equip(item)) {
+        case 0:   // EQUIP_RESULT_ALREADY_EQUIPPED
+            pause_badges_try_remove(item);
+            sfx_play_sound(SOUND_MENU_BADGE_UNEQUIP);
+            enforce_hpfp_limits();
+            return PM3DS_BADGE_REMOVED;
+        case 1:   // EQUIP_RESULT_NOT_ENOUGH_BP
+            sfx_play_sound(SOUND_MENU_ERROR);
+            return PM3DS_BADGE_NO_BP;
+        case 2:   // EQUIP_RESULT_TOO_MANY_BADGES
+            sfx_play_sound(SOUND_MENU_ERROR);
+            return PM3DS_BADGE_TOO_MANY;
+        default:
+            sfx_play_sound(SOUND_MENU_BADGE_EQUIP);
+            enforce_hpfp_limits();
+            return PM3DS_BADGE_EQUIPPED;
+    }
 }
 
 /* the detail's ingredient slot for item, added on first use */

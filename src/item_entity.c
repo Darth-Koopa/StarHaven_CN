@@ -1,4 +1,10 @@
 #include "common.h"
+#ifdef _3DS
+#include "pm3ds_keyitems.h"   // key item slots past PlayerData's 32
+#else
+#define KEY_SLOTS ARRAY_COUNT(gPlayerData.keyItems)
+#define KEY_ITEM(i) (gPlayerData.keyItems[i])
+#endif
 #include "effects.h"
 #include "hud_element.h"
 #include "pause/pause_common.h"
@@ -2196,14 +2202,14 @@ void update_item_entity_pickup(ItemEntity* item) {
                 }
 
                 if (gItemTable[item->itemID].typeFlags & ITEM_TYPE_FLAG_KEY) {
-                    for (i = 0; i < ARRAY_COUNT(playerData->keyItems); i++) {
-                        if (playerData->keyItems[i] == ITEM_NONE) {
+                    for (i = 0; i < KEY_SLOTS; i++) {
+                        if (KEY_ITEM(i) == ITEM_NONE) {
                             break;
                         }
                     }
 
-                    if (i < ARRAY_COUNT(playerData->keyItems)) {
-                        playerData->keyItems[i] = item->itemID;
+                    if (i < KEY_SLOTS) {
+                        KEY_ITEM(i) = item->itemID;
                     } else {
                         item->state = ITEM_PICKUP_STATE_SHOW_TOO_MANY;
                         goto block_47; // TODO required to match

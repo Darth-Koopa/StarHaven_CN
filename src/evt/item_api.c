@@ -1,6 +1,12 @@
 #include "common.h"
 #include "pause/pause_common.h"
 #include "hud_element.h"
+#ifdef _3DS
+#include "pm3ds_keyitems.h"   // key item slots past PlayerData's 32
+#else
+#define KEY_SLOTS ARRAY_COUNT(gPlayerData.keyItems)
+#define KEY_ITEM(i) (gPlayerData.keyItems[i])
+#endif
 #include "world/partners.h"
 
 extern PopupMenu D_802DB830;
@@ -28,8 +34,8 @@ API_CALLABLE(ShowKeyChoicePopup) {
 
             gOverrideFlags |= GLOBAL_OVERRIDES_40;
 
-            for (i = 0; i < ARRAY_COUNT(playerData->keyItems); i++) {
-                s16 invItem = playerData->keyItems[i];
+            for (i = 0; i < KEY_SLOTS; i++) {
+                s16 invItem = KEY_ITEM(i);
 
                 if (invItem != ITEM_NONE) {
                     s32 found = false;
@@ -44,7 +50,7 @@ API_CALLABLE(ShowKeyChoicePopup) {
                     }
 
                     if (found) {
-                        ItemData* item = &gItemTable[playerData->keyItems[i]];
+                        ItemData* item = &gItemTable[KEY_ITEM(i)];
 
                         menu->ptrIcon[numEntries] = gItemHudScripts[item->hudElemID].enabled;
                         menu->userIndex[numEntries] = i;
@@ -87,7 +93,7 @@ API_CALLABLE(ShowKeyChoicePopup) {
                     t = menu->userIndex[script->functionTemp[2] - 1];
 
                     script->varTable[1] = t;
-                    script->varTable[0] = playerData->keyItems[t];
+                    script->varTable[0] = KEY_ITEM(t);
                     return ApiStatus_DONE1;
                 }
             }
@@ -190,9 +196,8 @@ API_CALLABLE(ShowConsumableChoicePopup) {
 API_CALLABLE(RemoveKeyItemAt) {
     Bytecode* args = script->ptrReadPos;
     s32 index = evt_get_variable(script, *args++);
-    s16* ptrKeyItems = gPlayerData.keyItems;
 
-    ptrKeyItems[index] = ITEM_NONE;
+    KEY_ITEM(index) = ITEM_NONE;
     return ApiStatus_DONE2;
 }
 
@@ -222,14 +227,14 @@ API_CALLABLE(AddKeyItem) {
         // gives one this way; the randomizer's chests do.
     }
 
-    for (i = 0; i < ARRAY_COUNT(playerData->keyItems); i++) {
-        if (playerData->keyItems[i] == ITEM_NONE) {
+    for (i = 0; i < KEY_SLOTS; i++) {
+        if (KEY_ITEM(i) == ITEM_NONE) {
             break;
         }
     }
 
-    if (i < ARRAY_COUNT(playerData->keyItems)) {
-        playerData->keyItems[i] = itemID;
+    if (i < KEY_SLOTS) {
+        KEY_ITEM(i) = itemID;
     }
     return ApiStatus_DONE2;
 }
@@ -249,12 +254,12 @@ API_CALLABLE(HasKeyItem) {
     PlayerData* playerData = &gPlayerData;
     s32 i;
 
-    for (i = 0; i < ARRAY_COUNT(playerData->keyItems); i++) {
-        if (playerData->keyItems[i] == itemID) {
+    for (i = 0; i < KEY_SLOTS; i++) {
+        if (KEY_ITEM(i) == itemID) {
             break;
         }
     }
-    evt_set_variable(script, value, i < ARRAY_COUNT(playerData->keyItems));
+    evt_set_variable(script, value, i < KEY_SLOTS);
     return ApiStatus_DONE2;
 }
 
@@ -266,14 +271,14 @@ API_CALLABLE(FindKeyItem) {
     s32 i;
     s32 itemIndex;
 
-    for (i = 0; i < ARRAY_COUNT(playerData->keyItems); i++) {
-        if (playerData->keyItems[i] == itemID) {
+    for (i = 0; i < KEY_SLOTS; i++) {
+        if (KEY_ITEM(i) == itemID) {
             break;
         }
     }
 
     itemIndex = -1;
-    if (i != ARRAY_COUNT(playerData->keyItems)) {
+    if (i != KEY_SLOTS) {
         itemIndex = i;
     }
 
