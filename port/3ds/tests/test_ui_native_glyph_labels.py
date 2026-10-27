@@ -43,16 +43,18 @@ for name in ("ui_native_glyph_text_fit_ink", "ui_native_glyph_text_center_fit_in
 if "#define UI_NATIVE_GLYPH_INK_SCALE 1.20f" not in source:
     raise SystemExit("default glyph-ink enlargement must remain available for UI elements that use it")
 for snippet in (
-    'ui_native_glyph_text_fit_original(x0 + 7, y0 + 3, s_log.name[i], 1.0f',
-    'ui_native_glyph_text_fit_original(x, y0 + 3, a->name, 1.0f',
-    'ui_native_glyph_text_original(x0 + 21, y0 + 3, name,',
-    'ui_native_glyph_text_fit_original(CX0 + 7, y + 3, label, 1.0f',
-    'ui_native_glyph_text_original(CX0 + 7, y + 3, s_cheat_names[i],',
+    'ui_native_glyph_text_fit_original(x0 + 7, y0 + 2, s_log.name[i], 1.0f',
+    'ui_native_glyph_text_fit_original(x, y0 + 1, a->name, 1.0f',
+    'ui_native_glyph_text_original(x0 + 21, y0 + 2, name,',
+    'ui_native_glyph_text_fit_original(CX0 + 7, y + 3, label, 0.82f',
+    'ui_native_glyph_text_original(CX0 + 7, y + 2, s_cheat_names[i],',
 ):
     if snippet not in source:
         raise SystemExit(f"requested name/label must bypass extra 1.20x ink scale: {snippet}")
 if "const float label_scale = 0.62f;" not in source:
     raise SystemExit("all left-rail labels must share one nominal native-glyph scale")
+if "ui_native_glyph_text_fit_original(CX0 + 7, y + 3, label, 0.82f, 150, COL_WHITE);" not in source:
+    raise SystemExit("settings left labels must use 0.82x scale")
 if "fit(title, 160, 1.0f, 0.7f)" not in source:
     raise SystemExit("page titles must use a 1.00x native scale before fit-to-width")
 if "#define LOG_TEXT_SCALE 0.85f" not in source or "#define DISH_DESC_SCALE 0.85f" not in source:
@@ -72,9 +74,9 @@ if "float label_scale = strlen(tabs[i].name)" in source:
 for label in (
     "ui_native_glyph_text_center_fit(cx, y0 + 19, tabs[i].name, label_scale",
     'ui_native_glyph_text_center_fit(vx0 + 58, vy1 - 20, "Drag to look", 0.7f',
-    "ui_native_glyph_text_fit_original(x0 + 7, y0 + 3, s_log.name[i], 1.0f",
-    "ui_native_glyph_text_fit_original(x, y0 + 3, a->name, 1.0f",
-    "ui_native_glyph_text_fit_original(CX0 + 7, y + 3, label, 1.0f",
+    "ui_native_glyph_text_fit_original(x0 + 7, y0 + 2, s_log.name[i], 1.0f",
+    "ui_native_glyph_text_fit_original(x, y0 + 1, a->name, 1.0f",
+    "ui_native_glyph_text_fit_original(CX0 + 7, y + 3, label, 0.82f",
     "ui_native_glyph_text_center_fit((bx0 + bx1) / 2, (by0 + by1) / 2 - 6.5f, value, 0.75f",
 ):
     if label not in source:
@@ -84,8 +86,8 @@ print("Native iQue glyph renderer and scale-preserving ink enlargement checks pa
 
 # Recipe and cheat labels should share the native iQue glyph renderer and row baseline.
 for expected in (
-    'ui_native_glyph_text_original(x0 + 21, y0 + 3, name,',
-    'ui_native_glyph_text_original(CX0 + 7, y + 3, s_cheat_names[i],',
+    'ui_native_glyph_text_original(x0 + 21, y0 + 2, name,',
+    'ui_native_glyph_text_original(CX0 + 7, y + 2, s_cheat_names[i],',
     'ui_native_glyph_text(CX0 + 124, y + 4, s_cheat_help[i],',
 ):
     if expected not in source:

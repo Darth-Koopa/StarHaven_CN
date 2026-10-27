@@ -1474,7 +1474,7 @@ static void draw_log(void) {
         float x0, y0, x1, y1;
         log_entry_rect(slot, &x0, &y0, &x1, &y1);
         tile(x0, y0, x1, y1, 6, COL_TAB_ON);
-        ui_native_glyph_text_fit_original(x0 + 7, y0 + 3, s_log.name[i], 1.0f, x1 - x0 - 14, COL_WHITE);
+        ui_native_glyph_text_fit_original(x0 + 7, y0 + 2, s_log.name[i], 1.0f, x1 - x0 - 14, COL_WHITE);
     }
 }
 
@@ -1536,7 +1536,7 @@ static void draw_found(void) {
         float avail = (f->rando ? 262 : 158) - x;
         /* Area names are button labels too; keep them readable without crossing
          * the fixed collection counters on the non-randomizer page. */
-        ui_native_glyph_text_fit_original(x, y0 + 3, a->name, 1.0f, avail - 4, done ? COL_DONE : COL_WHITE);
+        ui_native_glyph_text_fit_original(x, y0 + 1, a->name, 1.0f, avail - 4, done ? COL_DONE : COL_WHITE);
         if (!f->rando) {
             count_cell(178, y0 + 1, a->sp_found, a->sp_total, 0.72f);
             count_cell(212, y0 + 1, a->badge_found, a->badge_total, 0.72f);
@@ -1683,7 +1683,7 @@ static void draw_cook(void) {
         /* not cooked: a dark silhouette, the name hidden unless "Show all" */
         draw_icon(s_cook.icon[i], x0 + 4, y0 + 2, 14, s_cook.done[i] ? COL_WHITE : RGBA(70, 45, 25, known ? 200 : 150));
         const char *name = known ? s_cook.name[i] : "???";
-        ui_native_glyph_text_original(x0 + 21, y0 + 3, name,
+        ui_native_glyph_text_original(x0 + 21, y0 + 2, name,
                              fit(name, x1 - x0 - 26, 1.0f, 0.5f),
                              known ? COL_WHITE : RGBA(255, 255, 255, 170));
     }
@@ -2212,7 +2212,7 @@ static const char *const s_text_names[TEXT_SPEEDS] = { "Normal", "Fast", "Instan
 static void opt_row(int i, const char *label, const char *value) {
     float y = OPT_Y0 + i * OPT_ROW_H;
     tile(CX0, y, CX1, y + OPT_ROW_H - 3, 6, COL_TAB_ON);
-    ui_native_glyph_text_fit_original(CX0 + 7, y + 3, label, 1.0f, 150, COL_WHITE);
+    ui_native_glyph_text_fit_original(CX0 + 7, y + 3, label, 0.82f, 150, COL_WHITE);
     float bx0 = 226, by0 = y + 2, bx1 = CX1 - 4, by1 = y + OPT_ROW_H - 5;
     round_rect(bx0, by0, bx1, by1, 7, COL_PANEL_EDGE);
     round_rect(bx0 + 2, by0 + 2, bx1 - 2, by1 - 2, 5, COL_SEL);
@@ -2279,7 +2279,7 @@ static void draw_cheats(void) {
         float y = OPT_Y0 + i * CHEAT_ROW_H;
         bool on = pm3ds_cheat_on(i);
         tile(CX0, y, CX1, y + CHEAT_ROW_H - 3, 6, on ? COL_SEL : COL_TAB_ON);
-        ui_native_glyph_text_original(CX0 + 7, y + 3, s_cheat_names[i],
+        ui_native_glyph_text_original(CX0 + 7, y + 2, s_cheat_names[i],
                              fit(s_cheat_names[i], 112, 1.0f, 0.6f), COL_WHITE);
         ui_native_glyph_text(CX0 + 124, y + 4, s_cheat_help[i],
                              fit(s_cheat_help[i], 96, 0.62f, 0.5f), COL_HINT);
