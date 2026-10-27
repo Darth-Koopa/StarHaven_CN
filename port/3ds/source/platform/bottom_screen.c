@@ -2212,7 +2212,7 @@ static const char *const s_text_names[TEXT_SPEEDS] = { "Normal", "Fast", "Instan
 static void opt_row(int i, const char *label, const char *value) {
     float y = OPT_Y0 + i * OPT_ROW_H;
     tile(CX0, y, CX1, y + OPT_ROW_H - 3, 6, COL_TAB_ON);
-    ui_native_glyph_text_fit_original(CX0 + 7, y + 3, label, 0.82f, 150, COL_WHITE);
+    ui_native_glyph_text_fit_original(CX0 + 7, y + 2, label, 0.90f, 150, COL_WHITE);
     float bx0 = 226, by0 = y + 2, bx1 = CX1 - 4, by1 = y + OPT_ROW_H - 5;
     round_rect(bx0, by0, bx1, by1, 7, COL_PANEL_EDGE);
     round_rect(bx0 + 2, by0 + 2, bx1 - 2, by1 - 2, 5, COL_SEL);

@@ -7,6 +7,7 @@ Navigation,bottom_screen.c,Found,收集,也可用“已发现”，需结合页�
 Navigation,bottom_screen.c,Settings,设置,
 Navigation,bottom_screen.c,Controls,按键,也可用“操作/按键设置”
 Navigation,bottom_screen.c,Debug,调试,开发者功能；若面向玩家可考虑隐藏
+Battle menu,touch_menu.c,Peach,桃花公主,1.2.15 新增的最终战公主行动菜单标题。
 Stats and found,bottom_screen.c,Save,保存,
 Stats and found,bottom_screen.c,Sure?,确定？,
 Stats and found,bottom_screen.c,Saved!,已保存！,
