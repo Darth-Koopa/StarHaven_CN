@@ -384,7 +384,7 @@ static void build_ui_small_font(void) {
     }
     if (C3D_TexInit(&s_ui_small, PM3DS_SMALL_FONT_ATLAS_W, PM3DS_SMALL_FONT_ATLAS_H, GPU_RGBA8)) {
         upload_rgba8(&s_ui_small, canvas, PM3DS_SMALL_FONT_ATLAS_W, PM3DS_SMALL_FONT_ATLAS_H);
-        C3D_TexSetFilter(&s_ui_small, GPU_NEAREST, GPU_NEAREST);
+        C3D_TexSetFilter(&s_ui_small, GPU_LINEAR, GPU_LINEAR);
         C3D_TexSetWrap(&s_ui_small, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
         s_ui_small_ok = true;
     }
@@ -1133,7 +1133,7 @@ static void draw_area_card(float x0, float y0, float x1, float y1) {
 static void draw_stats(void) {
     const pm3ds_hud_info_t *h = &s_info;
     char buf[48];
-    text(CX0 + 2, HEAD_Y, h->location, fit(h->location, 188, 1.05f, 0.7f), 0, COL_WHITE);
+    text(CX0 + 2, HEAD_Y, h->location, fit(h->location, 188, 1.0f, 0.7f), 0, COL_WHITE);
     float x = text(CX0 + 2, SUB_Y, chapter_label(h->chapter), 0.8f, 0, COL_SUB) + 8;
     int full = h->star_power / 256;
     for (int i = 0; i < h->max_star_power && i < 7; i++)
@@ -1270,7 +1270,7 @@ static void draw_party(void) {
         image(owned ? UI_IMG_PARTNER_FIRST + i : UI_IMG_PARTNER_DISABLED_FIRST + i, (x0 + x1) / 2 - 18, y0 + 6, 1.125f,
               COL_WHITE);
         const char *nm = owned ? names[i] : "???";
-        text_center((x0 + x1) / 2, y0 + 47, nm, fit(nm, 52, 0.85f, 0.55f), 0,
+        text_center((x0 + x1) / 2, y0 + 47, nm, fit(nm, 52, 1.0f, 0.55f), 0,
                     owned ? COL_WHITE : RGBA(255, 255, 255, 140));
     }
     if (h->partners_owned) text_center((CX0 + CX1) / 2, 191, "Tap a partner to switch", 0.7f, 0, COL_HINT);
@@ -1670,7 +1670,7 @@ static void draw_cook(void) {
     snprintf(buf, sizeof buf, ui_text("%d of %d cooked"), s_cook.cooked, s_cook.count);
     page_title("Recipes", buf);
     chip(COOK_ALL_X0, HEAD_Y, COOK_ALL_X1, HEAD_Y + 18, s_cook_all ? "Hide new" : "Show all",
-         s_cook_all ? COL_SEL : COL_OFF, 0.7f);
+         s_cook_all ? COL_SEL : COL_OFF, 0.75f);
     pager(s_cook_page, pages);
     bar(CX0 + 2, BODY_Y, CX1 - CX0 - 2, 5, s_cook.cooked, s_cook.count, COL_GOLD);
     for (int slot = 0; slot < COOK_PER_PAGE; slot++) {
@@ -2212,7 +2212,7 @@ static const char *const s_text_names[TEXT_SPEEDS] = { "Normal", "Fast", "Instan
 static void opt_row(int i, const char *label, const char *value) {
     float y = OPT_Y0 + i * OPT_ROW_H;
     tile(CX0, y, CX1, y + OPT_ROW_H - 3, 6, COL_TAB_ON);
-    ui_native_glyph_text_fit_original(CX0 + 7, y + 2, label, 0.90f, 150, COL_WHITE);
+    ui_native_glyph_text_fit_original(CX0 + 7, y + 1, label, 0.90f, 150, COL_WHITE);
     float bx0 = 226, by0 = y + 2, bx1 = CX1 - 4, by1 = y + OPT_ROW_H - 5;
     round_rect(bx0, by0, bx1, by1, 7, COL_PANEL_EDGE);
     round_rect(bx0 + 2, by0 + 2, bx1 - 2, by1 - 2, 5, COL_SEL);

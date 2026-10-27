@@ -7,7 +7,7 @@
 - `tools/generate_bottom_screen_translations.py` 将中文转为 U+E000 私用区字形标记，生成 `port/3ds/gen/ui_translations_zh_CN.h`。
 - 小字号字体选择 **Fusion Pixel 10px Prop zh-Hans（比例字体）**（10×10）；TTF 与 SIL Open Font License 1.1 文本放在 `port/3ds/fonts/`。
 - `tools/generate_small_text_font.py` 从译文实际使用的汉字/标点及可打印 ASCII 构建紧凑比例位图贴图，并为每个字形保存墨迹边界和独立字宽，生成 `port/3ds/gen/ui_small_font.h`。运行时不读取 TTF、不需要 FreeType；字形位图随 C 程序编译。
-- `small_text()` 与 `small_text_center()` 在 iQue 版统一使用该比例位图字体渲染英文和中文，因此启动页、ROM 加载进度页等主游戏字库尚不可用的阶段也能显示译文。需要突出显示的菜单标签也使用该位图字体；字库纹理使用 `GPU_NEAREST`，放大时保留硬边像素。其他主字号 `text()` 仍然使用游戏的原生字体资源。
+- `small_text()` 与 `small_text_center()` 在 iQue 版统一使用该比例位图字体渲染英文和中文，因此启动页、ROM 加载进度页等主游戏字库尚不可用的阶段也能显示译文。需要突出显示的菜单标签也使用该位图字体；字库纹理使用线性过滤，以恢复平滑的小字采样效果。其他主字号 `text()` 仍然使用游戏的原生字体资源。
 
 ## 本地检查命令
 

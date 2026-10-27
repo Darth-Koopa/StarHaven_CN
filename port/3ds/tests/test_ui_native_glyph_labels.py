@@ -46,21 +46,26 @@ for snippet in (
     'ui_native_glyph_text_fit_original(x0 + 7, y0 + 2, s_log.name[i], 1.0f',
     'ui_native_glyph_text_fit_original(x, y0 + 1, a->name, 1.0f',
     'ui_native_glyph_text_original(x0 + 21, y0 + 2, name,',
-    'ui_native_glyph_text_fit_original(CX0 + 7, y + 2, label, 0.90f',
+    'ui_native_glyph_text_fit_original(CX0 + 7, y + 1, label, 0.90f',
     'ui_native_glyph_text_original(CX0 + 7, y + 2, s_cheat_names[i],',
 ):
     if snippet not in source:
         raise SystemExit(f"requested name/label must bypass extra 1.20x ink scale: {snippet}")
+
+if 'fit(h->location, 188, 1.0f, 0.7f)' not in source:
+    raise SystemExit("status-page current-area name must use a 1.00x base scale")
+if 's_cook_all ? COL_SEL : COL_OFF, 0.75f);' not in source:
+    raise SystemExit("recipe Hide new / Show all labels must be slightly larger")
 if "const float label_scale = 0.62f;" not in source:
     raise SystemExit("all left-rail labels must share one nominal native-glyph scale")
-if "ui_native_glyph_text_fit_original(CX0 + 7, y + 2, label, 0.90f, 150, COL_WHITE);" not in source:
-    raise SystemExit("settings left labels must use 0.82x scale")
+if "ui_native_glyph_text_fit_original(CX0 + 7, y + 1, label, 0.90f, 150, COL_WHITE);" not in source:
+    raise SystemExit("settings left labels must be shifted up one pixel while preserving scale")
 if "fit(title, 160, 1.0f, 0.7f)" not in source:
     raise SystemExit("page titles must use a 1.00x native scale before fit-to-width")
 if "#define LOG_TEXT_SCALE 0.85f" not in source or "#define DISH_DESC_SCALE 0.85f" not in source:
     raise SystemExit("Tattle and recipe-description bodies must use 0.85x")
-if 'fit(nm, 52, 0.85f, 0.55f)' not in source:
-    raise SystemExit("partner names must use 0.85x native scale")
+if 'fit(nm, 52, 1.0f, 0.55f)' not in source:
+    raise SystemExit("partner button names must use a larger 1.00x base scale")
 if 's_tm.kind == PM3DS_TM_POPUP ? 0.85f : 0.9f' not in source:
     raise SystemExit("item/partner popup names must use 0.85x native scale")
 if 'fit(name, x1 - x0 - 26, 1.0f, 0.5f)' not in source:
@@ -76,7 +81,7 @@ for label in (
     'ui_native_glyph_text_center_fit(vx0 + 58, vy1 - 20, "Drag to look", 0.7f',
     "ui_native_glyph_text_fit_original(x0 + 7, y0 + 2, s_log.name[i], 1.0f",
     "ui_native_glyph_text_fit_original(x, y0 + 1, a->name, 1.0f",
-    "ui_native_glyph_text_fit_original(CX0 + 7, y + 2, label, 0.90f",
+    "ui_native_glyph_text_fit_original(CX0 + 7, y + 1, label, 0.90f",
     "ui_native_glyph_text_center_fit((bx0 + bx1) / 2, (by0 + by1) / 2 - 6.5f, value, 0.75f",
 ):
     if label not in source:

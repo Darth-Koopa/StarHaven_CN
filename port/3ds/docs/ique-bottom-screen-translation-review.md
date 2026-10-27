@@ -30,7 +30,7 @@
 
 CSV `localization/ui_translations_zh_CN.csv` 是可读的翻译源。`tools/generate_bottom_screen_translations.py` 从 `tools/splat_ext/pm_msg.py` 解析 `CHARSET_IQUE`，并结合 `include/enums.h` 的多字节编码常量计算字形编号。每个非 ASCII 字符会转换为 U+E000 + 原生字形编号的私用区 token，生成 `gen/ui_translations_zh_CN.h`，供 3DS 下屏渲染器识别。字形映射缺失、源文案键找不到、或目标译文引入未知 printf 占位符都会使构建失败。
 
-`text()` / `text_width()` / `text_center()` 按完整文案键查表；需要在 ROM 字体初始化前显示的启动与错误界面也通过独立位图字体绘制。`small_text()` / `small_text_center()` 和重点菜单标签使用从 `FusionPixel-10px-Prop-zh-Hans.ttf` 构建时栅格化的比例字体，字符按各自的字宽前进；纹理过滤使用 `GPU_NEAREST`，放大时保留硬边缘像素。带运行时数字的格式串在调用处先查译文再 `snprintf`。Tattle 正文中的 `Max HP:`、`Attack Power:`、`Defense Power:` 标签单独翻译，原始缓冲区仍用于提取数值。
+`text()` / `text_width()` / `text_center()` 按完整文案键查表；需要在 ROM 字体初始化前显示的启动与错误界面也通过独立位图字体绘制。`small_text()` / `small_text_center()` 和重点菜单标签使用从 `FusionPixel-10px-Prop-zh-Hans.ttf` 构建时栅格化的比例字体，字符按各自的字宽前进；纹理过滤使用线性过滤，避免额外的最近邻硬边效果。带运行时数字的格式串在调用处先查译文再 `snprintf`。Tattle 正文中的 `Max HP:`、`Attack Power:`、`Defense Power:` 标签单独翻译，原始缓冲区仍用于提取数值。
 
 同一英文源键重复时生成器保留 CSV 中第一条映射。本表目前 `Start` 同时对应“开始”和 `Start`，这次按照用户要求不阻塞构建；如果测试发现控制按键名称也被译为“开始”，后续再改成上下文键。
 

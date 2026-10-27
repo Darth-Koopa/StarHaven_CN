@@ -46,8 +46,8 @@ review_csv = ROOT / "port/3ds/docs/ique-bottom-screen-translation-review.csv"
 if not canonical_csv.is_file() or review_csv.exists():
     raise SystemExit("ui_translations_zh_CN.csv must be the only CSV translation source")
 renderer = (ROOT / "port/3ds/source/platform/bottom_screen.c").read_text(encoding="utf-8")
-if "C3D_TexSetFilter(&s_ui_small, GPU_NEAREST, GPU_NEAREST);" not in renderer:
-    raise SystemExit("small-font atlas must use nearest-neighbor texture filtering")
+if "C3D_TexSetFilter(&s_ui_small, GPU_LINEAR, GPU_LINEAR);" not in renderer:
+    raise SystemExit("custom small-font atlas must retain smooth linear filtering, not nearest-neighbor")
 if "s_pm3ds_small_font_advance[slot]" not in renderer:
     raise SystemExit("runtime renderer does not consume proportional advance metrics")
-print("Proportional small-font metrics and nearest-neighbor sampling checks passed")
+print("Proportional small-font metrics and smooth sampling checks passed")
