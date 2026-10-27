@@ -911,6 +911,7 @@ static bool draw_ui_icon(int id, float x, float y, float size, u32 c);
 static bool draw_icon(const void *script, float x, float y, float size, u32 c);
 static bool in(int px, int py, float x0, float y0, float x1, float y1);
 static void small_text_center(float cx, float y, const char *str, float scale, u32 c);
+static void small_text_center_s_small(float cx, float y, const char *str, float scale, u32 c);
 static float ui_native_glyph_text_fit(float x, float y, const char *str, float scale, float max_width, u32 c);
 static void ui_native_glyph_text_center_fit(float cx, float y, const char *str, float scale, float max_width, u32 c);
 
