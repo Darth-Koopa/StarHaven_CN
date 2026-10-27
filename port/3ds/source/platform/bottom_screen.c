@@ -619,6 +619,31 @@ static void text_center(float cx, float y, const char *s, float scale, int white
     text(cx - text_width(s, scale) / 2, y, s, scale, white, c);
 }
 
+/* Slightly tighten spacing for the compact partner-name buttons. */
+static void text_center_tight(float cx, float y, const char *s, float scale, int white, u32 c) {
+    if (!s) return;
+    s = ui_text(s);
+    const float gap = 0.75f;
+    int units = 0;
+    for (const char *p = s; *p;) {
+        int glyph, unit_width, is_space;
+        p = font_text_unit(p, &glyph, &unit_width, &is_space);
+        units++;
+    }
+    float width = text_width(s, scale) - (units > 1 ? (units - 1) * gap : 0.0f);
+    float x = cx - width / 2.0f;
+    while (*s) {
+        int glyph, unit_width, is_space;
+        const char *next = font_text_unit(s, &glyph, &unit_width, &is_space);
+        char unit[4] = {0, 0, 0, 0};
+        size_t len = (size_t)(next - s);
+        if (len > 3) len = 3;
+        memcpy(unit, s, len);
+        x = text(x, y, unit, scale, white, c) - gap;
+        s = next;
+    }
+}
+
 #if VERSION_IQUE
 static int ui_small_slot_for_char(int glyph, unsigned char ch) {
     if (glyph >= 0 && glyph < PM3DS_SMALL_FONT_IQUE_GLYPH_COUNT) {
@@ -791,6 +816,33 @@ static float small_text(float x, float y, const char *str, int max_cols, u32 c) 
         int glyph = ui_private_glyph(str);
         if (glyph >= 0) {
             /* Fit this 16x16 iQue glyph into one console-font cell. */
+            char glyph_text[4] = { str[0], str[1], str[2], '\0' };
+            text(x, y, glyph_text, 0.5f, 0, c);
+            str += 3;
+        } else {
+            unsigned char ch = (unsigned char)*str++;
+            if (s_small_ok && ch > 32 && ch < 128) {
+                float gx = (ch % 16) * 8.0f, gy = (ch / 16) * 8.0f;
+                quad2(&s_small, x, y, x + 8, y + 8, gx / 128.0f, gy / 64.0f,
+                      (gx + 8) / 128.0f, (gy + 8) / 64.0f, c, c);
+            }
+        }
+        x += 8; col++;
+    }
+    return y + 9;
+}
+
+/* Explicit legacy 8x8 console-font path for selected labels. Unlike small_text(),
+ * this bypasses the generated proportional TTF atlas on iQue builds. */
+static float small_text_s_small(float x, float y, const char *str, int max_cols, u32 c) {
+    str = ui_text(str);
+    if (!s_small_ok && !s_font_ok) return y + 9;
+    int col = 0;
+    float x0 = x;
+    while (str && *str) {
+        if (col >= max_cols) { col = 0; x = x0 + 16; y += 9; }
+        int glyph = ui_private_glyph(str);
+        if (glyph >= 0) {
             char glyph_text[4] = { str[0], str[1], str[2], '\0' };
             text(x, y, glyph_text, 0.5f, 0, c);
             str += 3;
@@ -1270,8 +1322,8 @@ static void draw_party(void) {
         image(owned ? UI_IMG_PARTNER_FIRST + i : UI_IMG_PARTNER_DISABLED_FIRST + i, (x0 + x1) / 2 - 18, y0 + 6, 1.125f,
               COL_WHITE);
         const char *nm = owned ? names[i] : "???";
-        text_center((x0 + x1) / 2, y0 + 47, nm, fit(nm, 52, 1.0f, 0.55f), 0,
-                    owned ? COL_WHITE : RGBA(255, 255, 255, 140));
+        text_center_tight((x0 + x1) / 2, y0 + 47, nm, fit(nm, 52, 1.0f, 0.55f), 0,
+                          owned ? COL_WHITE : RGBA(255, 255, 255, 140));
     }
     if (h->partners_owned) text_center((CX0 + CX1) / 2, 191, "Tap a partner to switch", 0.7f, 0, COL_HINT);
 }
@@ -1289,7 +1341,7 @@ static int partner_at(int px, int py) {
 static void draw_debug(void) {
     fill(0, 0, 320, 240, RGBA(16, 16, 24, 255));
     float y = 3;
-    for (int i = 0; i < 3; i++) y = small_text(4, y, pm3ds_perf_text[i], 39, RGBA(255, 230, 120, 255));
+    for (int i = 0; i < 3; i++) y = small_text_s_small(4, y, pm3ds_perf_text[i], 39, RGBA(255, 230, 120, 255));
     fill(4, y + 1, 316, y + 2, RGBA(90, 90, 110, 255));
     y += 5;
     /* newest lines last; show as many as fit above the Close button */
@@ -1298,7 +1350,7 @@ static void draw_debug(void) {
     for (int i = n - 1; i >= 0 && y < 200; i--) {
         const char *l = pm3ds_log_recent(i);
         if (!strncmp(l, "[INFO ] ", 8)) l += 8;   /* drop the level tag for INFO */
-        y = small_text(4, y, l, 39, RGBA(220, 220, 220, 255));
+        y = small_text_s_small(4, y, l, 39, RGBA(220, 220, 220, 255));
     }
     round_rect(250, 214, 316, 236, 8, COL_BTN);
     text_center(283, 217, "Back", 1.0f, 1, COL_WHITE);
@@ -2237,7 +2289,7 @@ static void draw_options(void) {
     opt_row(6, "Update check", pm3ds_cfg.update_check ? "On" : "Off");
     opt_row(7, "Heart & flower drops", pm3ds_cfg.stat_drops ? "On" : "Off");
     opt_row(8, "Low HP beep", pm3ds_cfg.hp_beep ? "On" : "Off");
-    small_text(12, 219, PM3DS_APP_NAME " v" PM3DS_VERSION_STR, 40, COL_PANEL_EDGE);
+    small_text_s_small(12, 219, PM3DS_APP_NAME " v" PM3DS_VERSION_STR, 40, COL_PANEL_EDGE);
     button(s_btn_ff, "Back");
 }
 
@@ -2715,7 +2767,7 @@ static void draw_menu_page(void) {
         panel(20, 60, 300, 170, COL_PANEL);
         text_center(160, 78, PM3DS_APP_NAME, 2.0f, 0, COL_WHITE);
         text_center(160, 124, s_info.demo ? "- Demo -" : "Press START to play", 1.0f, 0, COL_WHITE);
-        small_text_center(160, 154, "v" PM3DS_VERSION_STR, 1.0f, COL_PANEL_EDGE);
+        small_text_center_s_small(160, 154, "v" PM3DS_VERSION_STR, 1.0f, COL_PANEL_EDGE);
         draw_buttons();
         return;
     }
@@ -3071,6 +3123,32 @@ static void small_text_center(float cx, float y, const char *str, float scale, u
     }
 }
 
+/* Explicit legacy renderer for selected boot/status labels. */
+static void small_text_center_s_small(float cx, float y, const char *str, float scale, u32 c) {
+    str = ui_text(str);
+    if (!str || (!s_small_ok && !s_font_ok)) return;
+    int units = 0;
+    for (const char *p = str; *p; p = ui_char_next(p)) units++;
+    float x = cx - units * 4.0f * scale;
+    while (*str) {
+        int glyph = ui_private_glyph(str);
+        if (glyph >= 0) {
+            char glyph_text[4] = { str[0], str[1], str[2], '\0' };
+            text(x, y, glyph_text, 0.5f * scale, 0, c);
+            str += 3;
+        } else {
+            unsigned char ch = (unsigned char)*str++;
+            if (s_small_ok && ch > 32 && ch < 128) {
+                float gx = (ch % 16) * 8.0f, gy = (ch / 16) * 8.0f;
+                quad2(&s_small, x, y, x + 8 * scale, y + 8 * scale,
+                      gx / 128.0f, gy / 64.0f, (gx + 8) / 128.0f,
+                      (gy + 8) / 64.0f, c, c);
+            }
+        }
+        x += 8 * scale;
+    }
+}
+
 static const char *s_loading_label;
 
 /* what the progress bar is for; NULL: loading the game data */
@@ -3083,12 +3161,12 @@ static void loading_panel(float w, int permille) {
     float cx = w / 2, dx = (w - 320) / 2;
     gradient(0, 0, w, 240, COL_BG_TOP, COL_BG_BOTTOM);
     panel(36 + dx, 62, 284 + dx, 178, COL_PANEL);
-    small_text_center(cx, 82, PM3DS_APP_NAME_CAPS, 2.0f, COL_PANEL_EDGE);
+    small_text_center_s_small(cx, 82, PM3DS_APP_NAME_CAPS, 2.0f, COL_PANEL_EDGE);
     small_text_center(cx, 112, s_loading_label ? s_loading_label : "Loading game data", 1.0f, COL_PANEL_EDGE);
     bar(60 + dx, 132, 200, 10, permille, 1000, COL_FP);
     char pct[8];
     snprintf(pct, sizeof pct, "%d%%", permille / 10);
-    small_text_center(cx, 152, pct, 1.0f, COL_PANEL_EDGE);
+    small_text_center_s_small(cx, 152, pct, 1.0f, COL_PANEL_EDGE);
 }
 
 /* lines[0] is the headline: twice the size where it fits */
@@ -3096,7 +3174,7 @@ static void message_panel(float w, const char *const *lines, int n) {
     float cx = w / 2, y = 52;
     gradient(0, 0, w, 240, COL_BG_TOP, COL_BG_BOTTOM);
     panel(10, 10, w - 10, 230, COL_PANEL);
-    small_text_center(cx, 22, PM3DS_APP_NAME_CAPS, 2.0f, COL_PANEL_EDGE);
+    small_text_center_s_small(cx, 22, PM3DS_APP_NAME_CAPS, 2.0f, COL_PANEL_EDGE);
     for (int i = 0; i < n && i < 14; i++) {
         float headline_width_at_2x = (float)strlen(lines[i]) * 16.0f;
 #if VERSION_IQUE
