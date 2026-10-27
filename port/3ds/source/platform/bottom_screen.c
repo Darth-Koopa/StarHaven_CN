@@ -865,6 +865,7 @@ static void draw_stats(void) {
     float tw = text_width(buf, 0.8f);
     image(UI_IMG_TIME, CX1 - tw - 18, SUB_Y - 1, 1.0f, COL_WHITE);
     text(CX1 - tw, SUB_Y, buf, 0.8f, 0, COL_WHITE);
+    if (pm3ds_hard_mode()) text_right(CX1 - tw - 22, SUB_Y + 2, "Hard", 0.7f, COL_HP);   /* GitHub #69 */
     draw_qs_button();
 
     /* HP and FP */
@@ -1488,31 +1489,53 @@ static void cook_tap(int px, int py) {
 static const float s_pad_stick[4] = { 60, 56, 156, 100 };   /* x0 y0 x1 y1: hold the stick left */
 
 static bool tm_open(void) { return s_tm.kind != PM3DS_TM_NONE && s_info.in_game; }
-/* ---- Badges: the pause menu's badge list, a tap puts one on or takes it off ---- */
+/* ---- Badges: the pause menu's badge list, a tap puts one on or takes it off,
+ * and three loadouts underneath to save and switch whole sets ---- */
 static pm3ds_badge_list_t s_badges;
-static int s_badge_page, s_badge_msg, s_badge_msg_timer;   /* s_badge_msg: PM3DS_BADGE_* of the last tap */
+static int s_badge_page, s_badge_msg_timer;
+static char s_badge_msg[48];   /* shown in place of the BP line for a while */
+static bool s_loadout_saving;  /* Save tapped: the next loadout tapped stores the badges on now */
+static int s_loadout_count[PM3DS_BADGE_LOADOUTS];
+#define BADGE_ROWS 6
+#define BADGE_PER_PAGE (BADGE_ROWS * 2)
+#define LOADOUT_Y0 176
+#define LOADOUT_Y1 198
+#define LOADOUT_X(n) (CX0 + 66 + (n) * 34)   /* the three loadout chips, 30 wide */
+#define LOADOUT_SAVE_X0 (CX0 + 172)
 
-/* the Recipes grid, a little tighter so a line fits under it */
 static void badge_entry_rect(int slot, float *x0, float *y0, float *x1, float *y1) {
-    *x0 = CX0 + (slot / COOK_ROWS) * 126;
-    *y0 = 53 + (slot % COOK_ROWS) * 20;
+    *x0 = CX0 + (slot / BADGE_ROWS) * 126;
+    *y0 = 53 + (slot % BADGE_ROWS) * 20;
     *x1 = *x0 + 122;
     *y1 = *y0 + 18;
 }
 
+static void badge_say(const char *msg) {
+    snprintf(s_badge_msg, sizeof s_badge_msg, "%s", msg);
+    s_badge_msg_timer = 150;
+}
+
+static void badges_refresh(void) {
+    pm3ds_badge_query(&s_badges);
+    for (int n = 0; n < PM3DS_BADGE_LOADOUTS; n++) s_loadout_count[n] = pm3ds_badge_loadout_count(n);
+}
+
 static void draw_badges(void) {
     char buf[48];
-    int pages = pages_of(s_badges.count, COOK_PER_PAGE), left = s_badges.bp_max - s_badges.bp_used;
+    int pages = pages_of(s_badges.count, BADGE_PER_PAGE), left = s_badges.bp_max - s_badges.bp_used;
     if (s_badge_page >= pages) s_badge_page = 0;
-    snprintf(buf, sizeof buf, T("BP left: %d of %d"), left, s_badges.bp_max);
-    page_title("Badges", buf);
+    if (!s_badges.can_change) snprintf(buf, sizeof buf, "%s", T("Badges change outside battles and menus."));
+    else if (s_badge_msg_timer > 0) snprintf(buf, sizeof buf, "%s", s_badge_msg);
+    else snprintf(buf, sizeof buf, T("BP left: %d of %d"), left, s_badges.bp_max);
+    text(CX0 + 2, HEAD_Y, "Badges", 1.05f, 0, COL_WHITE);
+    text(CX0 + 2, SUB_Y, buf, fit(buf, pages > 1 ? 156 : 246, 0.8f, 0.5f), 0, COL_SUB);
     pager(s_badge_page, pages);
     bar(CX0 + 2, BODY_Y, CX1 - CX0 - 2, 5, s_badges.bp_used, s_badges.bp_max, COL_GOLD);
     if (s_badges.count == 0) {
         text_center((CX0 + CX1) / 2, 100, "No badges yet.", 0.8f, 0, COL_HINT);
     }
-    for (int slot = 0; slot < COOK_PER_PAGE; slot++) {
-        int i = s_badge_page * COOK_PER_PAGE + slot;
+    for (int slot = 0; slot < BADGE_PER_PAGE; slot++) {
+        int i = s_badge_page * BADGE_PER_PAGE + slot;
         if (i >= s_badges.count) break;
         float x0, y0, x1, y1;
         badge_entry_rect(slot, &x0, &y0, &x1, &y1);
@@ -1523,26 +1546,60 @@ static void draw_badges(void) {
         snprintf(buf, sizeof buf, "%d", s_badges.cost[i]);
         text_right(x1 - 5, y0 + 2, buf, 0.75f, on ? COL_WHITE : COL_HINT);
     }
-    const char *msg = NULL;
-    if (!s_badges.can_change) msg = "Badges change outside battles and menus.";
-    else if (s_badge_msg_timer > 0 && s_badge_msg == PM3DS_BADGE_NO_BP) msg = "Not enough BP.";
-    else if (s_badge_msg_timer > 0 && s_badge_msg == PM3DS_BADGE_TOO_MANY) msg = "Too many badges on.";
-    else if (s_badges.count > 0) msg = "Tap a badge to put it on or take it off.";
-    if (msg) text_center((CX0 + CX1) / 2, 53 + COOK_ROWS * 20 - 1, msg, fit(msg, CX1 - CX0 - 8, 0.62f, 0.45f), 0, COL_HINT);
+    /* loadouts: 1 2 3 put a saved set on; Save, then a number, stores the badges on now */
+    text(CX0 + 2, LOADOUT_Y0 + 4, "Loadouts", fit("Loadouts", 60, 0.75f, 0.5f), 0, COL_SUB);
+    for (int n = 0; n < PM3DS_BADGE_LOADOUTS; n++) {
+        char num[4];
+        snprintf(num, sizeof num, "%d", n + 1);
+        u32 face = s_loadout_saving ? RGBA(255, 196, 64, 255) : s_loadout_count[n] ? COL_SEL : COL_OFF;
+        chip(LOADOUT_X(n), LOADOUT_Y0, LOADOUT_X(n) + 30, LOADOUT_Y1, num, face, 0.85f);
+    }
+    chip(LOADOUT_SAVE_X0, LOADOUT_Y0, CX1, LOADOUT_Y1, s_loadout_saving ? "Save to..." : "Save",
+         s_loadout_saving ? RGBA(255, 196, 64, 255) : COL_TAB_ON, 0.8f);
+}
+
+static void loadout_tap(int n) {
+    char buf[48];
+    if (s_loadout_saving) {
+        s_loadout_saving = false;
+        int k = pm3ds_badge_loadout_save(n);
+        snprintf(buf, sizeof buf, T("Loadout %d saved: %d badges"), n + 1, k);
+        badge_say(buf);
+    } else if (s_loadout_count[n] == 0) {
+        snprintf(buf, sizeof buf, T("Loadout %d is empty: tap Save first"), n + 1);
+        badge_say(buf);
+    } else {
+        int skipped, on = pm3ds_badge_loadout_load(n, &skipped);
+        if (on < 0) return;   /* can't change now: the BP line says so */
+        if (skipped) snprintf(buf, sizeof buf, T("Loadout %d on (%d didn't fit)"), n + 1, skipped);
+        else snprintf(buf, sizeof buf, T("Loadout %d on"), n + 1);
+        badge_say(buf);
+    }
+    badges_refresh();
 }
 
 static void badges_tap(int px, int py) {
-    int np = pager_tap(px, py, s_badge_page, pages_of(s_badges.count, COOK_PER_PAGE));
+    int np = pager_tap(px, py, s_badge_page, pages_of(s_badges.count, BADGE_PER_PAGE));
     if (np >= 0) { s_badge_page = np; return; }
-    for (int slot = 0; slot < COOK_PER_PAGE; slot++) {
-        int i = s_badge_page * COOK_PER_PAGE + slot;
+    if (py >= LOADOUT_Y0 - 3 && py < LOADOUT_Y1 + 4) {
+        for (int n = 0; n < PM3DS_BADGE_LOADOUTS; n++) {
+            if (px >= LOADOUT_X(n) - 2 && px < LOADOUT_X(n) + 32) { loadout_tap(n); return; }
+        }
+        if (px >= LOADOUT_SAVE_X0 - 2) s_loadout_saving = !s_loadout_saving;
+        return;
+    }
+    s_loadout_saving = false;
+    for (int slot = 0; slot < BADGE_PER_PAGE; slot++) {
+        int i = s_badge_page * BADGE_PER_PAGE + slot;
         if (i >= s_badges.count) break;
         float x0, y0, x1, y1;
         badge_entry_rect(slot, &x0, &y0, &x1, &y1);
         if (in(px, py, x0, y0 - 1, x1, y1 + 2)) {
-            s_badge_msg = pm3ds_badge_toggle(s_badges.item[i]);
-            s_badge_msg_timer = 120;
-            pm3ds_badge_query(&s_badges);
+            int r = pm3ds_badge_toggle(s_badges.item[i]);
+            if (r == PM3DS_BADGE_NO_BP) badge_say(T("Not enough BP."));
+            else if (r == PM3DS_BADGE_TOO_MANY) badge_say(T("Too many badges on."));
+            else s_badge_msg_timer = 0;
+            badges_refresh();
             return;
         }
     }
@@ -2318,6 +2375,7 @@ static bool s_ng_fresh;   /* just opened: the press that opened it is still down
 static bool s_ng_hold;    /* closed, but the game sees no buttons until they are let go */
 static bool s_ng_kbd;     /* type a seed: the keyboard opens from the tick, outside a frame */
 static bool s_ng_cheats;  /* the new save allows cheats (n64_shim/cheats.c) */
+static bool s_ng_hard;    /* the new save is in hard mode (n64_shim/cheats.c) */
 #define NG_CHEAT_Y0 178
 #define NG_CHEAT_Y1 200
 
@@ -2329,6 +2387,7 @@ void pm3ds_new_game_picker_open(void) {
     s_ng_result = 0;
     s_ng_fresh = true;
     s_ng_cheats = false;
+    s_ng_hard = false;
 }
 
 /* src/filemenu/filemenu_main.c, each frame: -1 while open, 1 once a game
@@ -2356,6 +2415,7 @@ static void ng_start(bool rando) {
     unsigned flags = rando ? (s_ng_flags | PM3DS_RANDO_ON) : 0;
     pm3ds_rando_choose(flags, s_ng_seed);
     pm3ds_cheats_choose(s_ng_cheats);
+    pm3ds_hard_choose(s_ng_hard);
     pm3ds_cfg.rando_flags = s_ng_flags | (rando ? PM3DS_RANDO_ON : 0);
     pm3ds_settings_save();
     ng_close(1, NG_SND_NEXT);
@@ -2425,6 +2485,9 @@ static void ng_buttons(void) {
         } else if (kd & KEY_Y) {
             s_ng_cheats = !s_ng_cheats;
             s_ng_sound = NG_SND_TOGGLE;
+        } else if (kd & KEY_X) {
+            s_ng_hard = !s_ng_hard;
+            s_ng_sound = NG_SND_TOGGLE;
         } else if (kd & KEY_B) {
             ng_close(0, NG_SND_BACK);
         }
@@ -2461,8 +2524,11 @@ static void ng_touch(int px, int py) {
             s_ng_page = NG_RANDO;
             s_ng_cursor = NG_ROW_START;
             s_ng_sound = NG_SND_NEXT;
-        } else if (in(px, py, 16, NG_CHEAT_Y0, 304, NG_CHEAT_Y1)) {
+        } else if (in(px, py, 16, NG_CHEAT_Y0, 158, NG_CHEAT_Y1)) {
             s_ng_cheats = !s_ng_cheats;
+            s_ng_sound = NG_SND_TOGGLE;
+        } else if (in(px, py, 162, NG_CHEAT_Y0, 304, NG_CHEAT_Y1)) {
+            s_ng_hard = !s_ng_hard;
             s_ng_sound = NG_SND_TOGGLE;
         } else if (in(px, py, 8, 212, 88, 236)) {
             ng_close(0, NG_SND_BACK);
@@ -2527,15 +2593,19 @@ static void draw_new_game(float w) {
             small_text_center((x0 + x1) / 2, 124, desc[i][0], 1.0f, COL_PANEL_EDGE);
             small_text_center((x0 + x1) / 2, 136, desc[i][1], 1.0f, COL_PANEL_EDGE);
         }
-        /* cheats: a switch for the new save, used from Options > Cheats in game */
-        round_rect(dx + 16, NG_CHEAT_Y0, dx + 304, NG_CHEAT_Y1, 8, s_ng_cheats ? RGBA(255, 214, 120, 150) : RGBA(205, 190, 170, 120));
-        text(dx + 24, NG_CHEAT_Y0 + 2, "Cheats", 1.0f, 0, COL_WHITE);
-        small_text(dx + 90, NG_CHEAT_Y0 + 7, "Can't add later", 40, COL_PANEL_EDGE);
-        round_rect(dx + 248, NG_CHEAT_Y0 + 2, dx + 300, NG_CHEAT_Y1 - 2, 8, COL_PANEL_EDGE);
-        round_rect(dx + 250, NG_CHEAT_Y0 + 4, dx + 298, NG_CHEAT_Y1 - 4, 6,
-                   s_ng_cheats ? RGBA(255, 214, 120, 255) : RGBA(205, 190, 170, 255));
-        text_center(dx + 274, NG_CHEAT_Y0 + 2, s_ng_cheats ? "On" : "Off", 1.0f, 0, COL_WHITE);
-        small_text_center(dx + 206, 219, "A: choose  Y: cheats", 1.0f, COL_PANEL_EDGE);
+        /* switches for the new save, set once: cheats (used from Options > Cheats in game)
+         * and hard mode (GitHub #69) */
+        for (int k = 0; k < 2; k++) {
+            float x0 = dx + (k ? 162 : 16), x1 = x0 + 142;
+            bool on = k ? s_ng_hard : s_ng_cheats;
+            const char *label = k ? "Hard mode" : "Cheats";
+            round_rect(x0, NG_CHEAT_Y0, x1, NG_CHEAT_Y1, 8, on ? RGBA(255, 214, 120, 150) : RGBA(205, 190, 170, 120));
+            text(x0 + 7, NG_CHEAT_Y0 + 3, label, fit(label, 80, 0.9f, 0.55f), 0, COL_WHITE);
+            round_rect(x1 - 50, NG_CHEAT_Y0 + 2, x1 - 4, NG_CHEAT_Y1 - 2, 8, COL_PANEL_EDGE);
+            round_rect(x1 - 48, NG_CHEAT_Y0 + 4, x1 - 6, NG_CHEAT_Y1 - 4, 6, on ? RGBA(255, 214, 120, 255) : RGBA(205, 190, 170, 255));
+            text_center(x1 - 27, NG_CHEAT_Y0 + 2, on ? "On" : "Off", 1.0f, 0, COL_WHITE);
+        }
+        small_text_center(dx + 206, 219, "Y: cheats  X: hard mode", 1.0f, COL_PANEL_EDGE);
         ng_button(dx + 8, 212, dx + 88, 234, "Back", false);
         return;
     }
@@ -2712,7 +2782,7 @@ static void select_tab(int tab) {
     if (tab == TAB_FOUND) s_found_open = -1;
     if (tab == TAB_MAP) s_map_follow = true;
     if (tab == TAB_COOK) { s_cook_open = -1; pm3ds_recipe_query(&s_cook); }
-    if (tab == TAB_BADGES) { s_badge_msg_timer = 0; pm3ds_badge_query(&s_badges); }
+    if (tab == TAB_BADGES) { s_badge_msg_timer = 0; s_loadout_saving = false; badges_refresh(); }
 }
 
 static void handle_touch(void) {

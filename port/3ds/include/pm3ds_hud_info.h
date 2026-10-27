@@ -104,6 +104,11 @@ typedef struct {
 int pm3ds_badge_query(pm3ds_badge_list_t *out);
 enum { PM3DS_BADGE_REMOVED, PM3DS_BADGE_EQUIPPED, PM3DS_BADGE_NO_BP, PM3DS_BADGE_TOO_MANY, PM3DS_BADGE_NOT_NOW };
 int pm3ds_badge_toggle(int item);
+/* badge loadouts: three saved sets per save file, kept on the SD card */
+#define PM3DS_BADGE_LOADOUTS 3
+int pm3ds_badge_loadout_count(int n);          /* badges in loadout n, 0 if empty */
+int pm3ds_badge_loadout_save(int n);           /* the badges on now; returns how many */
+int pm3ds_badge_loadout_load(int n, int *skipped);   /* returns how many went on; -1 not now */
 /* one dish: what it does and every way to cook it */
 #define PM3DS_RECIPE_WAYS  48
 #define PM3DS_RECIPE_INGR  36

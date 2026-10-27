@@ -251,3 +251,14 @@ TR("Save and quit", "Speichern und beenden", "Sauvegarder et quitter", "Guardar 
 TR("Quit without saving", "Ohne Speichern beenden", "Quitter sans sauvegarder", "Salir sin guardar", "Esci senza salvare", "セーブしないで やめる")
 TR("Cancel", "Abbrechen", "Annuler", "Cancelar", "Annulla", "キャンセル")
 TR("Can't save right now.", "Speichern geht gerade nicht.", "Impossible de sauvegarder maintenant.", "Ahora no se puede guardar.", "Ora non si può salvare.", "いまは セーブできません")
+/* new-game picker: hard mode */
+TR("Hard mode", "Schwer", "Difficile", "Difícil", "Difficile", "ハードモード")
+TR("Y: cheats  X: hard mode", "Y: Cheats  X: schwer", "Y : triches  X : difficile", "Y: trucos  X: difícil", "Y: trucchi  X: difficile", "Y：チート  X：ハード")
+TR("Hard", "Schwer", "Difficile", "Difícil", "Difficile", "ハード")
+/* Badges page: loadouts */
+TR("Loadouts", "Sets", "Tenues", "Conjuntos", "Set", "セット")
+TR("Save to...", "Speichern in...", "Sauver dans...", "Guardar en...", "Salva in...", "どこに？")
+TR("Loadout %d saved: %d badges", "Set %d gespeichert: %d Orden", "Tenue %d sauvée : %d badges", "Conjunto %d guardado: %d medallas", "Set %d salvato: %d medaglie", "セット%d に %d こ セーブ")
+TR("Loadout %d is empty: tap Save first", "Set %d ist leer: erst Speichern antippen", "Tenue %d vide : touche d'abord Sauver", "Conjunto %d vacío: toca Guardar primero", "Set %d vuoto: tocca prima Salva", "セット%d は からっぽ：さきに セーブ")
+TR("Loadout %d on (%d didn't fit)", "Set %d angelegt (%d passten nicht)", "Tenue %d équipée (%d en trop)", "Conjunto %d puesto (%d no cabían)", "Set %d messo (%d non entravano)", "セット%d を つけた（%d こ はいらず）")
+TR("Loadout %d on", "Set %d angelegt", "Tenue %d équipée", "Conjunto %d puesto", "Set %d messo", "セット%d を つけた")

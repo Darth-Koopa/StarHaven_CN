@@ -4,6 +4,7 @@
  * (platform/bottom_screen.c), then switched one by one on the Options rail's
  * Cheats page. No decomp headers here. */
 #include <stdbool.h>
+#include <stdint.h>
 
 enum {
     PM3DS_CHEAT_HP,       /* HP stays full, Mario can't be knocked out */
@@ -18,5 +19,10 @@ void pm3ds_cheats_choose(bool allowed);   /* the next new game's choice */
 bool pm3ds_cheats_allowed(void);          /* the running game's save allows cheats */
 bool pm3ds_cheat_on(int cheat);
 void pm3ds_cheat_toggle(int cheat);
+
+/* Hard mode (n64_shim/cheats.c): per save, chosen on the new-game picker */
+void pm3ds_hard_choose(bool on);
+bool pm3ds_hard_mode(void);
+int32_t pm3ds_hard_scale(int32_t v);   /* x1.5 rounded up in hard mode */
 
 #endif

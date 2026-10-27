@@ -480,6 +480,12 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
                         }
                         fio_save_game(slot2);
                         gSaveSlotHasData[slot2] = true;
+#ifdef _3DS
+                        {   // 3DS port: a new file starts without the slot's old badge loadouts (n64_shim/journal.c)
+                            extern void pm3ds_badge_loadouts_clear_slot(s32 slot);
+                            pm3ds_badge_loadouts_clear_slot(slot2);
+                        }
+#endif
                         set_window_update(WIN_FILES_INPUT_FIELD, (s32)filemenu_update_hidden_name_input);
                         set_window_update(WIN_FILES_INPUT_KEYBOARD, (s32)filemenu_update_hidden_name_input);
                         set_window_update(WIN_FILES_TITLE, (s32)filemenu_update_show_with_rotation);

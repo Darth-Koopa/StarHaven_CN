@@ -33,6 +33,26 @@ typedef struct {
 static bool sAllowed, sNextAllowed;
 static u32 sOn;
 
+/* Hard mode (GitHub #69), also chosen on the new-game picker and kept with the
+ * save: enemies have 1.5x HP and hit 1.5x as hard, and drop 1.5x the coins
+ * (rounded up). Its own block in the tail, after keyitems.c's. */
+#define HARD_MAGIC 0x53484844      /* "SHHD" */
+#define HARD_BLOCK_OFS 0x74
+static bool sHard, sNextHard;
+
+void pm3ds_hard_choose(bool on) {
+    sNextHard = on;
+}
+
+bool pm3ds_hard_mode(void) {
+    return sHard;
+}
+
+/* src/battle/190B20.c (enemy HP), 1A5830.c (enemy damage), src/enemy_ai.c (coins) */
+s32 pm3ds_hard_scale(s32 v) {
+    return sHard && v > 0 ? (v * 3 + 1) / 2 : v;
+}
+
 void pm3ds_cheats_choose(bool allowed) {
     sNextAllowed = allowed;
 }
@@ -55,6 +75,7 @@ void pm3ds_cheat_toggle(int cheat) {
 void pm3ds_cheats_off(void) {
     sAllowed = false;
     sOn = 0;
+    sHard = false;
 }
 
 /* src/filemenu/filemenu_yesno.c, new file: the picker's choice */
@@ -62,18 +83,25 @@ void pm3ds_cheats_new_game(void) {
     sAllowed = sNextAllowed;
     sNextAllowed = false;   /* used once, so it can't carry over to another file */
     sOn = 0;
+    sHard = sNextHard;
+    sNextHard = false;
 }
 
 /* src/fio.c */
 void pm3ds_cheats_serialize(void* tail) {
     CheatSaveBlock b = { CHEAT_MAGIC, 1, sAllowed, (s32)sOn };
+    s32 hard[2] = { HARD_MAGIC, sHard };
     memcpy((u8*)tail + CHEAT_BLOCK_OFS, &b, sizeof(b));
+    memcpy((u8*)tail + HARD_BLOCK_OFS, hard, sizeof(hard));
 }
 
 void pm3ds_cheats_deserialize(const void* tail) {
     CheatSaveBlock b;
     memcpy(&b, (const u8*)tail + CHEAT_BLOCK_OFS, sizeof(b));
+    s32 hard[2];
+    memcpy(hard, (const u8*)tail + HARD_BLOCK_OFS, sizeof(hard));
     pm3ds_cheats_off();
+    sHard = hard[0] == HARD_MAGIC && hard[1] != 0;
     if (b.magic == CHEAT_MAGIC && b.version == 1 && b.allowed) {
         sAllowed = true;
         sOn = (u32)b.on & ((1u << PM3DS_CHEAT_COUNT) - 1);

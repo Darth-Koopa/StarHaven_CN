@@ -23,6 +23,9 @@
 
 #include "pm3ds_hud_info.h"
 #include "pm3ds_rando.h"
+#include "pm3ds_brand.h"
+#include "pm3ds_rom_layout.h"
+#include <stdio.h>
 
 extern s32 bActorTattles[];
 void pm3ds_decode_msg(s32 msgID, char* out, s32 size, bool dialogue);   /* touch_menu.c */
@@ -466,6 +469,119 @@ int pm3ds_badge_query(pm3ds_badge_list_t* out) {
     out->bp_used = pause_get_total_equipped_bp_cost();
     out->can_change = badge_can_change();
     return out->count;
+}
+
+/* Badge loadouts (Discord suggestion): three sets of equipped badges per save
+ * file, in <save name>.badges next to the save on the SD card (the save's own
+ * tail is full). A new game on a file slot clears its loadouts. */
+#define LOADOUT_MAGIC 0x5348424C   /* "SHBL" */
+#define LOADOUT_PATH PM3DS_SD_DIR "/" PM3DS_SAVE_NAME ".badges"
+typedef struct {
+    s32 magic, version;
+    s16 badge[4][PM3DS_BADGE_LOADOUTS][64];   /* file slot, loadout, equipped badges (0 ends) */
+} LoadoutFile;
+static LoadoutFile sLoadouts;
+static bool sLoadoutsRead;
+
+static void loadouts_read(void) {
+    if (sLoadoutsRead) {
+        return;
+    }
+    sLoadoutsRead = true;
+    memset(&sLoadouts, 0, sizeof(sLoadouts));
+    FILE* f = fopen(LOADOUT_PATH, "rb");
+    if (f != nullptr) {
+        if (fread(&sLoadouts, sizeof(sLoadouts), 1, f) != 1 || sLoadouts.magic != LOADOUT_MAGIC || sLoadouts.version != 1) {
+            memset(&sLoadouts, 0, sizeof(sLoadouts));
+        }
+        fclose(f);
+    }
+}
+
+static void loadouts_write(void) {
+    sLoadouts.magic = LOADOUT_MAGIC;
+    sLoadouts.version = 1;
+    FILE* f = fopen(LOADOUT_PATH, "wb");
+    if (f != nullptr) {
+        fwrite(&sLoadouts, sizeof(sLoadouts), 1, f);
+        fclose(f);
+    }
+}
+
+static s16* loadout(s32 n) {
+    s32 slot = gGameStatusPtr != nullptr ? gGameStatusPtr->saveSlot & 3 : 0;
+    loadouts_read();
+    return sLoadouts.badge[slot][n];
+}
+
+int pm3ds_badge_loadout_count(int n) {
+    if (n < 0 || n >= PM3DS_BADGE_LOADOUTS) {
+        return 0;
+    }
+    s16* l = loadout(n);
+    s32 k = 0;
+    while (k < 64 && l[k] != 0) {
+        k++;
+    }
+    return k;
+}
+
+int pm3ds_badge_loadout_save(int n) {
+    if (n < 0 || n >= PM3DS_BADGE_LOADOUTS) {
+        return 0;
+    }
+    s16* l = loadout(n);
+    s32 k = 0;
+    for (s32 i = 0; i < ARRAY_COUNT(gPlayerData.equippedBadges); i++) {
+        if (IS_BADGE(gPlayerData.equippedBadges[i])) {
+            l[k++] = gPlayerData.equippedBadges[i];
+        }
+    }
+    while (k < 64) {
+        l[k++] = 0;
+    }
+    loadouts_write();
+    sfx_play_sound(SOUND_MENU_BADGE_EQUIP);
+    return pm3ds_badge_loadout_count(n);
+}
+
+/* everything off, then the loadout's badges on in order while they fit; ones not owned
+ * anymore or past the BP are skipped */
+int pm3ds_badge_loadout_load(int n, int* skipped) {
+    *skipped = 0;
+    if (!badge_can_change() || n < 0 || n >= PM3DS_BADGE_LOADOUTS) {
+        return -1;
+    }
+    s16 want[64];
+    memcpy(want, loadout(n), sizeof(want));
+    for (s32 i = 0; i < ARRAY_COUNT(gPlayerData.equippedBadges); i++) {
+        gPlayerData.equippedBadges[i] = 0;
+    }
+    s32 on = 0;
+    for (s32 k = 0; k < 64 && want[k] != 0; k++) {
+        bool owned = false;
+        for (s32 i = 0; i < ARRAY_COUNT(gPlayerData.badges); i++) {
+            if (gPlayerData.badges[i] == want[k]) {
+                owned = true;
+                break;
+            }
+        }
+        if (owned && pause_badges_try_equip(want[k]) == 3) {   // EQUIP_RESULT_SUCCESS
+            on++;
+        } else {
+            (*skipped)++;
+        }
+    }
+    enforce_hpfp_limits();
+    sfx_play_sound(SOUND_MENU_BADGE_EQUIP);
+    return on;
+}
+
+/* src/filemenu/filemenu_yesno.c, a new file: the slot's old loadouts go */
+void pm3ds_badge_loadouts_clear_slot(s32 slot) {
+    loadouts_read();
+    memset(sLoadouts.badge[slot & 3], 0, sizeof(sLoadouts.badge[0]));
+    loadouts_write();
 }
 
 /* platform/bottom_screen.c, a badge tapped: on if it fits, off if it was on (as the pause menu does) */
