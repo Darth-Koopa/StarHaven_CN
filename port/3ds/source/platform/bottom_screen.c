@@ -679,12 +679,12 @@ static float ui_small_text_draw_raw(float x, float y, const char *str, float sca
 }
 #endif
 
-/* These tab, tracker, and option labels use the original iQue/game charset.
- * Preserve the original native scale and character advances, but expand only
- * the drawn glyph quads slightly. This increases visible ink without changing
- * the nominal font size, font face, or text layout. */
+/* The native iQue/game-font renderer preserves the original font texture and
+ * character advances. Some UI labels intentionally use a slightly enlarged ink
+ * quad; rows whose requested scale should match the original glyph size call
+ * the *_original variants and do not apply the extra 1.20x ink enlargement. */
 #define UI_NATIVE_GLYPH_INK_SCALE 1.20f
-static float ui_native_glyph_text(float x, float y, const char *str, float scale, u32 c) {
+static float ui_native_glyph_text_ink(float x, float y, const char *str, float scale, float ink_scale, u32 c) {
     if (!str || !s_font_ok) return x;
     str = ui_text(str);
     while (*str) {
@@ -695,8 +695,8 @@ static float ui_native_glyph_text(float x, float y, const char *str, float scale
             float gy = (glyph / FONT_ATLAS_COLS) * 16.0f;
             float cw = s_glyph_w[glyph] + 2 < 16 ? s_glyph_w[glyph] + 2 : 16;
             float cell_w = unit_width * scale;
-            float draw_w = cw * scale * UI_NATIVE_GLYPH_INK_SCALE;
-            float draw_h = 15.0f * scale * UI_NATIVE_GLYPH_INK_SCALE;
+            float draw_w = cw * scale * ink_scale;
+            float draw_h = 15.0f * scale * ink_scale;
             float base_h = 15.0f * scale;
             float x0 = x + (cell_w - draw_w) * 0.5f;
             float y0 = y + 0.5f * scale - (draw_h - base_h) * 0.5f;
@@ -704,23 +704,41 @@ static float ui_native_glyph_text(float x, float y, const char *str, float scale
                   gx / FONT_ATLAS_W, (gy + 0.5f) / FONT_ATLAS_H,
                   (gx + cw) / FONT_ATLAS_W, (gy + 15.5f) / FONT_ATLAS_H, c, c);
         }
-        /* Leave advance widths untouched: only the glyph's ink quad grows. */
+        /* Keep advance widths unchanged, independently of the ink quad size. */
         x += unit_width * scale;
     }
     return x;
 }
 
-static float ui_native_glyph_text_fit(float x, float y, const char *str, float scale, float max_width, u32 c) {
+/* Default renderer for UI elements that intentionally retain 1.20x ink. */
+static float ui_native_glyph_text(float x, float y, const char *str, float scale, u32 c) {
+    return ui_native_glyph_text_ink(x, y, str, scale, UI_NATIVE_GLYPH_INK_SCALE, c);
+}
+
+/* Exact-size variant used by the named/option labels the user specified. */
+static float ui_native_glyph_text_original(float x, float y, const char *str, float scale, u32 c) {
+    return ui_native_glyph_text_ink(x, y, str, scale, 1.0f, c);
+}
+
+static float ui_native_glyph_text_fit_ink(float x, float y, const char *str, float scale, float max_width, float ink_scale, u32 c) {
     if (!str || !s_font_ok) return x;
     float render_scale = scale; /* native game-font scale; no TTF scale conversion */
     float width = text_width(str, render_scale);
     if (max_width > 0.0f && width > max_width && width > 0.0f) {
         render_scale *= max_width / width;
     }
-    return ui_native_glyph_text(x, y, str, render_scale, c);
+    return ui_native_glyph_text_ink(x, y, str, render_scale, ink_scale, c);
 }
 
-static void ui_native_glyph_text_center_fit(float cx, float y, const char *str, float scale, float max_width, u32 c) {
+static float ui_native_glyph_text_fit(float x, float y, const char *str, float scale, float max_width, u32 c) {
+    return ui_native_glyph_text_fit_ink(x, y, str, scale, max_width, UI_NATIVE_GLYPH_INK_SCALE, c);
+}
+
+static float ui_native_glyph_text_fit_original(float x, float y, const char *str, float scale, float max_width, u32 c) {
+    return ui_native_glyph_text_fit_ink(x, y, str, scale, max_width, 1.0f, c);
+}
+
+static void ui_native_glyph_text_center_fit_ink(float cx, float y, const char *str, float scale, float max_width, float ink_scale, u32 c) {
     if (!str || !s_font_ok) return;
     float render_scale = scale; /* native game-font scale; no TTF scale conversion */
     float width = text_width(str, render_scale);
@@ -728,8 +746,13 @@ static void ui_native_glyph_text_center_fit(float cx, float y, const char *str, 
         render_scale *= max_width / width;
         width = text_width(str, render_scale);
     }
-    ui_native_glyph_text(cx - width / 2.0f, y, str, render_scale, c);
+    ui_native_glyph_text_ink(cx - width / 2.0f, y, str, render_scale, ink_scale, c);
 }
+
+static void ui_native_glyph_text_center_fit(float cx, float y, const char *str, float scale, float max_width, u32 c) {
+    ui_native_glyph_text_center_fit_ink(cx, y, str, scale, max_width, UI_NATIVE_GLYPH_INK_SCALE, c);
+}
+
 
 /* Small text uses the generated TTF subset on iQue builds; other targets and
  * failed texture allocation retain the original 8x8 console-font fallback. */
@@ -1451,7 +1474,7 @@ static void draw_log(void) {
         float x0, y0, x1, y1;
         log_entry_rect(slot, &x0, &y0, &x1, &y1);
         tile(x0, y0, x1, y1, 6, COL_TAB_ON);
-        ui_native_glyph_text_fit(x0 + 7, y0 + 3, s_log.name[i], 1.0f, x1 - x0 - 14, COL_WHITE);
+        ui_native_glyph_text_fit_original(x0 + 7, y0 + 3, s_log.name[i], 1.0f, x1 - x0 - 14, COL_WHITE);
     }
 }
 
@@ -1513,7 +1536,7 @@ static void draw_found(void) {
         float avail = (f->rando ? 262 : 158) - x;
         /* Area names are button labels too; keep them readable without crossing
          * the fixed collection counters on the non-randomizer page. */
-        ui_native_glyph_text_fit(x, y0 + 3, a->name, 1.0f, avail - 4, done ? COL_DONE : COL_WHITE);
+        ui_native_glyph_text_fit_original(x, y0 + 3, a->name, 1.0f, avail - 4, done ? COL_DONE : COL_WHITE);
         if (!f->rando) {
             count_cell(178, y0 + 1, a->sp_found, a->sp_total, 0.72f);
             count_cell(212, y0 + 1, a->badge_found, a->badge_total, 0.72f);
@@ -1660,7 +1683,7 @@ static void draw_cook(void) {
         /* not cooked: a dark silhouette, the name hidden unless "Show all" */
         draw_icon(s_cook.icon[i], x0 + 4, y0 + 2, 14, s_cook.done[i] ? COL_WHITE : RGBA(70, 45, 25, known ? 200 : 150));
         const char *name = known ? s_cook.name[i] : "???";
-        ui_native_glyph_text(x0 + 21, y0 + 3, name,
+        ui_native_glyph_text_original(x0 + 21, y0 + 3, name,
                              fit(name, x1 - x0 - 26, 1.0f, 0.5f),
                              known ? COL_WHITE : RGBA(255, 255, 255, 170));
     }
@@ -2189,7 +2212,7 @@ static const char *const s_text_names[TEXT_SPEEDS] = { "Normal", "Fast", "Instan
 static void opt_row(int i, const char *label, const char *value) {
     float y = OPT_Y0 + i * OPT_ROW_H;
     tile(CX0, y, CX1, y + OPT_ROW_H - 3, 6, COL_TAB_ON);
-    ui_native_glyph_text_fit(CX0 + 7, y + 3, label, 1.0f, 150, COL_WHITE);
+    ui_native_glyph_text_fit_original(CX0 + 7, y + 3, label, 1.0f, 150, COL_WHITE);
     float bx0 = 226, by0 = y + 2, bx1 = CX1 - 4, by1 = y + OPT_ROW_H - 5;
     round_rect(bx0, by0, bx1, by1, 7, COL_PANEL_EDGE);
     round_rect(bx0 + 2, by0 + 2, bx1 - 2, by1 - 2, 5, COL_SEL);
@@ -2256,7 +2279,7 @@ static void draw_cheats(void) {
         float y = OPT_Y0 + i * CHEAT_ROW_H;
         bool on = pm3ds_cheat_on(i);
         tile(CX0, y, CX1, y + CHEAT_ROW_H - 3, 6, on ? COL_SEL : COL_TAB_ON);
-        ui_native_glyph_text(CX0 + 7, y + 3, s_cheat_names[i],
+        ui_native_glyph_text_original(CX0 + 7, y + 3, s_cheat_names[i],
                              fit(s_cheat_names[i], 112, 1.0f, 0.6f), COL_WHITE);
         ui_native_glyph_text(CX0 + 124, y + 4, s_cheat_help[i],
                              fit(s_cheat_help[i], 96, 0.62f, 0.5f), COL_HINT);

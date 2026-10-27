@@ -23,23 +23,34 @@ def function_body(name: str) -> str:
         raise SystemExit(f"unclosed function body: {name}")
     return source[start:i - 1]
 
-native_draw = function_body("ui_native_glyph_text")
-if "quad2(&s_font" not in native_draw or "UI_NATIVE_GLYPH_INK_SCALE" not in native_draw:
-    raise SystemExit("label renderer must draw enlarged glyphs from the original game-font texture")
+native_draw = function_body("ui_native_glyph_text_ink")
+if "quad2(&s_font" not in native_draw or "ink_scale" not in native_draw:
+    raise SystemExit("native renderer must draw from the original game-font texture with an explicit ink scale")
 if "x += unit_width * scale;" not in native_draw:
-    raise SystemExit("glyph enlargement must preserve the original character advances")
+    raise SystemExit("ink scaling must preserve the original character advances")
 if "ui_small_text_draw_raw" in native_draw or "s_ui_small" in native_draw:
-    raise SystemExit("label renderer must not use the Fusion Pixel small-font atlas")
+    raise SystemExit("native label renderer must not use the Fusion Pixel small-font atlas")
+if "return ui_native_glyph_text_ink(x, y, str, scale, 1.0f, c);" not in function_body("ui_native_glyph_text_original"):
+    raise SystemExit("original-size renderer must not apply the 1.20x ink enlargement")
 
-for name in ("ui_native_glyph_text_fit", "ui_native_glyph_text_center_fit"):
+for name in ("ui_native_glyph_text_fit_ink", "ui_native_glyph_text_center_fit_ink"):
     body = function_body(name)
-    if "text_width(" not in body or "ui_native_glyph_text(" not in body:
+    if "text_width(" not in body or "ui_native_glyph_text_ink(" not in body:
         raise SystemExit(f"{name} must measure text and draw through the native glyph renderer")
     if "float render_scale = scale;" not in body or "scale * 0.625f" in body:
         raise SystemExit(f"{name} must use native game-font scale without TTF conversion")
 
 if "#define UI_NATIVE_GLYPH_INK_SCALE 1.20f" not in source:
-    raise SystemExit("expected 1.20x glyph-ink enlargement without changing nominal scales or advances")
+    raise SystemExit("default glyph-ink enlargement must remain available for UI elements that use it")
+for snippet in (
+    'ui_native_glyph_text_fit_original(x0 + 7, y0 + 3, s_log.name[i], 1.0f',
+    'ui_native_glyph_text_fit_original(x, y0 + 3, a->name, 1.0f',
+    'ui_native_glyph_text_original(x0 + 21, y0 + 3, name,',
+    'ui_native_glyph_text_fit_original(CX0 + 7, y + 3, label, 1.0f',
+    'ui_native_glyph_text_original(CX0 + 7, y + 3, s_cheat_names[i],',
+):
+    if snippet not in source:
+        raise SystemExit(f"requested name/label must bypass extra 1.20x ink scale: {snippet}")
 if "const float label_scale = 0.62f;" not in source:
     raise SystemExit("all left-rail labels must share one nominal native-glyph scale")
 if "fit(title, 160, 1.0f, 0.7f)" not in source:
@@ -61,9 +72,9 @@ if "float label_scale = strlen(tabs[i].name)" in source:
 for label in (
     "ui_native_glyph_text_center_fit(cx, y0 + 19, tabs[i].name, label_scale",
     'ui_native_glyph_text_center_fit(vx0 + 58, vy1 - 20, "Drag to look", 0.7f',
-    "ui_native_glyph_text_fit(x0 + 7, y0 + 3, s_log.name[i], 1.0f",
-    "ui_native_glyph_text_fit(x, y0 + 3, a->name, 1.0f",
-    "ui_native_glyph_text_fit(CX0 + 7, y + 3, label, 1.0f",
+    "ui_native_glyph_text_fit_original(x0 + 7, y0 + 3, s_log.name[i], 1.0f",
+    "ui_native_glyph_text_fit_original(x, y0 + 3, a->name, 1.0f",
+    "ui_native_glyph_text_fit_original(CX0 + 7, y + 3, label, 1.0f",
     "ui_native_glyph_text_center_fit((bx0 + bx1) / 2, (by0 + by1) / 2 - 6.5f, value, 0.75f",
 ):
     if label not in source:
@@ -73,8 +84,8 @@ print("Native iQue glyph renderer and scale-preserving ink enlargement checks pa
 
 # Recipe and cheat labels should share the native iQue glyph renderer and row baseline.
 for expected in (
-    'ui_native_glyph_text(x0 + 21, y0 + 3, name,',
-    'ui_native_glyph_text(CX0 + 7, y + 3, s_cheat_names[i],',
+    'ui_native_glyph_text_original(x0 + 21, y0 + 3, name,',
+    'ui_native_glyph_text_original(CX0 + 7, y + 3, s_cheat_names[i],',
     'ui_native_glyph_text(CX0 + 124, y + 4, s_cheat_help[i],',
 ):
     if expected not in source:
