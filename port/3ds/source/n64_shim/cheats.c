@@ -45,6 +45,28 @@ void pm3ds_hard_choose(bool on) {
     sNextHard = on;
 }
 
+/* Skip intro (Discord suggestion), also from the new-game picker: the new file starts
+ * where Mario lands after falling off the cliff by Goompa's house, Goompa about to join */
+static bool sNextSkipIntro;
+
+void pm3ds_skip_intro_choose(bool on) {
+    sNextSkipIntro = on;
+}
+
+/* src/filemenu/filemenu_yesno.c, a new file, after the game set its first map */
+void pm3ds_new_game_start(void) {
+    if (!sNextSkipIntro) {
+        return;
+    }
+    sNextSkipIntro = false;
+    gGameStatusPtr->areaID = AREA_KMR;
+    gGameStatusPtr->mapID = 2;   // kmr_03
+    gGameStatusPtr->entryID = 2; // falling in from the cliff above
+    evt_set_variable(nullptr, GB_StoryProgress, STORY_CH0_FELL_OFF_CLIFF);
+    evt_set_variable(nullptr, GF_KMR02_Met_Goompa, true);
+    evt_set_variable(nullptr, GF_KMR02_Met_Goombario, true);
+}
+
 bool pm3ds_hard_mode(void) {
     return sHard;
 }

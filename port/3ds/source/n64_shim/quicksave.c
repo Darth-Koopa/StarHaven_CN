@@ -75,6 +75,9 @@ void pm3ds_qs_step(void) {
             partner->pos.z = ps->pos.z;
         }
     }
+    // the camera jumps along, as after a pipe or door, instead of gliding over from the
+    // entrance (Discord: reloading a save by the Windy Mill)
+    gCameras[CAM_DEFAULT].needsReinit = true;
     {
         extern void pm3ds_log(int, const char*, ...);
         pm3ds_log(2, "quick save: Mario put back at %d %d %d", (int)ps->pos.x, (int)ps->pos.y, (int)ps->pos.z);

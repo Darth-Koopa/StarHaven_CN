@@ -274,3 +274,6 @@ TR("C buttons", "C-Tasten", "Boutons C", "Botones C", "Tasti C", "Cボタン")
 /* randomizer: badge costs */
 TR("Badge costs", "Orden-Kosten", "Coût des badges", "Coste de medallas", "Costo medaglie", "バッジのコスト")
 TR("Badges swap their BP and FP costs. Speedy Spin stays.", "Orden tauschen ihre BP- und FP-Kosten. Turbo-Wirbel bleibt.", "Les badges échangent leurs coûts en PB et PF. Tornade rapide reste.", "Las medallas cambian sus costes de PM y PF. Giro veloz se queda.", "Le medaglie si scambiano i costi in PM e PF. Vortice resta.", "バッジの BPとFPが いれかわる。スピードスピンは そのまま。")
+/* new-game picker: skip intro */
+TR("Skip intro", "Intro überspringen", "Passer l'intro", "Saltar intro", "Salta intro", "プロローグを とばす")
+TR("Y: cheats  X: hard  R: skip", "Y: Cheats  X: schwer  R: Intro", "Y : triches  X : dur  R : intro", "Y: trucos  X: difícil  R: intro", "Y: trucchi  X: difficile  R: intro", "Y：チート X：ハード R：とばす")

@@ -2388,6 +2388,7 @@ static bool s_ng_hold;    /* closed, but the game sees no buttons until they are
 static bool s_ng_kbd;     /* type a seed: the keyboard opens from the tick, outside a frame */
 static bool s_ng_cheats;  /* the new save allows cheats (n64_shim/cheats.c) */
 static bool s_ng_hard;    /* the new save is in hard mode (n64_shim/cheats.c) */
+static bool s_ng_skip;    /* the new save skips the intro (n64_shim/cheats.c) */
 #define NG_CHEAT_Y0 178
 #define NG_CHEAT_Y1 200
 
@@ -2400,6 +2401,7 @@ void pm3ds_new_game_picker_open(void) {
     s_ng_fresh = true;
     s_ng_cheats = false;
     s_ng_hard = false;
+    s_ng_skip = false;
 }
 
 /* src/filemenu/filemenu_main.c, each frame: -1 while open, 1 once a game
@@ -2428,6 +2430,7 @@ static void ng_start(bool rando) {
     pm3ds_rando_choose(flags, s_ng_seed);
     pm3ds_cheats_choose(s_ng_cheats);
     pm3ds_hard_choose(s_ng_hard);
+    pm3ds_skip_intro_choose(s_ng_skip);
     pm3ds_cfg.rando_flags = s_ng_flags | (rando ? PM3DS_RANDO_ON : 0);
     pm3ds_settings_save();
     ng_close(1, NG_SND_NEXT);
@@ -2500,6 +2503,9 @@ static void ng_buttons(void) {
         } else if (kd & KEY_X) {
             s_ng_hard = !s_ng_hard;
             s_ng_sound = NG_SND_TOGGLE;
+        } else if (kd & KEY_R) {
+            s_ng_skip = !s_ng_skip;
+            s_ng_sound = NG_SND_TOGGLE;
         } else if (kd & KEY_B) {
             ng_close(0, NG_SND_BACK);
         }
@@ -2536,11 +2542,10 @@ static void ng_touch(int px, int py) {
             s_ng_page = NG_RANDO;
             s_ng_cursor = NG_ROW_START;
             s_ng_sound = NG_SND_NEXT;
-        } else if (in(px, py, 16, NG_CHEAT_Y0, 158, NG_CHEAT_Y1)) {
-            s_ng_cheats = !s_ng_cheats;
-            s_ng_sound = NG_SND_TOGGLE;
-        } else if (in(px, py, 162, NG_CHEAT_Y0, 304, NG_CHEAT_Y1)) {
-            s_ng_hard = !s_ng_hard;
+        } else if (py >= NG_CHEAT_Y0 && py < NG_CHEAT_Y1 && px >= 16 && px < 304) {
+            int k = (px - 16) / 96;   /* Cheats, Hard mode, Skip intro */
+            bool *sw = k == 0 ? &s_ng_cheats : k == 1 ? &s_ng_hard : &s_ng_skip;
+            *sw = !*sw;
             s_ng_sound = NG_SND_TOGGLE;
         } else if (in(px, py, 8, 212, 88, 236)) {
             ng_close(0, NG_SND_BACK);
@@ -2607,17 +2612,17 @@ static void draw_new_game(float w) {
         }
         /* switches for the new save, set once: cheats (used from Options > Cheats in game)
          * and hard mode (GitHub #69) */
-        for (int k = 0; k < 2; k++) {
-            float x0 = dx + (k ? 162 : 16), x1 = x0 + 142;
-            bool on = k ? s_ng_hard : s_ng_cheats;
-            const char *label = k ? "Hard mode" : "Cheats";
+        for (int k = 0; k < 3; k++) {
+            float x0 = dx + 16 + k * 96, x1 = x0 + 92;
+            bool on = k == 0 ? s_ng_cheats : k == 1 ? s_ng_hard : s_ng_skip;
+            const char *label = k == 0 ? "Cheats" : k == 1 ? "Hard mode" : "Skip intro";
             round_rect(x0, NG_CHEAT_Y0, x1, NG_CHEAT_Y1, 8, on ? RGBA(255, 214, 120, 150) : RGBA(205, 190, 170, 120));
-            text(x0 + 7, NG_CHEAT_Y0 + 3, label, fit(label, 80, 0.9f, 0.55f), 0, COL_WHITE);
-            round_rect(x1 - 50, NG_CHEAT_Y0 + 2, x1 - 4, NG_CHEAT_Y1 - 2, 8, COL_PANEL_EDGE);
-            round_rect(x1 - 48, NG_CHEAT_Y0 + 4, x1 - 6, NG_CHEAT_Y1 - 4, 6, on ? RGBA(255, 214, 120, 255) : RGBA(205, 190, 170, 255));
-            text_center(x1 - 27, NG_CHEAT_Y0 + 2, on ? "On" : "Off", 1.0f, 0, COL_WHITE);
+            text(x0 + 5, NG_CHEAT_Y0 + 4, label, fit(label, 50, 0.8f, 0.45f), 0, COL_WHITE);
+            round_rect(x1 - 34, NG_CHEAT_Y0 + 2, x1 - 3, NG_CHEAT_Y1 - 2, 8, COL_PANEL_EDGE);
+            round_rect(x1 - 32, NG_CHEAT_Y0 + 4, x1 - 5, NG_CHEAT_Y1 - 4, 6, on ? RGBA(255, 214, 120, 255) : RGBA(205, 190, 170, 255));
+            text_center(x1 - 18, NG_CHEAT_Y0 + 3, on ? "On" : "Off", 0.8f, 0, COL_WHITE);
         }
-        small_text_center(dx + 206, 219, "Y: cheats  X: hard mode", 1.0f, COL_PANEL_EDGE);
+        small_text_center(dx + 206, 219, "Y: cheats  X: hard  R: skip", 1.0f, COL_PANEL_EDGE);
         ng_button(dx + 8, 212, dx + 88, 234, "Back", false);
         return;
     }

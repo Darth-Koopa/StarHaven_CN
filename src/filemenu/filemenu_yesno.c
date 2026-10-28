@@ -389,6 +389,9 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
                         gGameStatusPtr->mapID = 11; //TODO hardcoded area/map IDs
                         gGameStatusPtr->entryID = 0;
                         evt_set_variable(nullptr, GB_StoryProgress, STORY_INTRO);
+#ifdef _3DS
+                        { extern void pm3ds_new_game_start(void); pm3ds_new_game_start(); }   // Skip intro
+#endif
 #ifdef PM3DS_START_MAP
                         // debug builds only: New Game drops into a chosen map
                         // (EXTRA_CFLAGS="-DPM3DS_START_AREA=.. -DPM3DS_START_MAP=..

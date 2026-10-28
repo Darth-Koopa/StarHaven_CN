@@ -25,4 +25,6 @@ void pm3ds_hard_choose(bool on);
 bool pm3ds_hard_mode(void);
 int32_t pm3ds_hard_scale(int32_t v);   /* x1.5 rounded up in hard mode */
 
+void pm3ds_skip_intro_choose(bool on);   /* the new file starts after the prologue's fall */
+
 #endif
