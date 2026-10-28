@@ -80,8 +80,14 @@ void osContStartReadData(void *mq) {
     };
     uint16_t b = 0;
     bool turbo = false;
+    /* "D-pad in menus" (Discord suggestion): in an open menu the D-pad moves the cursor
+     * like the stick does, instead of the C buttons it carries by default */
+    extern bool pm3ds_menu_open(void);
+    u32 dpad = KEY_DUP | KEY_DDOWN | KEY_DLEFT | KEY_DRIGHT;
+    bool dpad_stick = pm3ds_cfg.dpad_menus && (kHeld & dpad) && pm3ds_menu_open();
     for (int k = 0; k < KEY_IDX_COUNT; k++) {
         if (!(kHeld & pm3ds_settings_key_bit(k))) continue;
+        if (dpad_stick && (pm3ds_settings_key_bit(k) & dpad)) continue;
         b |= act_bits[pm3ds_cfg.keymap[k] % ACT_COUNT];
         turbo |= pm3ds_cfg.keymap[k] == ACT_TURBO_A;
     }
@@ -105,6 +111,13 @@ void osContStartReadData(void *mq) {
             sx = (int8_t)(cp.dx * k);
             sy = (int8_t)(cp.dy * k);
         }
+    }
+
+    if (dpad_stick) {
+        if (kHeld & KEY_DUP) sy = 80;
+        if (kHeld & KEY_DDOWN) sy = -80;
+        if (kHeld & KEY_DLEFT) sx = -80;
+        if (kHeld & KEY_DRIGHT) sx = 80;
     }
 
     uint16_t phys = b;   /* the console's own buttons, before the touch and debug ones join */

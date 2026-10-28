@@ -12,6 +12,7 @@
  */
 #include "common.h"
 #include "game_modes.h"
+#include "pm3ds_settings.h"
 
 #include <string.h>
 
@@ -90,4 +91,27 @@ void pm3ds_qs_new_game(void) {
 void pm3ds_quit_to_title(void) {
     sfx_play_sound(SOUND_MENU_NEXT);
     gOverrideFlags |= GLOBAL_OVERRIDES_SOFT_RESET;
+}
+
+/* platform/pm3ds_settings.c, pm3ds_fast_forward: places where fast-forward pauses itself.
+ * The Lava Piranha's entrance (kzn_19) softlocked on consoles when it started with
+ * fast-forward on (GitHub #66, Discord; never in Azahar), so it runs at normal speed
+ * there until the boss is beaten. */
+bool pm3ds_ff_paused_here(void) {
+    MapConfig* get_current_map_config(void);
+    if (gGameStatusPtr == nullptr || gGameStatusPtr->areaID != AREA_KZN) {
+        return false;
+    }
+    MapConfig* mc = get_current_map_config();
+    return mc != nullptr && strcmp(mc->id, "kzn_19") == 0 &&
+           evt_get_variable(nullptr, GB_StoryProgress) < STORY_CH5_DEFEATED_LAVA_PIRANHA;
+}
+
+/* src/world/area_kzn/kzn_19/npc.c: how far the Lava Piranha's entrance got, into log.txt,
+ * so a stall there on a console shows where (GitHub #66) */
+API_CALLABLE(pm3ds_LogStep) {
+    extern void pm3ds_log(int, const char*, ...);
+    pm3ds_log(3, "kzn_19 boss entrance: step %d (frame %d, ff %d)", (int)evt_get_variable(script, *script->ptrReadPos),
+              (int)gGameStatusPtr->frameCounter, (int)pm3ds_fast_forward_raw());
+    return ApiStatus_DONE2;
 }

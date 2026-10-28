@@ -44,6 +44,8 @@ typedef struct {
     bool map_dragged;           /* the player has dragged the bottom-screen map, so "Drag to look" is not shown */
     bool stat_drops;            /* enemies drop hearts and flowers (off: only the Finder badges' ones, GitHub #39) */
     bool hp_beep;
+    uint8_t color_mode;   /* PM3DS_COLOR_*: textures as they are, more vivid, or corrected for colour blindness (#71) */
+    bool dpad_menus;      /* the D-pad moves the cursor while a menu is open (Discord suggestion) */
     int language;               /* the port's own text: PM3DS_LANG_* (pm3ds_lang.h); the console's by default */               /* the HP icon's warning beep at 5 HP or less (src/hud_element.c) */
 } pm3ds_settings_t;
 
@@ -60,5 +62,10 @@ const char *pm3ds_settings_action_name(int act);
 extern bool pm3ds_ff_button_on;     /* touch toggle */
 void pm3ds_ff_poll(void);           /* once per game step */
 bool pm3ds_fast_forward(void);
+bool pm3ds_fast_forward_raw(void);   /* the button, even where it pauses itself */
+
+enum { PM3DS_COLOR_ORIGINAL, PM3DS_COLOR_VIVID, PM3DS_COLOR_DEUTERANOPIA, PM3DS_COLOR_PROTANOPIA,
+       PM3DS_COLOR_TRITANOPIA, PM3DS_COLOR_COUNT };
+void pm3ds_color_mode_changed(void);   /* n64_shim/gfx_texture.c: textures are converted again */
 
 #endif

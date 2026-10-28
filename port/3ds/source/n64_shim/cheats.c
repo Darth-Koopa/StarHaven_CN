@@ -35,7 +35,8 @@ static u32 sOn;
 
 /* Hard mode (GitHub #69), also chosen on the new-game picker and kept with the
  * save: enemies have 1.5x HP and hit 1.5x as hard, and drop 1.5x the coins
- * (rounded up). Its own block in the tail, after keyitems.c's. */
+ * (rounded up); Mario has action commands and guarding from the start. Its own
+ * block in the tail, after keyitems.c's. */
 #define HARD_MAGIC 0x53484844      /* "SHHD" */
 #define HARD_BLOCK_OFS 0x74
 static bool sHard, sNextHard;
@@ -85,6 +86,11 @@ void pm3ds_cheats_new_game(void) {
     sOn = 0;
     sHard = sNextHard;
     sNextHard = false;
+    if (sHard) {
+        // the tutorial fights can't be won at 1.5x damage without them (GitHub #74): action
+        // commands and guarding from the start, as the Lucky Star gives them later
+        gPlayerData.hasActionCommands = true;
+    }
 }
 
 /* src/fio.c */

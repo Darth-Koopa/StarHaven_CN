@@ -318,6 +318,7 @@ static const char* item_name(s32 item) {
     return buf;
 }
 
+static u8 sMoveBP[], sMoveFP[];
 static void write_spoiler(void) {
     char path[96];
     FILE* f;
@@ -328,12 +329,12 @@ static void write_spoiler(void) {
     if (f == nullptr) {
         return;
     }
-    fprintf(f, "%s randomizer, seed %08lX\nShuffled: items, badges%s%s%s%s%s%s\n\n", PM3DS_APP_NAME,
+    fprintf(f, "%s randomizer, seed %08lX\nShuffled: items, badges%s%s%s%s%s%s%s\n\n", PM3DS_APP_NAME,
             (unsigned long)sSeed, (sFlags & PM3DS_RANDO_COINS) ? ", coins, star pieces" : "",
             (sFlags & PM3DS_RANDO_KEYS) ? ", key items" : "",
             (sFlags & PM3DS_RANDO_KEYS) && (sFlags & PM3DS_RANDO_HIDDEN) ? " (hidden spots too)" : "",
             (sFlags & PM3DS_RANDO_SHOPS) ? ", shops" : "", (sFlags & PM3DS_RANDO_GIFTS) ? ", NPC gifts" : "",
-            (sFlags & PM3DS_RANDO_ENEMIES) ? ", enemies" : "");
+            (sFlags & PM3DS_RANDO_ENEMIES) ? ", enemies" : "", (sFlags & PM3DS_RANDO_BADGES) ? ", badge costs" : "");
     if (sFlags & PM3DS_RANDO_KEYS) {
         fprintf(f, "Key items:\n");
         for (i = 0; i < NUM_LOCS; i++) {
@@ -354,6 +355,19 @@ static void write_spoiler(void) {
         if (sShopItem[i] != sShops[i].item) {
             fprintf(f, "%-8s %-13s %-26s -> %s\n", sShops[i].map, sShops[i].rowf ? "Rowf" : "shop",
                     item_name(sShops[i].item), item_name(sShopItem[i]));
+        }
+    }
+    if (sFlags & PM3DS_RANDO_BADGES) {
+        fprintf(f, "\nBadge costs (BP, FP):\n");
+        for (i = ITEM_FIRST_BADGE; i <= ITEM_LAST_BADGE; i++) {
+            u8 mv = gItemTable[i].moveID;
+            if (mv != 0 && (gMoveTable[mv].costBP != sMoveBP[mv] || gMoveTable[mv].costFP != sMoveFP[mv])) {
+                fprintf(f, "  %-26s %d BP -> %d BP", item_name(i), sMoveBP[mv], gMoveTable[mv].costBP);
+                if (sMoveFP[mv] != 0) {
+                    fprintf(f, ", %d FP -> %d FP", sMoveFP[mv], gMoveTable[mv].costFP);
+                }
+                fprintf(f, "\n");
+            }
         }
     }
     fclose(f);
@@ -659,6 +673,73 @@ static const struct { u8 area, from, to, tier; } sEnemyRanges[] = {
 static u16 sEnemyFrom[MAX_ENEMY_BATTLES], sEnemyTo[MAX_ENEMY_BATTLES];
 static s32 sNumEnemy;
 
+/* Badge costs (PM3DS_RANDO_BADGES): the BP costs of the badges dealt out again among
+ * them, and the FP costs among the badge moves that use FP, the same for a seed.
+ * Speedy Spin keeps its cost (asked for). The vanilla costs come back whenever the
+ * option is off, so another file is never affected. */
+#define MOVE_TABLE_SIZE ARRAY_COUNT(gMoveTable)
+static u8 sMoveBP[MOVE_TABLE_SIZE], sMoveFP[MOVE_TABLE_SIZE];
+static bool sMoveCostsSaved;
+
+static void build_badge_costs(void) {
+    u32 st = sSeed ^ 0x42414447u;   /* "BADG" */
+    u8 moves[ITEM_LAST_BADGE - ITEM_FIRST_BADGE + 1], fpMoves[ITEM_LAST_BADGE - ITEM_FIRST_BADGE + 1];
+    u8 pool[ITEM_LAST_BADGE - ITEM_FIRST_BADGE + 1];
+    s32 n = 0, nf = 0, i, j;
+
+    if (!sMoveCostsSaved) {
+        for (i = 0; i < MOVE_TABLE_SIZE; i++) {
+            sMoveBP[i] = gMoveTable[i].costBP;
+            sMoveFP[i] = gMoveTable[i].costFP;
+        }
+        sMoveCostsSaved = true;
+    }
+    for (i = 0; i < MOVE_TABLE_SIZE; i++) {
+        gMoveTable[i].costBP = sMoveBP[i];
+        gMoveTable[i].costFP = sMoveFP[i];
+    }
+    if (!(sFlags & PM3DS_RANDO_BADGES)) {
+        return;
+    }
+    for (i = ITEM_FIRST_BADGE; i <= ITEM_LAST_BADGE; i++) {
+        u8 mv = gItemTable[i].moveID;
+        bool seen = false;
+        if (mv == 0 || mv == MOVE_SPEEDY_SPIN || sMoveBP[mv] == 0) {
+            continue;   // no move, the kept one, or an unused badge
+        }
+        for (j = 0; j < n; j++) {
+            seen |= moves[j] == mv;   // several badges share a move (HP Plus A, B, C...)
+        }
+        if (seen) {
+            continue;
+        }
+        moves[n++] = mv;
+        if (sMoveFP[mv] != 0) {
+            fpMoves[nf++] = mv;
+        }
+    }
+    for (i = 0; i < n; i++) {
+        pool[i] = sMoveBP[moves[i]];
+    }
+    for (i = n - 1; i > 0; i--) {
+        j = next_rand(&st) % (u32)(i + 1);
+        u8 t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+    }
+    for (i = 0; i < n; i++) {
+        gMoveTable[moves[i]].costBP = pool[i];
+    }
+    for (i = 0; i < nf; i++) {
+        pool[i] = sMoveFP[fpMoves[i]];
+    }
+    for (i = nf - 1; i > 0; i--) {
+        j = next_rand(&st) % (u32)(i + 1);
+        u8 t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+    }
+    for (i = 0; i < nf; i++) {
+        gMoveTable[fpMoves[i]].costFP = pool[i];
+    }
+}
+
 static void build_enemies(void) {
     u32 st = sSeed ^ 0x454E4D59u;   /* "ENMY" */
     s32 tier, r, k, n;
@@ -714,6 +795,7 @@ void pm3ds_rando_off(void) {
     sTaken = 0;
     build();
     build_enemies();
+    build_badge_costs();
 }
 
 /* platform/bottom_screen.c, new-game picker */
@@ -744,6 +826,7 @@ void pm3ds_rando_new_game(void) {
     }
     build();
     build_enemies();
+    build_badge_costs();
     write_spoiler();
 }
 
@@ -766,6 +849,7 @@ void pm3ds_rando_deserialize(const void* src) {
         sSeed = b.seed;
         build();
     build_enemies();
+    build_badge_costs();
     } else if (b.magic == RANDO_MAGIC && (b.version == 2 || b.version == 3) && (b.flags & PM3DS_RANDO_ON)) {
         sFlags = (u32)b.flags & PM3DS_RANDO_ALL;
         if (b.version == 2) {
@@ -774,6 +858,7 @@ void pm3ds_rando_deserialize(const void* src) {
         sSeed = b.seed;
         build();
     build_enemies();
+    build_badge_costs();
     } else {
         pm3ds_rando_off();
     }

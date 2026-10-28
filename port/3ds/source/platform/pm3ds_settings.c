@@ -84,6 +84,7 @@ void pm3ds_settings_load(void) {
     pm3ds_cfg.map_dragged = false;
     pm3ds_cfg.stat_drops = true;
     pm3ds_cfg.hp_beep = true;
+    pm3ds_cfg.dpad_menus = true;
     pm3ds_cfg.language = -1;
     pm3ds_settings_default_keymap(pm3ds_cfg.keymap);
     FILE *f = fopen(CFG_PATH, "r");
@@ -102,6 +103,8 @@ void pm3ds_settings_load(void) {
             else if (sscanf(line, "map_dragged=%d", &v) == 1) pm3ds_cfg.map_dragged = v != 0;
             else if (sscanf(line, "stat_drops=%d", &v) == 1) pm3ds_cfg.stat_drops = v != 0;
             else if (sscanf(line, "hp_beep=%d", &v) == 1) pm3ds_cfg.hp_beep = v != 0;
+            else if (sscanf(line, "dpad_menus=%d", &v) == 1) pm3ds_cfg.dpad_menus = v != 0;
+            else if (sscanf(line, "color_mode=%d", &v) == 1 && v >= 0 && v < PM3DS_COLOR_COUNT) pm3ds_cfg.color_mode = (uint8_t)v;
             else if (sscanf(line, "language=%d", &v) == 1 && v >= 0 && v < PM3DS_LANG_COUNT) pm3ds_cfg.language = v;
             else if (sscanf(line, "update_skip=%d", &v) == 1) pm3ds_cfg.update_skip = v;
             else if (sscanf(line, "rando_flags=%d", &v) == 1) pm3ds_cfg.rando_flags = (unsigned)v & PM3DS_RANDO_ALL;
@@ -132,6 +135,8 @@ void pm3ds_settings_save(void) {
     fprintf(f, "map_dragged=%d\n", pm3ds_cfg.map_dragged);
     fprintf(f, "stat_drops=%d\n", pm3ds_cfg.stat_drops);
     fprintf(f, "hp_beep=%d\n", pm3ds_cfg.hp_beep);
+    fprintf(f, "dpad_menus=%d\n", pm3ds_cfg.dpad_menus);
+    fprintf(f, "color_mode=%d\n", pm3ds_cfg.color_mode);
     fprintf(f, "language=%d\n", pm3ds_cfg.language);
     for (int k = 0; k < KEY_IDX_COUNT; k++) fprintf(f, "key_%s=%d\n", s_key_cfg[k], pm3ds_cfg.keymap[k]);
     fclose(f);
@@ -154,7 +159,11 @@ void pm3ds_ff_poll(void) {
     was = now;
 }
 
-bool pm3ds_fast_forward(void) { return s_ff_held || pm3ds_ff_button_on; }
+bool pm3ds_fast_forward_raw(void) { return s_ff_held || pm3ds_ff_button_on; }
+bool pm3ds_fast_forward(void) {
+    extern bool pm3ds_ff_paused_here(void);   /* n64_shim/quicksave.c */
+    return pm3ds_fast_forward_raw() && !pm3ds_ff_paused_here();
+}
 
 int pm3ds_settings_text_speed(void) { return pm3ds_cfg.text_speed; }   /* src/msg.c */
 unsigned int pm3ds_random_seed(void) { return (unsigned)osGetTime() ^ ((unsigned)svcGetSystemTick() * 2654435761u); }

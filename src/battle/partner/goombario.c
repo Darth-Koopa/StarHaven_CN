@@ -558,7 +558,19 @@ ActorBlueprint NAMESPACE = {
     .statusTextOffset = { 10, 20 },
 };
 
+#ifdef _3DS
+API_CALLABLE(N(ResetMultibonkChance)) {
+    // 3DS port: the N64 loaded Goombario's battle data for every battle, so this chance
+    // (shrinking with each Multibonk, a vanilla quirk) started fresh; linked in, it never did
+    N(MultibonkChance) = 200;
+    return ApiStatus_DONE2;
+}
+#endif
+
 EvtScript N(EVS_Init) = {
+#ifdef _3DS
+    Call(N(ResetMultibonkChance))
+#endif
     Call(BindTakeTurn, ACTOR_PARTNER, Ref(N(EVS_TakeTurn)))
     Call(BindIdle, ACTOR_PARTNER, Ref(N(EVS_Idle)))
     Call(BindHandleEvent, ACTOR_PARTNER, Ref(N(EVS_HandleEvent)))

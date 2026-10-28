@@ -220,3 +220,12 @@ NpcGroupList N(DefaultNPCs) = {
     {}
 };
 #endif
+
+#ifdef _3DS
+// 3DS port: the N64 loaded this map's data fresh on every visit; linked in, a second run in one session (Quit game, a new file) started where the last one ended
+API_CALLABLE(N(ResetIntroState)) {
+    N(TargetBoomLengthPost) = 0;
+    N(TargetViewPitch) = 0;
+    return ApiStatus_DONE2;
+}
+#endif

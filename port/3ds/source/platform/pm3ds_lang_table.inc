@@ -262,3 +262,15 @@ TR("Loadout %d saved: %d badges", "Set %d gespeichert: %d Orden", "Tenue %d sauv
 TR("Loadout %d is empty: tap Save first", "Set %d ist leer: erst Speichern antippen", "Tenue %d vide : touche d'abord Sauver", "Conjunto %d vacío: toca Guardar primero", "Set %d vuoto: tocca prima Salva", "セット%d は からっぽ：さきに セーブ")
 TR("Loadout %d on (%d didn't fit)", "Set %d angelegt (%d passten nicht)", "Tenue %d équipée (%d en trop)", "Conjunto %d puesto (%d no cabían)", "Set %d messo (%d non entravano)", "セット%d を つけた（%d こ はいらず）")
 TR("Loadout %d on", "Set %d angelegt", "Tenue %d équipée", "Conjunto %d puesto", "Set %d messo", "セット%d を つけた")
+/* Settings: colours and the D-pad in menus */
+TR("Colors", "Farben", "Couleurs", "Colores", "Colori", "いろ")
+TR("Vivid", "Kräftig", "Vives", "Vivos", "Vividi", "あざやか")
+TR("Deuteranopia", "Deuteranopie", "Deutéranopie", "Deuteranopía", "Deuteranopia", "2がたしきかく")
+TR("Protanopia", "Protanopie", "Protanopie", "Protanopía", "Protanopia", "1がたしきかく")
+TR("Tritanopia", "Tritanopie", "Tritanopie", "Tritanopía", "Tritanopia", "3がたしきかく")
+TR("D-pad in menus", "Steuerkreuz in Menüs", "Croix dans les menus", "Cruceta en menús", "Croce nei menu", "メニューで じゅうじキー")
+TR("Cursor", "Cursor", "Curseur", "Cursor", "Cursore", "カーソル")
+TR("C buttons", "C-Tasten", "Boutons C", "Botones C", "Tasti C", "Cボタン")
+/* randomizer: badge costs */
+TR("Badge costs", "Orden-Kosten", "Coût des badges", "Coste de medallas", "Costo medaglie", "バッジのコスト")
+TR("Badges swap their BP and FP costs. Speedy Spin stays.", "Orden tauschen ihre BP- und FP-Kosten. Turbo-Wirbel bleibt.", "Les badges échangent leurs coûts en PB et PF. Tornade rapide reste.", "Las medallas cambian sus costes de PM y PF. Giro veloz se queda.", "Le medaglie si scambiano i costi in PM e PF. Vortice resta.", "バッジの BPとFPが いれかわる。スピードスピンは そのまま。")

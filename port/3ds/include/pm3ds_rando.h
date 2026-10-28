@@ -10,7 +10,8 @@
 #define PM3DS_RANDO_GIFTS  0x10   /* NPC gifts join the pool */
 #define PM3DS_RANDO_HIDDEN 0x20   /* key items may go to hidden panels and hidden blocks */
 #define PM3DS_RANDO_ENEMIES 0x40  /* enemies: each battle becomes another of the same chapter */
-#define PM3DS_RANDO_ALL    0x7F
+#define PM3DS_RANDO_BADGES 0x80  /* badge BP and FP costs dealt out again (Discord suggestion) */
+#define PM3DS_RANDO_ALL    0xFF
 #define PM3DS_RANDO_ALL_V3 0x3F   /* "everything" before enemies: what older saves and settings meant */
 
 /* the next new game's settings: flags 0 = classic; seed 0 = roll one */

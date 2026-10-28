@@ -2077,12 +2077,12 @@ static const char *const s_text_names[TEXT_SPEEDS] = { "Normal", "Fast", "Instan
 
 /* The Settings page: a list in sections, dragged up and down (a scroll bar
  * shows where); a row changes its setting when tapped without dragging. */
-enum { OPT_LANG, OPT_SCREEN, OPT_FPS, OPT_3D, OPT_TEXT, OPT_FF_SPEED, OPT_FF_BUTTON, OPT_DROPS, OPT_BEEP,
+enum { OPT_LANG, OPT_SCREEN, OPT_FPS, OPT_3D, OPT_COLORS, OPT_TEXT, OPT_FF_SPEED, OPT_FF_BUTTON, OPT_DROPS, OPT_BEEP, OPT_DPAD,
        OPT_UPDATE, OPT_COUNT };
 #define OPT_HEADER 0x100          /* + section number */
 static const int s_opt_list[] = {
-    OPT_HEADER + 0, OPT_LANG, OPT_SCREEN, OPT_FPS, OPT_3D,
-    OPT_HEADER + 1, OPT_TEXT, OPT_FF_SPEED, OPT_FF_BUTTON, OPT_DROPS, OPT_BEEP,
+    OPT_HEADER + 0, OPT_LANG, OPT_SCREEN, OPT_FPS, OPT_3D, OPT_COLORS,
+    OPT_HEADER + 1, OPT_TEXT, OPT_FF_SPEED, OPT_FF_BUTTON, OPT_DROPS, OPT_BEEP, OPT_DPAD,
     OPT_HEADER + 2, OPT_UPDATE,
 };
 static const char *const s_opt_sections[] = { "Display", "Gameplay", "System" };
@@ -2117,14 +2117,20 @@ static void opt_value(int id, char *buf, size_t size) {
         case OPT_FF_BUTTON: v = pm3ds_cfg.ff_toggle ? "Toggle" : "Hold"; break;
         case OPT_DROPS:     v = pm3ds_cfg.stat_drops ? "On" : "Off"; break;
         case OPT_BEEP:      v = pm3ds_cfg.hp_beep ? "On" : "Off"; break;
+        case OPT_DPAD:      v = pm3ds_cfg.dpad_menus ? "Cursor" : "C buttons"; break;
+        case OPT_COLORS: {
+            static const char *const names[PM3DS_COLOR_COUNT] = { "Original", "Vivid", "Deuteranopia", "Protanopia", "Tritanopia" };
+            v = names[pm3ds_cfg.color_mode % PM3DS_COLOR_COUNT];
+            break;
+        }
         case OPT_UPDATE:    v = pm3ds_cfg.update_check ? "On" : "Off"; break;
     }
     snprintf(buf, size, "%s", T(v));
 }
 
 static const char *const s_opt_labels[OPT_COUNT] = {
-    "Language", "Screen", "Frame rate", "3D depth", "Text speed", "Fast-forward speed", "Fast-forward button",
-    "Heart & flower drops", "Low HP beep", "Update check",
+    "Language", "Screen", "Frame rate", "3D depth", "Colors", "Text speed", "Fast-forward speed", "Fast-forward button",
+    "Heart & flower drops", "Low HP beep", "D-pad in menus", "Update check",
 };
 
 /* Quit game (in game, GitHub #67): back to the title, saving first or not.
@@ -2260,6 +2266,11 @@ static void options_tap(int px, int py) {
                 case OPT_FF_BUTTON: pm3ds_cfg.ff_toggle = !pm3ds_cfg.ff_toggle; break;
                 case OPT_DROPS: pm3ds_cfg.stat_drops = !pm3ds_cfg.stat_drops; break;
                 case OPT_BEEP: pm3ds_cfg.hp_beep = !pm3ds_cfg.hp_beep; break;
+                case OPT_DPAD: pm3ds_cfg.dpad_menus = !pm3ds_cfg.dpad_menus; break;
+                case OPT_COLORS:
+                    pm3ds_cfg.color_mode = (uint8_t)((pm3ds_cfg.color_mode + 1) % PM3DS_COLOR_COUNT);
+                    pm3ds_color_mode_changed();
+                    break;
                 case OPT_UPDATE: pm3ds_cfg.update_check = !pm3ds_cfg.update_check; break;   /* from the next launch */
             }
             pm3ds_settings_save();
@@ -2356,11 +2367,11 @@ static void draw_buttons(void) {
  * bottom one, +Control Pad / A / B / Y / START on either. */
 enum { NG_CLOSED, NG_MODE, NG_RANDO };
 enum { NG_SND_NONE, NG_SND_MOVE, NG_SND_NEXT, NG_SND_BACK, NG_SND_TOGGLE };   /* for the file menu to play */
-#define NG_TOGGLES 6
+#define NG_TOGGLES 7
 #define NG_ROW_SEED NG_TOGGLES
 #define NG_ROW_START (NG_TOGGLES + 1)
-#define NG_ROW_Y0 45
-#define NG_ROW_H 18
+#define NG_ROW_Y0 44
+#define NG_ROW_H 16
 static const struct { unsigned flag; const char *label, *help; } s_ng_toggles[NG_TOGGLES] = {
     { PM3DS_RANDO_COINS, "Coins & star pieces", "Coins and star pieces lying around are shuffled too." },
     { PM3DS_RANDO_KEYS, "Key items", "Key items move too, always somewhere you can reach before you need them." },
@@ -2368,6 +2379,7 @@ static const struct { unsigned flag; const char *label, *help; } s_ng_toggles[NG
     { PM3DS_RANDO_GIFTS, "Gifts", "What characters give you is shuffled too." },
     { PM3DS_RANDO_HIDDEN, "Keys in hidden spots", "Key items can also hide in hidden panels and blocks." },
     { PM3DS_RANDO_ENEMIES, "Enemies", "Every enemy group fights as another group from the same chapter." },
+    { PM3DS_RANDO_BADGES, "Badge costs", "Badges swap their BP and FP costs. Speedy Spin stays." },
 };
 static int s_ng_page, s_ng_cursor, s_ng_result, s_ng_sound;
 static unsigned s_ng_flags, s_ng_seed;

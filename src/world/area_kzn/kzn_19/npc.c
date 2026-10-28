@@ -1,4 +1,8 @@
 #include "kzn_19.h"
+
+#ifdef _3DS
+API_CALLABLE(pm3ds_LogStep);   // n64_shim/quicksave.c
+#endif
 #include "ld_addrs.h"
 #include "sprite/player.h"
 #include "include_asset.h"
@@ -257,6 +261,9 @@ EvtScript N(EVS_NpcIdle_LavaPiranha) = {
     EndLoop
     Call(DisablePlayerInput, true)
     Call(SetMusic, 0, SONG_LAVA_PIRANHA_THEME, 0, VOL_LEVEL_FULL)
+#ifdef _3DS
+    Call(pm3ds_LogStep, 1)
+#endif
     Call(LoadAnimatedModel, VINE_0, Ref(N(AnimModel_MainHeadVine)))
     Call(N(LoadAnimationFromTable), VINE_0, 0)
     Call(PlayModelAnimation, VINE_0, VINE_0_BASE)
@@ -278,8 +285,14 @@ EvtScript N(EVS_NpcIdle_LavaPiranha) = {
     Call(SetAnimatedModelRootPosition, VINE_3, 220, -100, -40)
     Call(SetAnimatorFlags, VINE_3, MODEL_ANIMATOR_FLAG_HIDDEN, 1)
     Call(N(CreateVineRenderer))
+#ifdef _3DS
+    Call(pm3ds_LogStep, 2)
+#endif
     Call(SetSelfVar, 1, 1)
     Call(InterpPlayerYaw, 90, 0)
+#ifdef _3DS
+    Call(pm3ds_LogStep, 3)
+#endif
     Thread
         Wait(15 * DT)
         Call(UseSettingsFrom, CAM_DEFAULT, 300, 25, -20)
@@ -298,6 +311,9 @@ EvtScript N(EVS_NpcIdle_LavaPiranha) = {
             BreakLoop
         EndIf
     EndLoop
+#ifdef _3DS
+    Call(pm3ds_LogStep, 4)
+#endif
     Thread
         Call(InterruptUsePartner)
         Call(SetPlayerSpeed, Float(3.0 / DT))
@@ -307,6 +323,9 @@ EvtScript N(EVS_NpcIdle_LavaPiranha) = {
     Call(PlaySoundAt, SOUND_LAVA_PIRANHA_EMERGE, SOUND_SPACE_DEFAULT, 330, 25, -50)
     Exec(N(EVS_PlayVinesAnim_Emerge))
     Wait(59)
+#ifdef _3DS
+    Call(pm3ds_LogStep, 5)
+#endif
     Thread
         Call(MakeLerp, 40, 0, 80, EASING_QUADRATIC_OUT)
         Loop(0)
@@ -327,6 +346,9 @@ EvtScript N(EVS_NpcIdle_LavaPiranha) = {
     Call(PanToTarget, CAM_DEFAULT, 0, true)
     Call(WaitForCam, CAM_DEFAULT, Float(1.0))
     Exec(N(EVS_PlayVinesAnim_Talk))
+#ifdef _3DS
+    Call(pm3ds_LogStep, 6)
+#endif
     Call(SpeakToPlayer, NPC_SELF, ANIM_LavaPiranha_Anim0E, ANIM_LavaPiranha_Anim03, 768, -30, 30, MSG_CH5_0102)
     Exec(N(EVS_PlayVinesAnim_Idle))
     Wait(10 * DT)
@@ -358,6 +380,9 @@ EvtScript N(EVS_NpcIdle_LavaPiranha) = {
             Sub(LVar0, 2)
         EndLoop
     EndChildThread
+#ifdef _3DS
+    Call(pm3ds_LogStep, 7)
+#endif
     Call(DisablePlayerInput, false)
     Call(StartBossBattle, SONG_LAVA_PIRANHA_BATTLE)
     Return

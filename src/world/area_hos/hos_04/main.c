@@ -105,7 +105,16 @@ EvtScript N(EVS_EnterMap) = {
     End
 };
 
+#ifdef _3DS
+API_CALLABLE(N(ResetIntroState));
+API_CALLABLE(N(ResetNarratorState));
+#endif
+
 EvtScript N(EVS_Main) = {
+#ifdef _3DS
+    Call(N(ResetIntroState))
+    Call(N(ResetNarratorState))
+#endif
     Set(GB_WorldLocation, LOCATION_STAR_HAVEN)
     Call(SetSpriteShading, SHADING_NONE)
     SetUP_CAMERA_ALT_NO_LEAD()

@@ -225,6 +225,63 @@ void gfx_tex_swizzle_to_pica(const uint8_t *linear_rgba8, uint8_t *tiled_rgba8,
 /* pm3ds_tex_pot() — the PICA200 legal-texture-size rule, shared with
  * gfx_present.c's UV normalization so the two cannot disagree. */
 #include "gfx_state.h"
+#include "pm3ds_settings.h"
+
+/* ---- colour modes (Settings > Colors, GitHub #71) ---------------------------
+ * Applied to every colour texture as it is converted, so it costs nothing per
+ * frame: a 3x3 matrix in 1/4096ths. Vivid raises the saturation; the colour
+ * blindness modes are the usual "daltonize" correction: what that eye can't
+ * tell apart (the colour minus its simulation) is shifted into green and blue,
+ * which it can. Intensity-only (LA8) textures take their colour from the
+ * combiner and are left alone. */
+static int g_cm_mode = -1;
+static int32_t g_cm[9];
+
+static void color_matrix_setup(int mode) {
+    static const float sim[3][9] = {
+        { 0.625f, 0.375f, 0, 0.7f, 0.3f, 0, 0, 0.3f, 0.7f },             /* deuteranopia */
+        { 0.567f, 0.433f, 0, 0.558f, 0.442f, 0, 0, 0.242f, 0.758f },     /* protanopia */
+        { 0.95f, 0.05f, 0, 0, 0.433f, 0.567f, 0, 0.475f, 0.525f },       /* tritanopia */
+    };
+    /* the error (I - sim) goes to green and blue: g += 0.7 err.r + err.g, b += 0.7 err.r + err.b */
+    static const float shift[9] = { 0, 0, 0, 0.7f, 1, 0, 0.7f, 0, 1 };
+    float m[9] = { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
+    if (mode == PM3DS_COLOR_VIVID) {
+        const float s = 1.35f, lr = 0.299f, lg = 0.587f, lb = 0.114f;
+        float k = 1 - s;
+        float v[9] = { lr * k + s, lg * k, lb * k, lr * k, lg * k + s, lb * k, lr * k, lg * k, lb * k + s };
+        memcpy(m, v, sizeof m);
+    } else if (mode >= PM3DS_COLOR_DEUTERANOPIA && mode <= PM3DS_COLOR_TRITANOPIA) {
+        const float *S = sim[mode - PM3DS_COLOR_DEUTERANOPIA];
+        float err[9];
+        for (int i = 0; i < 9; i++) err[i] = (i % 4 == 0 ? 1.0f : 0.0f) - S[i];
+        for (int r = 0; r < 3; r++)
+            for (int c = 0; c < 3; c++) {
+                float sum = 0;
+                for (int k = 0; k < 3; k++) sum += shift[r * 3 + k] * err[k * 3 + c];
+                m[r * 3 + c] += sum;
+            }
+    }
+    for (int i = 0; i < 9; i++) g_cm[i] = (int32_t)(m[i] * 4096.0f + (m[i] >= 0 ? 0.5f : -0.5f));
+    g_cm_mode = mode;
+}
+
+static void color_apply(uint8_t *rgba, size_t texels) {
+    int mode = pm3ds_cfg.color_mode;
+    if (mode == PM3DS_COLOR_ORIGINAL || mode >= PM3DS_COLOR_COUNT) return;
+    if (mode != g_cm_mode) color_matrix_setup(mode);
+    for (size_t i = 0; i < texels; i++, rgba += 4) {
+        int32_t r = rgba[0], g = rgba[1], b = rgba[2];
+        int32_t o[3];
+        for (int c = 0; c < 3; c++) {
+            int32_t v = (g_cm[c * 3] * r + g_cm[c * 3 + 1] * g + g_cm[c * 3 + 2] * b + 2048) >> 12;
+            o[c] = v < 0 ? 0 : v > 255 ? 255 : v;
+        }
+        rgba[0] = (uint8_t)o[0];
+        rgba[1] = (uint8_t)o[1];
+        rgba[2] = (uint8_t)o[2];
+    }
+}
 
 #ifdef PM3DS_HOST_TEST
 #define PM3DS_TEX_ALLOC(sz) malloc(sz)
@@ -868,6 +925,7 @@ gfx_tex_entry_t *gfx_tex_get(const gfx_state_t *st, int tile_idx, unsigned *out_
         decode_row(st, t, row, rgba + (size_t)y * w * 4, w);
     }
     free(row);
+    if (gpu_format_for(st, t) != GPU_LA8) color_apply(rgba, (size_t)w * h);
     if (expand_s || expand_t || grow_s || grow_t) {
         uint8_t *big = (uint8_t *)malloc((size_t)ow * oh * 4);
         if (!big) { free(rgba); return NULL; }
@@ -962,6 +1020,7 @@ static uint8_t *mip_level(const gfx_state_t *st, const gfx_tile_t *t, int *ow, i
     k = (k ^ (uint32_t)(w << 16 | h)) * 16777619u;
     if (t->fmt == 2) k = (k ^ st->tlut_hash[t->palette & 0xF] ^ (st->othermode_h & OMH_TT_MASK)) * 16777619u;
     if (!tex_src_is_static(src)) k = (k ^ tex_sample(src, stride, row_bytes, h)) * 16777619u;
+    k = (k ^ pm3ds_cfg.color_mode) * 16777619u;   /* a Colors change makes these again too */
     uint8_t *row = (uint8_t *)malloc(stride);
     uint8_t *rgba = (uint8_t *)malloc((size_t)w * h * 4);
     if (!row || !rgba) { free(row); free(rgba); return NULL; }
@@ -970,6 +1029,7 @@ static uint8_t *mip_level(const gfx_state_t *st, const gfx_tile_t *t, int *ow, i
         decode_row(st, t, row, rgba + (size_t)y * w * 4, w);
     }
     free(row);
+    if (gpu_format_for(st, t) != GPU_LA8) color_apply(rgba, (size_t)w * h);
     *ow = w; *oh = h; *key = k;
     return rgba;
 }
@@ -1044,3 +1104,8 @@ out:
     return ret;
 }
 #endif
+
+/* platform/bottom_screen.c, the Colors setting changed: convert every texture again */
+void pm3ds_color_mode_changed(void) {
+    gfx_tex_invalidate_range((const void *)0, 0xFFFFFFFFu);
+}

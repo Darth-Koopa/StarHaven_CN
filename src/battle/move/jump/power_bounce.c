@@ -36,6 +36,11 @@ BSS s32 N(HitCounter);
 
 API_CALLABLE(N(InitializeHitCounter)) {
     N(HitCounter) = 0;
+#ifdef _3DS
+    // 3DS port: the N64 loaded this move's data fresh for every use; linked in for good,
+    // the chance kept shrinking use after use until the game was restarted (Discord)
+    N(BaseHitChance) = 200;
+#endif
     return ApiStatus_DONE2;
 }
 
