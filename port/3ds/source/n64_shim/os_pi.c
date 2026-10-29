@@ -132,7 +132,7 @@ void pm3ds_pi_rom_ready(void) {
 #ifdef PM3DS_NO_AUDIO_PIN   /* test: the SD card path, as on a console short of memory */
     if (true)
 #else
-    if (!pm3ds_rom_pin(PM3DS_ROM_AUDIO, PM3DS_ROM_AUDIO_END - PM3DS_ROM_AUDIO))
+    if (!pm3ds_rom_pin_big(PM3DS_ROM_AUDIO, PM3DS_ROM_AUDIO_END - PM3DS_ROM_AUDIO))
 #endif
         pm3ds_log(PM3DS_LOG_WARN, "audio bank not pinned: samples are copied from the SD card");
     pm3ds_byteswap_mapfs_table();
