@@ -30,7 +30,39 @@ static bool sRestore;
 static s16 sArea, sMap;
 
 /* src/fio.c */
+/* Autosave (Settings > Autosave, Discord suggestion): a quick save by itself, in each new
+ * area or every few minutes of play, whenever the Save button could save (src/world/menus.c).
+ * Any save or load counts as the last one. */
+static u32 sLastSaveFrame;
+static s16 sLastSaveArea = -1, sLastSaveMap = -1;
+volatile int pm3ds_autosave_flash;   /* platform/bottom_screen.c shows "Saved!" */
+
+static void autosave_mark(void) {
+    sLastSaveFrame = gPlayerData.frameCounter;
+    sLastSaveArea = gGameStatusPtr->areaID;
+    sLastSaveMap = gGameStatusPtr->mapID;
+}
+
+bool pm3ds_autosave_due(void) {
+    static const u32 minutes[PM3DS_AUTOSAVE_COUNT] = { 0, 0, 5, 10, 15 };
+    switch (pm3ds_cfg.autosave) {
+        case PM3DS_AUTOSAVE_AREA:
+            return gGameStatusPtr->areaID != sLastSaveArea || gGameStatusPtr->mapID != sLastSaveMap;
+        case PM3DS_AUTOSAVE_5:
+        case PM3DS_AUTOSAVE_10:
+        case PM3DS_AUTOSAVE_15:
+            return gPlayerData.frameCounter - sLastSaveFrame >= minutes[pm3ds_cfg.autosave] * 60 * 60;
+        default:
+            return false;
+    }
+}
+
+void pm3ds_autosave_done(void) {
+    pm3ds_autosave_flash = 1;
+}
+
 void pm3ds_qs_serialize(void* tail) {
+    autosave_mark();
     QuickSaveBlock b = { QS_MAGIC, 1, pm3ds_qs_saving };
     memcpy((u8*)tail + QS_BLOCK_OFS, &b, sizeof(b));
 }
@@ -39,6 +71,7 @@ void pm3ds_qs_deserialize(const void* tail) {
     QuickSaveBlock b;
     memcpy(&b, (const u8*)tail + QS_BLOCK_OFS, sizeof(b));
     sRestore = b.magic == QS_MAGIC && b.version == 1 && b.quick;
+    autosave_mark();
     sArea = gGameStatusPtr->areaID;
     sMap = gGameStatusPtr->mapID;
 }

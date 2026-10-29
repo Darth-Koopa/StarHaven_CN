@@ -104,6 +104,7 @@ void pm3ds_settings_load(void) {
             else if (sscanf(line, "stat_drops=%d", &v) == 1) pm3ds_cfg.stat_drops = v != 0;
             else if (sscanf(line, "hp_beep=%d", &v) == 1) pm3ds_cfg.hp_beep = v != 0;
             else if (sscanf(line, "dpad_menus=%d", &v) == 1) pm3ds_cfg.dpad_menus = v != 0;
+            else if (sscanf(line, "autosave=%d", &v) == 1 && v >= 0 && v < PM3DS_AUTOSAVE_COUNT) pm3ds_cfg.autosave = (uint8_t)v;
             else if (sscanf(line, "color_mode=%d", &v) == 1 && v >= 0 && v < PM3DS_COLOR_COUNT) pm3ds_cfg.color_mode = (uint8_t)v;
             else if (sscanf(line, "language=%d", &v) == 1 && v >= 0 && v < PM3DS_LANG_COUNT) pm3ds_cfg.language = v;
             else if (sscanf(line, "update_skip=%d", &v) == 1) pm3ds_cfg.update_skip = v;
@@ -137,6 +138,7 @@ void pm3ds_settings_save(void) {
     fprintf(f, "hp_beep=%d\n", pm3ds_cfg.hp_beep);
     fprintf(f, "dpad_menus=%d\n", pm3ds_cfg.dpad_menus);
     fprintf(f, "color_mode=%d\n", pm3ds_cfg.color_mode);
+    fprintf(f, "autosave=%d\n", pm3ds_cfg.autosave);
     fprintf(f, "language=%d\n", pm3ds_cfg.language);
     for (int k = 0; k < KEY_IDX_COUNT; k++) fprintf(f, "key_%s=%d\n", s_key_cfg[k], pm3ds_cfg.keymap[k]);
     fclose(f);

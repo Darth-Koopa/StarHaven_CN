@@ -277,3 +277,9 @@ TR("Badges swap their BP and FP costs. Speedy Spin stays.", "Orden tauschen ihre
 /* new-game picker: skip intro */
 TR("Skip intro", "Intro überspringen", "Passer l'intro", "Saltar intro", "Salta intro", "プロローグを とばす")
 TR("Y: cheats  X: hard  R: skip", "Y: Cheats  X: schwer  R: Intro", "Y : triches  X : dur  R : intro", "Y: trucos  X: difícil  R: intro", "Y: trucchi  X: difficile  R: intro", "Y：チート X：ハード R：とばす")
+/* Settings: autosave */
+TR("Autosave", "Autospeichern", "Sauvegarde auto", "Autoguardado", "Salvataggio auto", "オートセーブ")
+TR("Each area", "Jeder Bereich", "Chaque zone", "Cada zona", "Ogni zona", "エリアごと")
+TR("5 min", "5 Min.", "5 min", "5 min", "5 min", "5ふん")
+TR("10 min", "10 Min.", "10 min", "10 min", "10 min", "10ぷん")
+TR("15 min", "15 Min.", "15 min", "15 min", "15 min", "15ふん")

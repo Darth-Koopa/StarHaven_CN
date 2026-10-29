@@ -602,7 +602,14 @@ static int s_qs, s_qs_timer;
 #define QS_Y1 26
 
 static void qs_tick(void) {
+    extern volatile int pm3ds_autosave_flash;   /* n64_shim/quicksave.c: an autosave just saved */
     s_qs_timer++;
+    if (pm3ds_autosave_flash) {
+        pm3ds_autosave_flash = 0;
+        pm3ds_quicksave_result = 1;
+        s_qs = QS_DONE;
+        s_qs_timer = 0;
+    }
     if (s_qs == QS_ARMED && s_qs_timer > 150) {
         s_qs = QS_IDLE;
     } else if (s_qs == QS_WAIT) {
@@ -2078,11 +2085,11 @@ static const char *const s_text_names[TEXT_SPEEDS] = { "Normal", "Fast", "Instan
 /* The Settings page: a list in sections, dragged up and down (a scroll bar
  * shows where); a row changes its setting when tapped without dragging. */
 enum { OPT_LANG, OPT_SCREEN, OPT_FPS, OPT_3D, OPT_COLORS, OPT_TEXT, OPT_FF_SPEED, OPT_FF_BUTTON, OPT_DROPS, OPT_BEEP, OPT_DPAD,
-       OPT_UPDATE, OPT_COUNT };
+       OPT_AUTOSAVE, OPT_UPDATE, OPT_COUNT };
 #define OPT_HEADER 0x100          /* + section number */
 static const int s_opt_list[] = {
     OPT_HEADER + 0, OPT_LANG, OPT_SCREEN, OPT_FPS, OPT_3D, OPT_COLORS,
-    OPT_HEADER + 1, OPT_TEXT, OPT_FF_SPEED, OPT_FF_BUTTON, OPT_DROPS, OPT_BEEP, OPT_DPAD,
+    OPT_HEADER + 1, OPT_TEXT, OPT_FF_SPEED, OPT_FF_BUTTON, OPT_AUTOSAVE, OPT_DROPS, OPT_BEEP, OPT_DPAD,
     OPT_HEADER + 2, OPT_UPDATE,
 };
 static const char *const s_opt_sections[] = { "Display", "Gameplay", "System" };
@@ -2118,6 +2125,11 @@ static void opt_value(int id, char *buf, size_t size) {
         case OPT_DROPS:     v = pm3ds_cfg.stat_drops ? "On" : "Off"; break;
         case OPT_BEEP:      v = pm3ds_cfg.hp_beep ? "On" : "Off"; break;
         case OPT_DPAD:      v = pm3ds_cfg.dpad_menus ? "Cursor" : "C buttons"; break;
+        case OPT_AUTOSAVE: {
+            static const char *const names[PM3DS_AUTOSAVE_COUNT] = { "Off", "Each area", "5 min", "10 min", "15 min" };
+            v = names[pm3ds_cfg.autosave % PM3DS_AUTOSAVE_COUNT];
+            break;
+        }
         case OPT_COLORS: {
             static const char *const names[PM3DS_COLOR_COUNT] = { "Original", "Vivid", "Deuteranopia", "Protanopia", "Tritanopia" };
             v = names[pm3ds_cfg.color_mode % PM3DS_COLOR_COUNT];
@@ -2130,7 +2142,7 @@ static void opt_value(int id, char *buf, size_t size) {
 
 static const char *const s_opt_labels[OPT_COUNT] = {
     "Language", "Screen", "Frame rate", "3D depth", "Colors", "Text speed", "Fast-forward speed", "Fast-forward button",
-    "Heart & flower drops", "Low HP beep", "D-pad in menus", "Update check",
+    "Heart & flower drops", "Low HP beep", "D-pad in menus", "Autosave", "Update check",
 };
 
 /* Quit game (in game, GitHub #67): back to the title, saving first or not.
@@ -2267,6 +2279,7 @@ static void options_tap(int px, int py) {
                 case OPT_DROPS: pm3ds_cfg.stat_drops = !pm3ds_cfg.stat_drops; break;
                 case OPT_BEEP: pm3ds_cfg.hp_beep = !pm3ds_cfg.hp_beep; break;
                 case OPT_DPAD: pm3ds_cfg.dpad_menus = !pm3ds_cfg.dpad_menus; break;
+                case OPT_AUTOSAVE: pm3ds_cfg.autosave = (uint8_t)((pm3ds_cfg.autosave + 1) % PM3DS_AUTOSAVE_COUNT); break;
                 case OPT_COLORS:
                     pm3ds_cfg.color_mode = (uint8_t)((pm3ds_cfg.color_mode + 1) % PM3DS_COLOR_COUNT);
                     pm3ds_color_mode_changed();
@@ -2996,7 +3009,6 @@ void pm3ds_bottom_screen_init(void) {
     build_atlas();
     build_map();
     build_small_font();
-    pm3ds_update_check_start();
 }
 
 /* once per presented frame (input + state) */
