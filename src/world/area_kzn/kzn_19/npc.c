@@ -681,7 +681,15 @@ NpcData N(NpcData_LavaPiranha)[] = {
         .yaw = 270,
         .init = &N(EVS_NpcInit_LavaPiranha),
         .settings = &N(NpcSettings_LavaPiranhaHead),
+#ifdef _3DS
+        // 3DS port: the head follows its vine, which starts the emerge deep in the lava. A step
+        // there without drawing (Old 3DS catching up, fast-forward) could see the head below the
+        // screen, and an enemy off screen has its scripts suspended: the entrance stopped with
+        // the lava bubbling, as only its own scripts bring the head back up (#66, Discord)
+        .flags = ENEMY_FLAG_DO_NOT_KILL | ENEMY_FLAG_FLYING | ENEMY_FLAG_NO_DELAY_AFTER_FLEE | ENEMY_FLAG_ACTIVE_WHILE_OFFSCREEN,
+#else
         .flags = ENEMY_FLAG_DO_NOT_KILL | ENEMY_FLAG_FLYING | ENEMY_FLAG_NO_DELAY_AFTER_FLEE,
+#endif
         .drops = LAVA_PIRANHA_DROPS,
         .animations = LAVA_PIRANHA_HEAD_ANIMS,
         .extraAnimations = N(ExtraAnims_LavaPiranha),

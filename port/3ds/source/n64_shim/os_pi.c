@@ -137,6 +137,7 @@ void pm3ds_pi_rom_ready(void) {
         pm3ds_log(PM3DS_LOG_WARN, "audio bank not pinned: samples are copied from the SD card");
     pm3ds_byteswap_mapfs_table();
     pm3ds_populate_segments();
+    { extern void pm3ds_rom_log_memory(const char *); pm3ds_rom_log_memory("at boot"); }
 }
 
 size_t pm3ds_baserom_size(void) { return pm3ds_rom_stream_size(); }

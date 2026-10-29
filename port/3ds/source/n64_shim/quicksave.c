@@ -79,6 +79,9 @@ void pm3ds_qs_deserialize(const void* tail) {
 /* every game step (src/main_loop.c) */
 void pm3ds_qs_step(void) {
     PlayerStatus* ps = &gPlayerStatus;
+#ifdef PM3DS_TEST_MEMSTAT
+    { extern void pm3ds_test_memstat(void); pm3ds_test_memstat(); }
+#endif
 
     if (!sRestore || gGameStatusPtr == nullptr) {
         return;
