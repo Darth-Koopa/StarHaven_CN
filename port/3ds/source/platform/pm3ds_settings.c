@@ -84,6 +84,8 @@ void pm3ds_settings_load(void) {
     pm3ds_cfg.map_dragged = false;
     pm3ds_cfg.stat_drops = true;
     pm3ds_cfg.hp_beep = true;
+    pm3ds_cfg.battle_hud = true;
+    pm3ds_cfg.ice_fx = true;
     pm3ds_cfg.dpad_menus = true;
     pm3ds_cfg.language = -1;
     pm3ds_settings_default_keymap(pm3ds_cfg.keymap);
@@ -103,6 +105,8 @@ void pm3ds_settings_load(void) {
             else if (sscanf(line, "map_dragged=%d", &v) == 1) pm3ds_cfg.map_dragged = v != 0;
             else if (sscanf(line, "stat_drops=%d", &v) == 1) pm3ds_cfg.stat_drops = v != 0;
             else if (sscanf(line, "hp_beep=%d", &v) == 1) pm3ds_cfg.hp_beep = v != 0;
+            else if (sscanf(line, "battle_hud=%d", &v) == 1) pm3ds_cfg.battle_hud = v != 0;
+            else if (sscanf(line, "ice_fx=%d", &v) == 1) pm3ds_cfg.ice_fx = v != 0;
             else if (sscanf(line, "dpad_menus=%d", &v) == 1) pm3ds_cfg.dpad_menus = v != 0;
             else if (sscanf(line, "autosave=%d", &v) == 1 && v >= 0 && v < PM3DS_AUTOSAVE_COUNT) pm3ds_cfg.autosave = (uint8_t)v;
             else if (sscanf(line, "color_mode=%d", &v) == 1 && v >= 0 && v < PM3DS_COLOR_COUNT) pm3ds_cfg.color_mode = (uint8_t)v;
@@ -136,6 +140,8 @@ void pm3ds_settings_save(void) {
     fprintf(f, "map_dragged=%d\n", pm3ds_cfg.map_dragged);
     fprintf(f, "stat_drops=%d\n", pm3ds_cfg.stat_drops);
     fprintf(f, "hp_beep=%d\n", pm3ds_cfg.hp_beep);
+    fprintf(f, "battle_hud=%d\n", pm3ds_cfg.battle_hud);
+    fprintf(f, "ice_fx=%d\n", pm3ds_cfg.ice_fx);
     fprintf(f, "dpad_menus=%d\n", pm3ds_cfg.dpad_menus);
     fprintf(f, "color_mode=%d\n", pm3ds_cfg.color_mode);
     fprintf(f, "autosave=%d\n", pm3ds_cfg.autosave);
@@ -172,4 +178,6 @@ unsigned int pm3ds_random_seed(void) { return (unsigned)osGetTime() ^ ((unsigned
 
 /* for the decomp side (src/enemy_ai.c), which doesn't include this header */
 bool pm3ds_stat_drops_on(void) { return pm3ds_cfg.stat_drops; }
+bool pm3ds_battle_hud_on(void) { return pm3ds_cfg.battle_hud; }   /* src/inventory.c */
+bool pm3ds_ice_fx_on(void) { return pm3ds_cfg.ice_fx; }   /* src/battle/dmg_player.c */
 bool pm3ds_hp_beep_on(void) { return pm3ds_cfg.hp_beep; }   /* src/hud_element.c */

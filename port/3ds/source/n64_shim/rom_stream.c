@@ -134,10 +134,21 @@ static u32 heap_free(void) {
 /* os_pi.c, once the ROM is ready: what a player's log needs to tell a short heap apart */
 void pm3ds_rom_log_memory(const char *when) {
     extern u32 __ctru_heap_size, __ctru_linear_heap_size;
-    pm3ds_log(PM3DS_LOG_WARN, "memory %s: heap %lu KB, %lu KB free; linear %lu KB, %lu KB free; ROM cache %d KB", when,
+    pm3ds_log(PM3DS_LOG_WARN, "memory %s: heap %lu KB, %lu KB free; linear %lu KB, %lu KB free; ROM cache %d KB; "
+              "app region %lu KB, memtype %lu, %s", when,
               (unsigned long)(__ctru_heap_size >> 10), (unsigned long)(heap_free() >> 10),
               (unsigned long)(__ctru_linear_heap_size >> 10), (unsigned long)(linearSpaceFree() >> 10),
-              s_nblocks * (int)(BLOCK_SIZE >> 10));
+              s_nblocks * (int)(BLOCK_SIZE >> 10), (unsigned long)(osGetMemRegionSize(MEMREGION_APPLICATION) >> 10),
+              (unsigned long)osGetApplicationMemType(), envIsHomebrew() ? "homebrew launcher" : "installed title");
+}
+
+/* platform/bottom_screen.c, the title: a New 3DS started the game with about 66 MB instead of
+ * about 128 MB (GitHub #70, an installed CIA, a restart gives it back; why is still unknown) */
+bool pm3ds_low_memory_start(void) {
+    extern u32 __ctru_heap_size, __ctru_linear_heap_size;
+    bool n3ds = false;
+    APT_CheckNew3DS(&n3ds);
+    return n3ds && __ctru_heap_size + __ctru_linear_heap_size < (40u << 20);
 }
 
 /* A pin that needs the cache's memory (the 10 MB audio bank): with the cache's 12 MB

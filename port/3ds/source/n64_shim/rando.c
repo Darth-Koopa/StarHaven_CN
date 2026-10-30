@@ -740,6 +740,11 @@ static void build_badge_costs(void) {
     }
 }
 
+/* cheats.c: the free QoL badges cheat went off */
+void pm3ds_rando_badge_costs_refresh(void) {
+    build_badge_costs();
+}
+
 static void build_enemies(void) {
     u32 st = sSeed ^ 0x454E4D59u;   /* "ENMY" */
     s32 tier, r, k, n;

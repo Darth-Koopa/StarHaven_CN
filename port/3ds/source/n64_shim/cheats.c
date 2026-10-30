@@ -32,6 +32,7 @@ typedef struct {
 
 static bool sAllowed, sNextAllowed;
 static u32 sOn;
+bool pm3ds_cheat_on(int cheat);
 
 /* Hard mode (GitHub #69), also chosen on the new-game picker and kept with the
  * save: enemies have 1.5x HP and hit 1.5x as hard, and drop 1.5x the coins
@@ -106,6 +107,10 @@ void pm3ds_cheats_new_game(void) {
     sAllowed = sNextAllowed;
     sNextAllowed = false;   /* used once, so it can't carry over to another file */
     sOn = 0;
+#ifdef PM3DS_TEST_CHEATS
+    sAllowed = true;
+    sOn = (1u << PM3DS_CHEAT_NOCAP) | (1u << PM3DS_CHEAT_QOL);
+#endif
     sHard = sNextHard;
     sNextHard = false;
     if (sHard) {
@@ -136,9 +141,135 @@ void pm3ds_cheats_deserialize(const void* tail) {
     }
 }
 
+/* GitHub #76: the level-up limits. Two digits are all the level-up screen and the status bar
+ * have, so "no limit" stops at 95 HP and FP, 99 BP, and 99 with badges on. */
+bool pm3ds_no_stat_caps(void) {
+    return pm3ds_cheat_on(PM3DS_CHEAT_NOCAP);
+}
+s32 pm3ds_cap_hpfp(void) {
+    return pm3ds_no_stat_caps() ? 95 : 50;
+}
+s32 pm3ds_cap_bp(void) {
+    return pm3ds_no_stat_caps() ? 99 : 30;
+}
+s32 pm3ds_cap_badged(void) {
+    return pm3ds_no_stat_caps() ? 99 : 75;
+}
+
+/* Options > Cheats > Give. The touch screen asks, the game step does it. */
+static const s16 sGiveItems[] = {
+    ITEM_MUSHROOM, ITEM_SUPER_SHROOM, ITEM_ULTRA_SHROOM, ITEM_LIFE_SHROOM,
+    ITEM_HONEY_SYRUP, ITEM_MAPLE_SYRUP, ITEM_JAMMIN_JELLY,
+};
+static volatile s32 sGivePending = -1;
+static s32 sGiveItemIdx, sGiveBadge = ITEM_FIRST_BADGE;
+static char sGiveItemName[32], sGiveBadgeName[32];
+
+void pm3ds_cheat_give(int what) {
+    if (sAllowed) {
+        sGivePending = what;
+    }
+}
+const char* pm3ds_cheat_give_item(void) {
+    return sGiveItemName;
+}
+const char* pm3ds_cheat_give_badge(void) {
+    return sGiveBadgeName;
+}
+
+static void give_badge_step(s32 dir) {
+    for (s32 n = ITEM_LAST_BADGE - ITEM_FIRST_BADGE + 1; n > 0; n--) {
+        sGiveBadge += dir;
+        if (sGiveBadge > ITEM_LAST_BADGE) sGiveBadge = ITEM_FIRST_BADGE;
+        if (sGiveBadge < ITEM_FIRST_BADGE) sGiveBadge = ITEM_LAST_BADGE;
+        if (gItemTable[sGiveBadge].moveID != 0 && gItemTable[sGiveBadge].nameMsg != 0) {
+            break;
+        }
+    }
+}
+
+static void give_names(void) {
+    void pm3ds_decode_msg(s32 msgID, char* out, s32 size, bool dialogue);
+    pm3ds_decode_msg(gItemTable[sGiveItems[sGiveItemIdx]].nameMsg, sGiveItemName, sizeof(sGiveItemName), false);
+    pm3ds_decode_msg(gItemTable[sGiveBadge].nameMsg, sGiveBadgeName, sizeof(sGiveBadgeName), false);
+}
+
+static void give_step(void) {
+    PlayerData* pd = &gPlayerData;
+    s32 what = sGivePending;
+    sGivePending = -1;
+    s32 count = ARRAY_COUNT(sGiveItems);
+    switch (what) {
+        case PM3DS_GIVE_HP:
+            if (pd->hardMaxHP + 5 <= pm3ds_cap_hpfp()) {
+                pd->hardMaxHP += 5;
+                pd->curMaxHP = MIN(pd->curMaxHP + 5, pm3ds_cap_badged());
+                pd->curHP = pd->curMaxHP;
+            }
+            break;
+        case PM3DS_GIVE_FP:
+            if (pd->hardMaxFP + 5 <= pm3ds_cap_hpfp()) {
+                pd->hardMaxFP += 5;
+                pd->curMaxFP = MIN(pd->curMaxFP + 5, pm3ds_cap_badged());
+                pd->curFP = pd->curMaxFP;
+            }
+            break;
+        case PM3DS_GIVE_BP:
+            if (pd->maxBP + 3 <= pm3ds_cap_bp()) {
+                pd->maxBP += 3;
+            }
+            break;
+        case PM3DS_GIVE_LEVEL:
+            if (pd->level < 27) {
+                pd->level++;
+            }
+            break;
+        case PM3DS_GIVE_GEAR:
+            if (pd->bootsLevel < GEAR_RANK_ULTRA) pd->bootsLevel++;
+            if (pd->hammerLevel < GEAR_RANK_ULTRA) pd->hammerLevel++;
+            break;
+        case PM3DS_GIVE_STAR_PIECES:
+            pd->starPieces = MIN(pd->starPieces + 10, 112);
+            break;
+        case PM3DS_GIVE_ITEM:
+            add_item(sGiveItems[sGiveItemIdx]);
+            break;
+        case PM3DS_GIVE_BADGE:
+            add_badge(sGiveBadge);
+            break;
+        case PM3DS_GIVE_ITEM_NEXT: sGiveItemIdx = (sGiveItemIdx + 1) % count; break;
+        case PM3DS_GIVE_ITEM_PREV: sGiveItemIdx = (sGiveItemIdx + count - 1) % count; break;
+        case PM3DS_GIVE_BADGE_NEXT: give_badge_step(1); break;
+        case PM3DS_GIVE_BADGE_PREV: give_badge_step(-1); break;
+    }
+    give_names();
+}
+
+/* QoL badges at 0 BP (Discord suggestion): written over the move table each step while on;
+ * rando.c rebuilds the table, its Badge costs option included, when the cheat goes off */
+static void qol_badges_step(void) {
+    static const u8 moves[] = { MOVE_SPEEDY_SPIN, MOVE_I_SPY, MOVE_PEEKABOO, MOVE_CHILL_OUT_BADGE, MOVE_FIRST_ATTACK, MOVE_SPIN_ATTACK,
+                                MOVE_BUMP_ATTACK, MOVE_GROUP_FOCUS, MOVE_MONEY_MONEY, MOVE_REFUND, MOVE_RUNAWAY_PAY };
+    static bool wasOn;
+    bool on = pm3ds_cheat_on(PM3DS_CHEAT_QOL);
+    if (on) {
+        for (s32 i = 0; i < (s32)ARRAY_COUNT(moves); i++) {
+            gMoveTable[moves[i]].costBP = 0;
+        }
+    } else if (wasOn) {
+        extern void pm3ds_rando_badge_costs_refresh(void);
+        pm3ds_rando_badge_costs_refresh();
+    }
+    wasOn = on;
+}
+
 /* src/main_loop.c, every game step */
 void pm3ds_cheats_step(void) {
     PlayerData* playerData = &gPlayerData;
+    qol_badges_step();
+    if (sAllowed && (sGivePending >= 0 || sGiveItemName[0] == 0)) {
+        give_step();
+    }
     if (!sAllowed || sOn == 0) {
         return;
     }

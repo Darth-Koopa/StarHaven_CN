@@ -19,6 +19,18 @@
 #include "sprite/npc/BattleBow.h"
 #include "sprite/player.h"
 
+#ifdef _3DS
+// n64_shim/cheats.c, GitHub #76: the stat limits, raised by a cheat
+extern s32 pm3ds_cap_hpfp(void);
+extern s32 pm3ds_cap_bp(void);
+extern s32 pm3ds_cap_badged(void);
+static bool pm3ds_level_up_nothing;
+#else
+#define pm3ds_cap_hpfp() 50
+#define pm3ds_cap_bp() 30
+#define pm3ds_cap_badged() 75
+#endif
+
 extern HudScript HES_ProjectorBeam;
 extern IconHudScriptPair gItemHudScripts[];
 
@@ -893,7 +905,7 @@ void btl_state_update_celebration(void) {
                 CantLevelUpStat[MENU_FP] = false;
                 CantLevelUpStat[MENU_BP] = false;
 
-                if (playerData->hardMaxFP != 50) {
+                if (playerData->hardMaxFP < pm3ds_cap_hpfp()) {
                     // current FP
                     tensDigit = playerData->curMaxFP / 10;
                     onesDigit = playerData->curMaxFP % 10;
@@ -963,7 +975,7 @@ void btl_state_update_celebration(void) {
                     hud_element_set_render_pos(hid, x + 17, y + 46);
                 }
 
-                if (playerData->hardMaxHP != 50) {
+                if (playerData->hardMaxHP < pm3ds_cap_hpfp()) {
                     // current HP
                     tensDigit = playerData->curMaxHP / 10;
                     onesDigit = playerData->curMaxHP % 10;
@@ -1034,7 +1046,7 @@ void btl_state_update_celebration(void) {
                     hud_element_set_render_pos(hid, x + 17, y + 46);
                 }
 
-                if (playerData->maxBP != 30) {
+                if (playerData->maxBP < pm3ds_cap_bp()) {
                     tensDigit = playerData->maxBP / 10;
                     onesDigit = playerData->maxBP % 10;
 
@@ -1172,6 +1184,16 @@ void btl_state_update_celebration(void) {
             break;
         case BTL_SUBSTATE_CELEBRATE_LEVEL_UP_CHOOSE:
             if (battleStatus->curButtonsPressed & BUTTON_A) {
+#ifdef _3DS
+                // GitHub #76: nothing left to raise used to refuse every choice, for good
+                if (CantLevelUpStat[MENU_HP] && CantLevelUpStat[MENU_FP] && CantLevelUpStat[MENU_BP]) {
+                    pm3ds_level_up_nothing = true;
+                    sfx_play_sound(SOUND_MENU_NEXT);
+                    sfx_play_sound(SOUND_LRAW_CHEERING | SOUND_ID_TRIGGER_CHANGE_SOUND);
+                    gBattleSubState = BTL_SUBSTATE_CELEBRATE_LEVEL_UP_UPGRADE;
+                    break;
+                }
+#endif
                 if (!CantLevelUpStat[battleStatus->curSubmenu]) {
                     sfx_play_sound(SOUND_MENU_NEXT);
                     sfx_play_sound(SOUND_LRAW_CHEERING | SOUND_ID_TRIGGER_CHANGE_SOUND);
@@ -1211,13 +1233,18 @@ void btl_state_update_celebration(void) {
             hud_element_free(LevelUpSpotlightID);
             set_window_update(WIN_BTL_DESC_BOX, WINDOW_UPDATE_HIDE);
 
+#ifdef _3DS
+            if (pm3ds_level_up_nothing) {
+                pm3ds_level_up_nothing = false;
+            } else
+#endif
             switch (battleStatus->curSubmenu) {
                 case MENU_HP:
                     playerData->hardMaxHP += 5;
                     playerData->curMaxHP += 5;
                     playerData->curHP += 5;
-                    if (playerData->curMaxHP > 75) {
-                        playerData->curMaxHP = 75;
+                    if (playerData->curMaxHP > pm3ds_cap_badged()) {
+                        playerData->curMaxHP = pm3ds_cap_badged();
                     }
                     if (playerData->curHP > playerData->curMaxHP) {
                         playerData->curHP = playerData->curMaxHP;
@@ -1229,8 +1256,8 @@ void btl_state_update_celebration(void) {
                     playerData->hardMaxFP += 5;
                     playerData->curMaxFP += 5;
                     playerData->curFP += 5;
-                    if (playerData->curMaxFP > 75) {
-                        playerData->curMaxFP = 75;
+                    if (playerData->curMaxFP > pm3ds_cap_badged()) {
+                        playerData->curMaxFP = pm3ds_cap_badged();
                     }
                     if (playerData->curFP > playerData->curMaxFP) {
                         playerData->curFP = playerData->curMaxFP;
@@ -1238,8 +1265,8 @@ void btl_state_update_celebration(void) {
                     break;
                 case MENU_BP:
                     playerData->maxBP += 3;
-                    if (playerData->maxBP > 30) {
-                        playerData->maxBP = 30;
+                    if (playerData->maxBP > pm3ds_cap_bp()) {
+                        playerData->maxBP = pm3ds_cap_bp();
                     }
                     break;
             }

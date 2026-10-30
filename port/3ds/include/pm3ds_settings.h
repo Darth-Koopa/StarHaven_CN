@@ -46,6 +46,8 @@ typedef struct {
     bool hp_beep;
     uint8_t color_mode;   /* PM3DS_COLOR_*: textures as they are, more vivid, or corrected for colour blindness (#71) */
     uint8_t autosave;     /* PM3DS_AUTOSAVE_*: quick save by itself (Discord suggestion) */
+    bool battle_hud;      /* the top screen's HP/FP bar in battle (GitHub #75: the bottom screen shows them too) */
+    bool ice_fx;          /* the Ice Power badge's snowflakes and sound on a hit (Discord suggestion) */
     bool dpad_menus;      /* the D-pad moves the cursor while a menu is open (Discord suggestion) */
     int language;               /* the port's own text: PM3DS_LANG_* (pm3ds_lang.h); the console's by default */               /* the HP icon's warning beep at 5 HP or less (src/hud_element.c) */
 } pm3ds_settings_t;

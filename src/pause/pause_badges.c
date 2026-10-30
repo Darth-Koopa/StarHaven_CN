@@ -683,7 +683,7 @@ void pause_badges_draw_contents(MenuPanel* menu, s32 baseX, s32 baseY, s32 width
     }
 #endif
     bpAvailOffsetX = 0;
-    bpAvailOffsetY = (playerData->maxBP - 1) / 10 * 8;
+    bpAvailOffsetY = (MIN(playerData->maxBP, 30) - 1) / 10 * 8;
     if (bpAmount < 10) {
         bpAvailOffsetX = -4;
     }
@@ -707,7 +707,7 @@ void pause_badges_draw_contents(MenuPanel* menu, s32 baseX, s32 baseY, s32 width
     maxBP = playerData->maxBP;
     gSPDisplayList(gMainGfxPos++, PauseGfxOrbs);
     gDPSetTextureFilter(gMainGfxPos++, G_TF_BILERP);
-    for (orbIndex = 0; orbIndex < maxBP; orbIndex++) {
+    for (orbIndex = 0; orbIndex < maxBP && orbIndex < 30; orbIndex++) {
         gDPSetPrimColor(gMainGfxPos++, 0, 0, 227, 227, 227, 255);
         pause_badges_draw_bp_orbs(0, baseX + 11 + (orbIndex % 10) * 6, baseY + 92 + (orbIndex / 10) * 8);
     }
@@ -715,7 +715,7 @@ void pause_badges_draw_contents(MenuPanel* menu, s32 baseX, s32 baseY, s32 width
     gDPPipeSync(gMainGfxPos++);
     if (canBeEquipped) {
         gDPSetPrimColor(gMainGfxPos++, 0, 0, orbColorR, orbColorG, orbColorB, 255);
-        for (orbIndex = 0; orbIndex < bpAvailable - costBP; orbIndex++) {
+        for (orbIndex = 0; orbIndex < bpAvailable - costBP && orbIndex < 30; orbIndex++) {
             pause_badges_draw_bp_orbs(2, baseX + 11 +(orbIndex % 10) * 6, baseY + 92 + (orbIndex / 10) * 8);
         }
 
@@ -726,13 +726,13 @@ void pause_badges_draw_contents(MenuPanel* menu, s32 baseX, s32 baseY, s32 width
         orbBlinkOpacity = orbBlinkValue * 255.0f;
         gDPSetPrimColor(gMainGfxPos++, 0, 0, orbColorR, orbColorG, orbColorB, orbBlinkOpacity);
 
-        for (orbIndex = bpAvailable - costBP; orbIndex < bpAvailable; orbIndex++) {
+        for (orbIndex = bpAvailable - costBP; orbIndex < bpAvailable && orbIndex < 30; orbIndex++) {
             pause_badges_draw_bp_orbs(2, baseX + 11 +(orbIndex % 10) * 6, baseY + 92 + (orbIndex / 10) * 8);
         }
         gDPPipeSync(gMainGfxPos++);
     } else {
         gDPSetPrimColor(gMainGfxPos++, 0, 0, orbColorR, orbColorG, orbColorB, 255);
-        for (orbIndex = 0; orbIndex < bpAvailable; orbIndex++) {
+        for (orbIndex = 0; orbIndex < bpAvailable && orbIndex < 30; orbIndex++) {
             pause_badges_draw_bp_orbs(2, baseX + 11 + (orbIndex % 10) * 6, baseY + 92 + (orbIndex / 10) * 8);
         }
         gDPPipeSync(gMainGfxPos++);

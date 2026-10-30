@@ -2085,10 +2085,10 @@ static const char *const s_text_names[TEXT_SPEEDS] = { "Normal", "Fast", "Instan
 /* The Settings page: a list in sections, dragged up and down (a scroll bar
  * shows where); a row changes its setting when tapped without dragging. */
 enum { OPT_LANG, OPT_SCREEN, OPT_FPS, OPT_3D, OPT_COLORS, OPT_TEXT, OPT_FF_SPEED, OPT_FF_BUTTON, OPT_DROPS, OPT_BEEP, OPT_DPAD,
-       OPT_AUTOSAVE, OPT_UPDATE, OPT_COUNT };
+       OPT_AUTOSAVE, OPT_UPDATE, OPT_HUD, OPT_ICE, OPT_COUNT };
 #define OPT_HEADER 0x100          /* + section number */
 static const int s_opt_list[] = {
-    OPT_HEADER + 0, OPT_LANG, OPT_SCREEN, OPT_FPS, OPT_3D, OPT_COLORS,
+    OPT_HEADER + 0, OPT_LANG, OPT_SCREEN, OPT_FPS, OPT_3D, OPT_COLORS, OPT_HUD, OPT_ICE,
     OPT_HEADER + 1, OPT_TEXT, OPT_FF_SPEED, OPT_FF_BUTTON, OPT_AUTOSAVE, OPT_DROPS, OPT_BEEP, OPT_DPAD,
     OPT_HEADER + 2, OPT_UPDATE,
 };
@@ -2124,6 +2124,8 @@ static void opt_value(int id, char *buf, size_t size) {
         case OPT_FF_BUTTON: v = pm3ds_cfg.ff_toggle ? "Toggle" : "Hold"; break;
         case OPT_DROPS:     v = pm3ds_cfg.stat_drops ? "On" : "Off"; break;
         case OPT_BEEP:      v = pm3ds_cfg.hp_beep ? "On" : "Off"; break;
+        case OPT_HUD:       v = pm3ds_cfg.battle_hud ? "On" : "Off"; break;
+        case OPT_ICE:       v = pm3ds_cfg.ice_fx ? "On" : "Off"; break;
         case OPT_DPAD:      v = pm3ds_cfg.dpad_menus ? "Cursor" : "C buttons"; break;
         case OPT_AUTOSAVE: {
             static const char *const names[PM3DS_AUTOSAVE_COUNT] = { "Off", "Each area", "5 min", "10 min", "15 min" };
@@ -2143,6 +2145,7 @@ static void opt_value(int id, char *buf, size_t size) {
 static const char *const s_opt_labels[OPT_COUNT] = {
     "Language", "Screen", "Frame rate", "3D depth", "Colors", "Text speed", "Fast-forward speed", "Fast-forward button",
     "Heart & flower drops", "Low HP beep", "D-pad in menus", "Autosave", "Update check",
+    "Battle HP/FP bar", "Ice Power effect",
 };
 
 /* Quit game (in game, GitHub #67): back to the title, saving first or not.
@@ -2278,6 +2281,8 @@ static void options_tap(int px, int py) {
                 case OPT_FF_BUTTON: pm3ds_cfg.ff_toggle = !pm3ds_cfg.ff_toggle; break;
                 case OPT_DROPS: pm3ds_cfg.stat_drops = !pm3ds_cfg.stat_drops; break;
                 case OPT_BEEP: pm3ds_cfg.hp_beep = !pm3ds_cfg.hp_beep; break;
+                case OPT_HUD: pm3ds_cfg.battle_hud = !pm3ds_cfg.battle_hud; break;
+                case OPT_ICE: pm3ds_cfg.ice_fx = !pm3ds_cfg.ice_fx; break;
                 case OPT_DPAD: pm3ds_cfg.dpad_menus = !pm3ds_cfg.dpad_menus; break;
                 case OPT_AUTOSAVE: pm3ds_cfg.autosave = (uint8_t)((pm3ds_cfg.autosave + 1) % PM3DS_AUTOSAVE_COUNT); break;
                 case OPT_COLORS:
@@ -2314,13 +2319,40 @@ static void draw_controls(void) {
 
 /* a save's cheats, each switched on its own (n64_shim/cheats.c) */
 static const char *const s_cheat_names[PM3DS_CHEAT_COUNT] = {
-    "Infinite HP", "Infinite FP", "Infinite Star Power", "999 coins", "Unlimited BP",
+    "Infinite HP", "Infinite FP", "Infinite Star Power", "999 coins", "Unlimited BP", "No level-up limits", "Free QoL badges",
 };
 static const char *const s_cheat_help[PM3DS_CHEAT_COUNT] = {
-    "Stays full", "Stays full", "Stays full", "Stays at 999", "Any badges fit",
+    "Stays full", "Stays full", "Stays full", "Stays at 999", "Any badges fit", "Up to 95 HP, FP, 99 BP", "Speedy Spin, I Spy...",
 };
 
+/* Cheats' second page, "Start with" from the Discord: extras for this file, whenever */
+static bool s_cheat_give;
+#define GIVE_ROW_H 20
+static void draw_give(void) {
+    static const char *const names[6] = { "Max HP +5", "Max FP +5", "Max BP +3", "Level +1", "Boots & hammer +1", "Star Pieces +10" };
+    page_title("Give", "Tap to add to this file");
+    for (int i = 0; i < PM3DS_GIVE_COUNT; i++) {
+        float y = OPT_Y0 + i * GIVE_ROW_H;
+        tile(CX0, y, CX1, y + GIVE_ROW_H - 3, 6, COL_TAB_ON);
+        if (i < 6) {
+            text(CX0 + 7, y + 1, names[i], fit(names[i], 180, 0.82f, 0.6f), 0, COL_WHITE);
+        } else {
+            const char *n = i == PM3DS_GIVE_ITEM ? pm3ds_cheat_give_item() : pm3ds_cheat_give_badge();
+            text(CX0 + 7, y + 1, "<", 0.82f, 0, COL_GOLD);
+            text(CX0 + 26, y + 1, n, fit(n, 150, 0.82f, 0.5f), 0, COL_WHITE);
+            text(CX0 + 186, y + 1, ">", 0.82f, 0, COL_GOLD);
+        }
+        chip(266, y + 2, CX1 - 4, y + GIVE_ROW_H - 5, "Give", COL_GOLD, 0.75f);
+    }
+    button(s_btn_opt, "Switches");
+    button(s_btn_ff, "Back");
+}
+
 static void draw_cheats(void) {
+    if (s_cheat_give) {
+        draw_give();
+        return;
+    }
     page_title("Cheats", "Tap one to switch it");
     for (int i = 0; i < PM3DS_CHEAT_COUNT; i++) {
         float y = OPT_Y0 + i * CHEAT_ROW_H;
@@ -2330,7 +2362,7 @@ static void draw_cheats(void) {
         text(CX0 + 124, y + 3, s_cheat_help[i], fit(s_cheat_help[i], 96, 0.62f, 0.5f), 0, COL_HINT);
         chip(266, y + 2, CX1 - 4, y + CHEAT_ROW_H - 5, on ? "On" : "Off", on ? COL_GOLD : COL_OFF, 0.75f);
     }
-    small_text_center((CX0 + CX1) / 2, OPT_Y0 + PM3DS_CHEAT_COUNT * CHEAT_ROW_H + 8, "Saved with this file.", 1.0f, COL_PANEL_EDGE);
+    button(s_btn_opt, "Give");
     button(s_btn_ff, "Back");
 }
 
@@ -2769,6 +2801,8 @@ static void draw_menu_page(void) {
         text_center(160, 78, PM3DS_APP_NAME, 2.0f, 0, COL_WHITE);
         text_center(160, 124, s_info.demo ? "- Demo -" : "Press START to play", 1.0f, 0, COL_WHITE);
         small_text_center(160, 154, "v" PM3DS_VERSION_STR, 1.0f, COL_PANEL_EDGE);
+        { extern bool pm3ds_low_memory_start(void);
+          if (pm3ds_low_memory_start()) small_text_center(160, 172, T("Low memory start: close and reopen the game"), 1.0f, COL_PANEL_EDGE); }
         draw_buttons();
         return;
     }
@@ -2908,6 +2942,19 @@ static void handle_touch(void) {
     }
     if (s_tab == TAB_CHEATS) {
         int row = (tp.py - OPT_Y0) / CHEAT_ROW_H;
+        if (in(tp.px, tp.py, s_btn_opt[0], BTN_Y0, s_btn_opt[1], BTN_Y1)) {
+            s_cheat_give = !s_cheat_give;
+            return;
+        }
+        if (s_cheat_give) {
+            int g = (tp.py - OPT_Y0) / GIVE_ROW_H;
+            if (back) s_cheat_give = false;
+            else if (tp.px >= CX0 - 4 && tp.py >= OPT_Y0 && g < PM3DS_GIVE_COUNT) {
+                if (g < PM3DS_GIVE_ITEM || tp.px >= 250) pm3ds_cheat_give(g);
+                else pm3ds_cheat_give((g == PM3DS_GIVE_ITEM ? PM3DS_GIVE_ITEM_PREV : PM3DS_GIVE_BADGE_PREV) - (tp.px >= CX0 + 100));
+            }
+            return;
+        }
         if (back) s_tab = TAB_OPTIONS;
         else if (tp.px >= CX0 - 4 && tp.py >= OPT_Y0 && row < PM3DS_CHEAT_COUNT) pm3ds_cheat_toggle(row);
         return;

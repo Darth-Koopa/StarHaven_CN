@@ -314,17 +314,27 @@ void enforce_hpfp_limits(void) {
     PlayerData* playerData = &gPlayerData;
 
     playerData->curMaxHP = playerData->hardMaxHP + (is_ability_active(ABILITY_HP_PLUS) * 5);
+#ifdef _3DS
+    { extern s32 pm3ds_cap_badged(void);   // n64_shim/cheats.c, GitHub #76
+      if (playerData->curMaxHP > pm3ds_cap_badged()) playerData->curMaxHP = pm3ds_cap_badged(); }
+#else
     if (playerData->curMaxHP > 75) {
         playerData->curMaxHP = 75;
     }
+#endif
     if (playerData->curHP > playerData->curMaxHP) {
         playerData->curHP = playerData->curMaxHP;
     }
 
     playerData->curMaxFP = playerData->hardMaxFP + (is_ability_active(ABILITY_FP_PLUS) * 5);
+#ifdef _3DS
+    { extern s32 pm3ds_cap_badged(void);   // n64_shim/cheats.c, GitHub #76
+      if (playerData->curMaxFP > pm3ds_cap_badged()) playerData->curMaxFP = pm3ds_cap_badged(); }
+#else
     if (playerData->curMaxFP > 75) {
         playerData->curMaxFP = 75;
     }
+#endif
     if (playerData->curFP > playerData->curMaxFP) {
         playerData->curFP = playerData->curMaxFP;
     }
@@ -692,6 +702,14 @@ void update_status_bar(void) {
     if (statusBar->disabled) {
         return;
     }
+#ifdef _3DS
+    {   // GitHub #75: the bottom screen shows HP and FP in battle too
+        extern bool pm3ds_battle_hud_on(void);
+        if (gGameStatusPtr->context == CONTEXT_BATTLE && !pm3ds_battle_hud_on()) {
+            return;
+        }
+    }
+#endif
 
     if (statusBar->alwaysShown && statusBar->hidden && playerStatus->inputDisabledCount == 0) {
         statusBar->showTimer = 42;

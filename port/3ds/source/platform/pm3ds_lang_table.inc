@@ -125,6 +125,9 @@ TR("Update check", "Update-Suche", "Mises à jour", "Buscar versión", "Aggiorna
 TR("On", "An", "Oui", "Sí", "Sì", "オン")
 TR("Off", "Aus", "Non", "No", "No", "オフ")
 TR("Heart & flower drops", "Herzen & Blumen", "Cœurs et fleurs", "Corazones y flores", "Cuori e fiori", "ハートとフラワー")
+TR("Battle HP/FP bar", "KP/BP-Leiste im Kampf", "Barre PV/PF en combat", "Barra PS/PF en combate", "Barra PV/PF in battaglia", "バトルのHP/FPバー")
+TR("Ice Power effect", "Eis-Kraft-Effekt", "Effet Force Glace", "Efecto Poder Hielo", "Effetto Potere Gelo", "アイスパワーの演出")
+TR("Low memory start: close and reopen the game", "Wenig Speicher: Spiel schließen und neu starten", "Peu de mémoire : fermez et relancez le jeu", "Poca memoria: cierra y reabre el juego", "Poca memoria: chiudi e riapri il gioco", "メモリ不足で起動: ゲームを再起動してください")
 TR("Low HP beep", "Warnton bei wenig KP", "Alerte PV bas", "Aviso PS bajos", "Avviso PV bassi", "HPピンチの音")
 
 /* controls */

@@ -288,6 +288,9 @@ HitResult calc_player_damage_enemy(void) {
     ASSERT(targetPart != nullptr);
 
     target->lastDamageTaken = 0;
+#ifdef _3DS
+    bool pm3dsQuietIce = false;
+#endif
 
     if (gBattleStatus.flags1 & BS_FLAGS1_FORCE_IMMUNE_HIT) {
         hitResult = HIT_RESULT_NO_DAMAGE;
@@ -295,6 +298,12 @@ HitResult calc_player_damage_enemy(void) {
     } else {
         if (player_team_is_ability_active(player, ABILITY_ICE_POWER)) {
             if (!(battleStatus->curAttackElement & DAMAGE_TYPE_NO_CONTACT)) {
+#ifdef _3DS
+                {   // Discord suggestion: the same ice hit, without its snowflakes and sound
+                    extern bool pm3ds_ice_fx_on(void);
+                    pm3dsQuietIce = !pm3ds_ice_fx_on() && !(battleStatus->curAttackElement & DAMAGE_TYPE_ICE);
+                }
+#endif
                 battleStatus->curAttackElement |= DAMAGE_TYPE_ICE;
             }
         }
@@ -395,8 +404,13 @@ HitResult calc_player_damage_enemy(void) {
         }
 
         if (battleStatus->curAttackElement & DAMAGE_TYPE_ICE) {
+#ifdef _3DS
+            if (!pm3dsQuietIce)
+#endif
+            {
             fx_big_snowflakes(0, state->goalPos.x, state->goalPos.y, state->goalPos.z + 5.0f);
             isIceDamage = true;
+            }
         }
 
         attackFxType = player_team_is_ability_active(player, ABILITY_ATTACK_FX);
