@@ -2782,7 +2782,7 @@ static void draw_options(void) {
             } else {
                 tile(CX0, y, OPT_LIST_X1, y + OPT_ROW_PX - 3, 6, COL_TAB_ON);
                 const char *label = s_opt_labels[id];
-                text(CX0 + 7, y + 1, label, fit(label, 138, 0.85f, 0.6f), 0, COL_WHITE);
+                text(CX0 + 7, y + 4, label, fit(label, 138, 0.85f, 0.6f), 0, COL_WHITE);
                 opt_value(id, buf, sizeof buf);
                 chip(206, y + 2, OPT_LIST_X1 - 4, y + OPT_ROW_PX - 5,
                      buf, COL_SEL, fit(buf, 76, 0.78f, 0.5f));

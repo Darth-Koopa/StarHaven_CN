@@ -61,8 +61,8 @@ if 's_cook_all ? COL_SEL : COL_OFF, 0.75f);' not in source:
     raise SystemExit("recipe Hide new / Show all labels must be slightly larger")
 if "const float label_scale = 0.62f;" not in source:
     raise SystemExit("all left-rail labels must share one nominal native-glyph scale")
-if 'text(CX0 + 7, y + 1, label, fit(label, 138, 0.85f, 0.6f), 0, COL_WHITE);' not in source:
-    raise SystemExit("upstream scrollable settings labels must retain the one-pixel upward adjustment")
+if 'text(CX0 + 7, y + 4, label, fit(label, 138, 0.85f, 0.6f), 0, COL_WHITE);' not in source:
+    raise SystemExit("upstream scrollable settings labels must retain the requested three-pixel downward adjustment")
 if "#if VERSION_IQUE\nstatic const int s_opt_list[]" not in source or "OPT_HEADER + 0, OPT_SCREEN" not in source:
     raise SystemExit("iQue settings must omit the upstream Language selector")
 if "#if !VERSION_IQUE\n                case OPT_LANG:" not in source:
