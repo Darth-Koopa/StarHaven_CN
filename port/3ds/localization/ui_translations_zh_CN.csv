@@ -217,9 +217,8 @@ HUD partner name,hud_info.c,-,-,无同伴时的占位符
 Party,bottom_screen.c,%s is with you,同行同伴：%s,%s 是运行时同伴名字；保留格式占位符。页面宽度不足时可缩短为“同伴：%s”。
 Tattle,bottom_screen.c,%d of %d enemies,已扫描 %d/%d 个敌人,两个 %d 都要保留；语义是已掌握资料数/敌人总数。
 Found,bottom_screen.c,%d of %d item spots,已收集 %d/%d 个物品,两个 %d 都要保留；当前计数代表已收集/总数。
-Options,bottom_screen.c,Tap a value to change it,点击数值即可更改,选项页说明。
+Options,pm3ds_lang_table.inc,Tap a value to change it,点击数值即可更改,选项页说明。
 New game/randomizer,bottom_screen.c,"A: type a seed, Y: random. Same seed and settings, same game.",A：输入种子，Y：随机。相同种子和设置会生成相同的游戏。,按钮字母 A/Y 应保留；句子可能需要拆分/缩小字号。
-Save import,bottom_screen.c,%d save file%s converted from your,已从你的存档转换出 %d 个文件,建议同时修改 snprintf：中文不使用英文复数 %s 后缀，可移除第二个参数/占位符；下一行仍接 N64 save 文案。
 New game/randomizer,bottom_screen.c,The original,原作,源码中的独立一行。
 New game/randomizer,bottom_screen.c,adventure,冒险,源码中的独立一行；和 “The original” 分开绘制。
 Controls,bottom_screen.c,Swap,交换,控制映射页用于交换两个动作的按钮。
@@ -259,6 +258,87 @@ Cheats,bottom_screen.c,Stays full,保持全满,作弊选项说明。
 Cheats,bottom_screen.c,Stays at 999,保持999,作弊选项说明。
 Cheats,bottom_screen.c,Any badges fit,可装备所有徽章,作弊选项说明。
 Cheats,bottom_screen.c,Tap one to switch it,点击即可切换,作弊页面副标题。
-Cheats,bottom_screen.c,Saved with this file.,与此存档一同保存。,作弊设置存档说明。
-New game,bottom_screen.c,Can't add later,之后不能更改,新游戏时的作弊设置提示。
-New game,bottom_screen.c,A: choose  Y: cheats,A：选择  Y：金手指,新游戏控制提示。
+Cheats,pm3ds_lang_table.inc,Saved with this file.,与此存档一同保存。,作弊设置存档说明。
+New game,pm3ds_lang_table.inc,Can't add later,之后不能更改,新游戏时的作弊设置提示。
+New game,pm3ds_lang_table.inc,A: choose  Y: cheats,A：选择  Y：金手指,新游戏控制提示。
+Settings,bottom_screen.c,Language,语言,iQue 固定中文；该选项仅供非 iQue 版本显示
+Settings,bottom_screen.c,Battle HP/FP bar,战斗 HP/FP 状态条,
+Settings,bottom_screen.c,Ice Power effect,冰冻力量效果,
+Startup,bottom_screen.c,Low memory start: close and reopen the game,内存不足，无法启动：请关闭并重新打开游戏,
+Controls,pm3ds_settings.c,Turbo A,连发 A,手柄按键设置名称
+Update,bottom_screen.c,%s v%d.%d.%d is out.,%s v%d.%d.%d 已推出。,保留全部格式占位符
+Update,bottom_screen.c,You have v%s.,当前为 v%s。,保留格式占位符
+Save import,bottom_screen.c,%d save file converted from your,已从你的 N64 存档转换 %d 个文件,保留格式占位符
+Save import,bottom_screen.c,%d save files converted from your,已从你的 N64 存档转换 %d 个文件,保留格式占位符
+Settings,bottom_screen.c,Display,显示,
+Settings,bottom_screen.c,Gameplay,游戏,
+Settings,bottom_screen.c,System,系统,
+Settings,bottom_screen.c,"Drag to scroll, tap to change",拖动滚动，点击修改,
+Found,bottom_screen.c,Tap an area: where things are,点击地区查看物品位置,
+Found,bottom_screen.c,%d of %d found,已找到 %d/%d,保留格式占位符
+Found,bottom_screen.c,This room first,优先显示此房间,
+Found,bottom_screen.c,this room,此房间,
+Found,bottom_screen.c,"%s, room %d",%s，第 %d 房间,保留格式占位符
+Found,bottom_screen.c,On the ground,地面上,
+Found,bottom_screen.c,Block,砖块,
+Found,bottom_screen.c,Hidden block,隐藏砖块,
+Found,bottom_screen.c,Hidden panel,隐藏面板,
+Found,bottom_screen.c,Tree,树木,
+Found,bottom_screen.c,Bush,灌木,
+Found,bottom_screen.c,Chest,宝箱,
+Found,bottom_screen.c,Crate,木箱,
+Found,bottom_screen.c,Super Block,超级砖块,
+Found,bottom_screen.c,Coin,金币,
+Randomizer,bottom_screen.c,Enemies,敌人,
+Randomizer,bottom_screen.c,Every enemy group fights as another group from the same chapter.,每组敌人都会与同一章节中的另一组敌人交战。,
+Badges,bottom_screen.c,BP left: %d of %d,剩余 BP：%d/%d,保留格式占位符
+Badges,bottom_screen.c,No badges yet.,还没有勋章。,
+Badges,bottom_screen.c,Badges change outside battles and menus.,只能在战斗和菜单之外更换勋章。,
+Badges,bottom_screen.c,Not enough BP.,BP 不足。,
+Badges,bottom_screen.c,Too many badges on.,装备的勋章太多。,
+Quit,bottom_screen.c,Quit game,退出游戏,
+Quit,bottom_screen.c,Quit to the title screen?,要返回标题画面吗？,
+Quit,bottom_screen.c,Save and quit,保存并退出,
+Quit,bottom_screen.c,Quit without saving,不保存并退出,
+Quit,bottom_screen.c,Cancel,取消,
+Quit,bottom_screen.c,Can't save right now.,现在无法保存。,
+New game,bottom_screen.c,Hard mode,困难模式,
+New game,pm3ds_lang_table.inc,Y: cheats  X: hard mode,Y：金手指  X：困难模式,
+New game,bottom_screen.c,Hard,困难,
+Badges,bottom_screen.c,Loadouts,配置组合,
+Badges,bottom_screen.c,Save to...,保存到……,
+Badges,bottom_screen.c,Loadout %d saved: %d badges,配置 %d 已保存：%d 个勋章,保留格式占位符
+Badges,bottom_screen.c,Loadout %d is empty: tap Save first,配置 %d 为空：请先点击保存,保留格式占位符
+Badges,bottom_screen.c,Loadout %d on (%d didn't fit),已启用配置 %d（%d 个勋章无法装入）,保留格式占位符
+Badges,bottom_screen.c,Loadout %d on,已启用配置 %d,保留格式占位符
+Settings,bottom_screen.c,Colors,色彩模式,
+Settings,bottom_screen.c,Vivid,鲜艳,
+Settings,bottom_screen.c,Deuteranopia,绿色弱视模式,色觉辅助模式名称
+Settings,bottom_screen.c,Protanopia,红色弱视模式,色觉辅助模式名称
+Settings,bottom_screen.c,Tritanopia,蓝黄色弱视模式,色觉辅助模式名称
+Controls,bottom_screen.c,D-pad in menus,菜单方向键,
+Controls,bottom_screen.c,Cursor,光标,
+Controls,bottom_screen.c,C buttons,C 按钮,
+Badges,bottom_screen.c,Badge costs,勋章消耗,
+Badges,bottom_screen.c,Badges swap their BP and FP costs. Speedy Spin stays.,交换勋章的 BP 和 FP 消耗。快速旋转保持不变。,
+New game,bottom_screen.c,Skip intro,跳过序章,
+New game,bottom_screen.c,Y: cheats  X: hard  R: skip,Y：金手指  X：困难模式  R：跳过序章,
+Settings,bottom_screen.c,Autosave,自动保存,
+Settings,bottom_screen.c,Each area,每个区域,
+Settings,bottom_screen.c,5 min,5 分钟,
+Settings,bottom_screen.c,10 min,10 分钟,
+Settings,bottom_screen.c,15 min,15 分钟,
+Badges,pm3ds_lang_table.inc,Tap a badge to put it on or take it off.,点选勋章，装备或取消装备。,上游语言表中的徽章操作说明。
+Cheats,bottom_screen.c,No level-up limits,升级无上限,作弊选项名称。
+Cheats,bottom_screen.c,Free QoL badges,便利性徽章免费,QoL 指 Quality of Life。
+Cheats,bottom_screen.c,"Up to 95 HP, FP, 99 BP",HP、FP 上限 95，BP 上限 99,作弊说明。
+Cheats,bottom_screen.c,"Speedy Spin, I Spy...",快速旋转、我在这儿……,作弊说明；徽章名称需与游戏译名保持一致。
+Give,bottom_screen.c,Max HP +5,最大 HP +5,奖励项目。
+Give,bottom_screen.c,Max FP +5,最大 FP +5,奖励项目。
+Give,bottom_screen.c,Max BP +3,最大 BP +3,奖励项目。
+Give,bottom_screen.c,Level +1,等级 +1,奖励项目。
+Give,bottom_screen.c,Boots & hammer +1,靴子和锤子 +1,奖励项目。
+Give,bottom_screen.c,Star Pieces +10,星星碎片 +10,奖励项目。
+Give,bottom_screen.c,Give,奖励,给当前存档添加奖励。
+Give,bottom_screen.c,Tap to add to this file,点击即可加入此存档,奖励页说明。
+Give,bottom_screen.c,Switches,切换项目,返回作弊开关列表的按钮。

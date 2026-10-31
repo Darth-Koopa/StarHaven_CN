@@ -1,5 +1,11 @@
 #include "pause_common.h"
 #include "message_ids.h"
+#ifdef _3DS
+#include "pm3ds_keyitems.h"   // key item slots past PlayerData's 32
+#else
+#define KEY_SLOTS ARRAY_COUNT(gPlayerData.keyItems)
+#define KEY_ITEM(i) (gPlayerData.keyItems[i])
+#endif
 
 #if VERSION_PAL
 extern u8 D_PAL_80271B30[4];
@@ -466,9 +472,9 @@ void pause_items_load_items(s32 invItems) {
             }
         }
     } else {
-        for (i = 0; i < ARRAY_COUNT(playerData->keyItems); i++) {
-            if (playerData->keyItems[i] != ITEM_NONE) {
-                gPauseItemsItemIDs[totalItems] = playerData->keyItems[i];
+        for (i = 0; i < KEY_SLOTS; i++) {
+            if (KEY_ITEM(i) != ITEM_NONE) {
+                gPauseItemsItemIDs[totalItems] = KEY_ITEM(i);
                 totalItems++;
             }
         }

@@ -40,13 +40,16 @@ for name in ("ui_native_glyph_text_fit_ink", "ui_native_glyph_text_center_fit_in
     if "float render_scale = scale;" not in body or "scale * 0.625f" in body:
         raise SystemExit(f"{name} must use native game-font scale without TTF conversion")
 
+tight = function_body("text_center_tight")
+if "const float gap = 0.75f;" not in tight or "- gap" not in tight:
+    raise SystemExit("partner button labels must retain the tighter 0.75px inter-glyph gap")
+
 if "#define UI_NATIVE_GLYPH_INK_SCALE 1.20f" not in source:
     raise SystemExit("default glyph-ink enlargement must remain available for UI elements that use it")
 for snippet in (
     'ui_native_glyph_text_fit_original(x0 + 7, y0 + 2, s_log.name[i], 1.0f',
     'ui_native_glyph_text_fit_original(x, y0 + 1, a->name, 1.0f',
     'ui_native_glyph_text_original(x0 + 21, y0 + 2, name,',
-    'ui_native_glyph_text_fit_original(CX0 + 7, y + 1, label, 0.90f',
     'ui_native_glyph_text_original(CX0 + 7, y + 2, s_cheat_names[i],',
 ):
     if snippet not in source:
@@ -58,8 +61,12 @@ if 's_cook_all ? COL_SEL : COL_OFF, 0.75f);' not in source:
     raise SystemExit("recipe Hide new / Show all labels must be slightly larger")
 if "const float label_scale = 0.62f;" not in source:
     raise SystemExit("all left-rail labels must share one nominal native-glyph scale")
-if "ui_native_glyph_text_fit_original(CX0 + 7, y + 1, label, 0.90f, 150, COL_WHITE);" not in source:
-    raise SystemExit("settings left labels must be shifted up one pixel while preserving scale")
+if 'text(CX0 + 7, y + 1, label, fit(label, 138, 0.85f, 0.6f), 0, COL_WHITE);' not in source:
+    raise SystemExit("upstream scrollable settings labels must retain the one-pixel upward adjustment")
+if "#if VERSION_IQUE\nstatic const int s_opt_list[]" not in source or "OPT_HEADER + 0, OPT_SCREEN" not in source:
+    raise SystemExit("iQue settings must omit the upstream Language selector")
+if "#if !VERSION_IQUE\n                case OPT_LANG:" not in source:
+    raise SystemExit("non-iQue builds must retain the upstream six-language selector")
 if "fit(title, 160, 1.0f, 0.7f)" not in source:
     raise SystemExit("page titles must use a 1.00x native scale before fit-to-width")
 if "#define LOG_TEXT_SCALE 0.85f" not in source or "#define DISH_DESC_SCALE 0.85f" not in source:
@@ -81,8 +88,6 @@ for label in (
     'ui_native_glyph_text_center_fit(vx0 + 58, vy1 - 20, "Drag to look", 0.7f',
     "ui_native_glyph_text_fit_original(x0 + 7, y0 + 2, s_log.name[i], 1.0f",
     "ui_native_glyph_text_fit_original(x, y0 + 1, a->name, 1.0f",
-    "ui_native_glyph_text_fit_original(CX0 + 7, y + 1, label, 0.90f",
-    "ui_native_glyph_text_center_fit((bx0 + bx1) / 2, (by0 + by1) / 2 - 6.5f, value, 0.75f",
 ):
     if label not in source:
         raise SystemExit(f"expected legibility call site missing: {label}")

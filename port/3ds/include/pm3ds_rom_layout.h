@@ -93,7 +93,7 @@
 #define PM3DS_SAVE_NAME         "save_jp.fla"   /* JP saves have another layout */
 #define PM3DS_ROMDATA_PATH      "romfs:/romdata_jp.bin"
 #else
-#error "the 3DS port is built for VERSION_PAL, VERSION_US, VERSION_IQUE or VERSION_JP"
+#error "the 3DS port is built for VERSION_PAL, VERSION_US, VERSION_JP or VERSION_IQUE"
 #endif
 
 /* cart-tagged offset, as the decomp's DMA code takes it */

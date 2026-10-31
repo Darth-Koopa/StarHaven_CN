@@ -374,6 +374,12 @@ HitResult calc_enemy_damage_target(Actor* attacker) {
     // apply attacker damage modifiers
 
     damage = battleStatus->curAttackDamage;
+#ifdef _3DS
+    if ((attacker->actorID & ACTOR_CLASS_MASK) == ACTOR_CLASS_ENEMY && actorClass != ACTOR_CLASS_ENEMY) {
+        extern s32 pm3ds_hard_scale(s32 v);   // hard mode (GitHub #69): enemies hit 1.5x as hard
+        damage = pm3ds_hard_scale(damage);
+    }
+#endif
 
     switch (actorClass) {
         case ACTOR_CLASS_PLAYER:

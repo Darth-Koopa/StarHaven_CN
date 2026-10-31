@@ -661,6 +661,11 @@ void pm3ds_game_debug_tick(u32 frame) {
             done = 1;
             gPlayerData.starPoints = 99;
             gBattleStatus.totalStarPoints = 3;
+#ifdef PM3DS_TEST_CAPS   /* every stat at the game's limit: nothing left to raise (GitHub #76) */
+            gPlayerData.hardMaxHP = gPlayerData.curMaxHP = gPlayerData.curHP = 50;
+            gPlayerData.hardMaxFP = gPlayerData.curMaxFP = gPlayerData.curFP = 50;
+            gPlayerData.maxBP = 30;
+#endif
             pm3ds_log(2, "LEVELUP TEST: forcing victory at frame %u", (unsigned)frame);
             btl_set_state(BATTLE_STATE_VICTORY);
         }

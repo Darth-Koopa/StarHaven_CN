@@ -1689,6 +1689,9 @@ int pm3ds_gfx_extra_steps(void) {
         g_skip_auto_set = true;
     }
     g_skipped_steps = 0;
+#ifdef PM3DS_TEST_CATCHUP   /* test: an Old 3DS that is always one frame behind */
+    if (g_skip_auto) return g_skipped_steps = 1;
+#endif
     if (g_skip_debt >= 1.0f) {
         g_skip_debt -= 1.0f;
         g_skipped_steps = 1;

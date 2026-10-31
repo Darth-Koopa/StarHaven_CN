@@ -161,6 +161,16 @@ void step_game_loop(void) {
                 SoftResetDelay--;
                 if (SoftResetDelay == 0) {
                     sfx_stop_env_sounds();
+#ifdef _3DS
+                    {   // 3DS port: Quit game uses this reset, and nothing reboots after it as on the N64:
+                        // the area's ambience (Gusty Gulch's wind) played on at the title and into the
+                        // next file (Discord). Stop every ambience player and forget the area's sound.
+                        for (s32 k = 0; k < 4; k++) {
+                            snd_ambient_stop_quick(k);
+                        }
+                        reset_ambient_sounds();
+                    }
+#endif
                     set_game_mode(GAME_MODE_STARTUP);
                     gOverrideFlags &= ~GLOBAL_OVERRIDES_SOFT_RESET;
                 }

@@ -65,5 +65,7 @@ if [[ " $WANT " == *" cia "* ]]; then
     (cd "$OUT" && "$MAKEROM" -f cia -o "$NAME.cia" -elf "$NAME.elf" -rsf app.rsf \
         -icon "$ICON" -banner "$BANNER" -target t -exefslogo \
         -major "$(ver MAJOR)" -minor "$(ver MINOR)" -micro "$(ver MICRO)")
+    # makerom drops the minor version: write the whole title version into the ticket and TMD
+    python3 "$PORT/tools/cia_title_version.py" "$OUT/$NAME.cia" "$(ver MAJOR)" "$(ver MINOR)" "$(ver MICRO)" || exit 1
     echo "cia: $OUT/$NAME.cia ($(stat -c %s "$OUT/$NAME.cia") bytes)"
 fi

@@ -1793,7 +1793,14 @@ Actor* create_actor(Formation formation) {
     actor->headOffset.x = 0;
     actor->headOffset.y = 0;
     actor->headOffset.z = 0;
+#ifdef _3DS
+    {   // 3DS port: hard mode (GitHub #69) gives enemies 1.5x HP
+        extern s32 pm3ds_hard_scale(s32 v);
+        actor->maxHP = actor->curHP = pm3ds_hard_scale(formationActor->maxHP);
+    }
+#else
     actor->maxHP = actor->curHP = formationActor->maxHP;
+#endif
     actor->numParts = partCount;
     actor->idleSource = nullptr;
     actor->takeTurnSource = formationActor->initScript;

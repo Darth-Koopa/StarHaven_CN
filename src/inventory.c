@@ -1,5 +1,11 @@
 #include "common.h"
 #include "hud_element.h"
+#ifdef _3DS
+#include "pm3ds_keyitems.h"   // key item slots past PlayerData's 32
+#else
+#define KEY_SLOTS ARRAY_COUNT(gPlayerData.keyItems)
+#define KEY_ITEM(i) (gPlayerData.keyItems[i])
+#endif
 
 #define FULLY_EXTENDED_Y  18
 #define FULLY_RETRACTED_Y -100
@@ -90,8 +96,8 @@ void clear_player_data(void) {
         playerData->partners[i].unk_02[2] = 0;
     }
 
-    for (i = 0; i < ARRAY_COUNT(playerData->keyItems); i++) {
-        playerData->keyItems[i] = ITEM_NONE;
+    for (i = 0; i < KEY_SLOTS; i++) {
+        KEY_ITEM(i) = ITEM_NONE;
     }
 
     for (i = 0; i < ARRAY_COUNT(playerData->badges); i++) {
@@ -195,13 +201,13 @@ s32 find_item(s32 itemID) {
 
     if (item->typeFlags & ITEM_TYPE_FLAG_KEY) {
         // check key items
-        for (i = 0; i < ARRAY_COUNT(playerData->keyItems); i++) {
-            if (playerData->keyItems[i] == itemID) {
+        for (i = 0; i < KEY_SLOTS; i++) {
+            if (KEY_ITEM(i) == itemID) {
                 break;
             }
         }
 
-        if (i >= ARRAY_COUNT(playerData->keyItems)) {
+        if (i >= KEY_SLOTS) {
             return -1;
         }
 
@@ -308,17 +314,27 @@ void enforce_hpfp_limits(void) {
     PlayerData* playerData = &gPlayerData;
 
     playerData->curMaxHP = playerData->hardMaxHP + (is_ability_active(ABILITY_HP_PLUS) * 5);
+#ifdef _3DS
+    { extern s32 pm3ds_cap_badged(void);   // n64_shim/cheats.c, GitHub #76
+      if (playerData->curMaxHP > pm3ds_cap_badged()) playerData->curMaxHP = pm3ds_cap_badged(); }
+#else
     if (playerData->curMaxHP > 75) {
         playerData->curMaxHP = 75;
     }
+#endif
     if (playerData->curHP > playerData->curMaxHP) {
         playerData->curHP = playerData->curMaxHP;
     }
 
     playerData->curMaxFP = playerData->hardMaxFP + (is_ability_active(ABILITY_FP_PLUS) * 5);
+#ifdef _3DS
+    { extern s32 pm3ds_cap_badged(void);   // n64_shim/cheats.c, GitHub #76
+      if (playerData->curMaxFP > pm3ds_cap_badged()) playerData->curMaxFP = pm3ds_cap_badged(); }
+#else
     if (playerData->curMaxFP > 75) {
         playerData->curMaxFP = 75;
     }
+#endif
     if (playerData->curFP > playerData->curMaxFP) {
         playerData->curFP = playerData->curMaxFP;
     }
@@ -686,6 +702,14 @@ void update_status_bar(void) {
     if (statusBar->disabled) {
         return;
     }
+#ifdef _3DS
+    {   // GitHub #75: the bottom screen shows HP and FP in battle too
+        extern bool pm3ds_battle_hud_on(void);
+        if (gGameStatusPtr->context == CONTEXT_BATTLE && !pm3ds_battle_hud_on()) {
+            return;
+        }
+    }
+#endif
 
     if (statusBar->alwaysShown && statusBar->hidden && playerStatus->inputDisabledCount == 0) {
         statusBar->showTimer = 42;

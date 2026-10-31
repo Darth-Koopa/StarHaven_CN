@@ -4,6 +4,7 @@
  * (platform/bottom_screen.c), then switched one by one on the Options rail's
  * Cheats page. No decomp headers here. */
 #include <stdbool.h>
+#include <stdint.h>
 
 enum {
     PM3DS_CHEAT_HP,       /* HP stays full, Mario can't be knocked out */
@@ -11,12 +12,31 @@ enum {
     PM3DS_CHEAT_SP,       /* star power stays full */
     PM3DS_CHEAT_COINS,    /* 999 coins */
     PM3DS_CHEAT_BP,       /* equip any badges, whatever their BP */
+    PM3DS_CHEAT_NOCAP,    /* level-ups past 50 HP, 50 FP, 30 BP (GitHub #76) */
+    PM3DS_CHEAT_QOL,      /* quality-of-life badges cost no BP (Discord suggestion) */
     PM3DS_CHEAT_COUNT,
 };
+
+/* Options > Cheats > Give (Discord: "Start with" options): done at the next game step */
+enum {
+    PM3DS_GIVE_HP, PM3DS_GIVE_FP, PM3DS_GIVE_BP, PM3DS_GIVE_LEVEL, PM3DS_GIVE_GEAR, PM3DS_GIVE_STAR_PIECES,
+    PM3DS_GIVE_ITEM, PM3DS_GIVE_BADGE, PM3DS_GIVE_COUNT,
+    PM3DS_GIVE_ITEM_NEXT = 0x10, PM3DS_GIVE_ITEM_PREV, PM3DS_GIVE_BADGE_NEXT, PM3DS_GIVE_BADGE_PREV,
+};
+void pm3ds_cheat_give(int what);
+const char *pm3ds_cheat_give_item(void);    /* the items' and the badges' current choice */
+const char *pm3ds_cheat_give_badge(void);
 
 void pm3ds_cheats_choose(bool allowed);   /* the next new game's choice */
 bool pm3ds_cheats_allowed(void);          /* the running game's save allows cheats */
 bool pm3ds_cheat_on(int cheat);
 void pm3ds_cheat_toggle(int cheat);
+
+/* Hard mode (n64_shim/cheats.c): per save, chosen on the new-game picker */
+void pm3ds_hard_choose(bool on);
+bool pm3ds_hard_mode(void);
+int32_t pm3ds_hard_scale(int32_t v);   /* x1.5 rounded up in hard mode */
+
+void pm3ds_skip_intro_choose(bool on);   /* the new file starts after the prologue's fall */
 
 #endif

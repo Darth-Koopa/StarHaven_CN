@@ -2533,3 +2533,35 @@ EvtScript N(EVS_Scene_IntroStory) = {
     Return
     End
 };
+
+#ifdef _3DS
+// 3DS port: the N64 loaded this map's data fresh on every visit; linked in, a second run in one session (Quit game, a new file) started where the last one ended
+API_CALLABLE(N(ResetIntroState)) {
+    N(D_802495DC_A3381C) = 0;
+    N(D_802495E0_A33820) = 0;
+    N(D_802498F8_A33B38) = 0;
+    N(D_802498FC_A33B3C) = 0;
+    N(StoryCameraShake1Angle) = 0;
+    N(StoryCameraShake1Scale) = 1.0;
+    N(StoryCameraShake2Angle) = 0;
+    N(UnusedBowserLeapTime) = 0;
+    N(BowserHoverTime) = 0;
+    N(UnusedKammyMoveTime) = 0;
+    N(KammyHoverTime) = 0;
+    N(CamMoveInhaleTime) = 0;
+    N(CamMoveExhaleTime) = 0;
+    N(FlyToStarRodTime) = 0;
+    N(HoldStarRodTime) = 0;
+    N(PanAcrossRoomTime) = 0;
+    N(OrbitKammyTime) = 0;
+    N(FlyToBowserTime) = 0;
+    N(StoryPageState) = STORY_PAGE_STATE_BEGIN;
+    N(CurrentStoryPageIdx) = 0;
+    N(CurrentStoryPageTime) = 0;
+    N(BowserSilhouetteTime) = 0;
+    N(FadeAwayTapeTime) = 30;
+    N(AnimBowser_FlyOff_Time) = 0.0;
+    N(AnimKammy_FlyOff_Time) = 0.0;
+    return ApiStatus_DONE2;
+}
+#endif

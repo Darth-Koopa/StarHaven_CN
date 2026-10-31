@@ -1,6 +1,13 @@
 #include "hos_10.h"
 
+#if defined(_3DS) && VERSION_JP   // hos_10 has the narrator in JP only
+API_CALLABLE(N(ResetNarratorState));
+#endif
+
 EvtScript N(EVS_Main) = {
+#if defined(_3DS) && VERSION_JP
+    Call(N(ResetNarratorState))
+#endif
     Call(GetEntryID, LVar0)
     IfEq(LVar0, hos_10_ENTRY_1)
         Wait(75)

@@ -242,20 +242,33 @@ void check_input_open_menus(void) {
         // Mario never moved again)
         extern volatile s32 pm3ds_touch_req;
         extern volatile s32 pm3ds_quicksave_result;
+        extern volatile s32 pm3ds_quit_result;
         extern s32 NextPartnerCommand;
         extern s32 pm3ds_player_in_room;
         s32 req = pm3ds_touch_req;
+        extern bool pm3ds_autosave_due(void);
+        {   // Autosave (Settings): a quick save by itself, only where the Save button could save
+            if (req == 0 && pm3ds_autosave_due()) {
+                req = 6;
+            }
+        }
         if (req != 0) {
-            pm3ds_touch_req = 0;
+            if (req != 6) {
+                pm3ds_touch_req = 0;
+            }
             if (req == 2) {
                 pm3ds_quicksave_result = -1;   // unless it gets through below
+            } else if (req == 5) {
+                pm3ds_quit_result = -1;
             }
             // riding Lakilester/Sushie or hiding with Bow, the partner's input drives the menus
             s32 partnerDrives = partnerStatus->partnerActionState != PARTNER_ACTION_NONE &&
                 (partnerStatus->actingPartner == PARTNER_SUSHIE || partnerStatus->actingPartner == PARTNER_LAKILESTER ||
                  partnerStatus->actingPartner == PARTNER_BOW);
             s32 inputOff = partnerDrives ? partnerStatus->inputDisabledCount : playerStatus->inputDisabledCount;
-            if (inputOff != 0 || NextPartnerCommand != PARTNER_CMD_NONE) {
+            if (req == 6 && (inputOff != 0 || NextPartnerCommand != PARTNER_CMD_NONE)) {
+                // autosave: not now, try again next frame
+            } else if (inputOff != 0 || NextPartnerCommand != PARTNER_CMD_NONE) {
                 sfx_play_sound(SOUND_MENU_ERROR);
             } else if (WorldMenuState == WORLD_MENU_STATE_NONE && evt_get_variable(nullptr, GB_StoryProgress) < STORY_EPILOGUE) {
                 if (req == 1) {
@@ -264,7 +277,7 @@ void check_input_open_menus(void) {
                     extern u32 pm3ds_pause_to_badges;
                     pressedButtons |= BUTTON_START;
                     pm3ds_pause_to_badges = gGameStatusPtr->frameCounter | 1;
-                } else if (req == 2) {                  // quick save: whenever the pause menu could open
+                } else if (req == 2 || req == 5 || req == 6) {   // quick save (5: then quit to the title, 6: autosave): whenever the pause menu could open
                     // and not inside a house: rooms load closed, a save block map would put Mario back in one
                     if (partnerStatus->partnerActionState == PARTNER_ACTION_NONE && !pm3ds_player_in_room &&
                         can_open_world_menu(currentButtons, BUTTON_START)) {
@@ -279,8 +292,19 @@ void check_input_open_menus(void) {
                             fio_save_game(gGameStatusPtr->saveSlot);
                             pm3ds_qs_saving = false;
                         }
-                        sfx_play_sound(SOUND_SAVE_CONFIRM);
-                        pm3ds_quicksave_result = 1;
+                        if (req != 6) {
+                            sfx_play_sound(SOUND_SAVE_CONFIRM);
+                        }
+                        if (req == 6) {
+                            extern void pm3ds_autosave_done(void);
+                            pm3ds_autosave_done();
+                        } else if (req == 5) {
+                            extern void pm3ds_quit_to_title(void);
+                            pm3ds_quit_result = 1;
+                            pm3ds_quit_to_title();
+                        } else {
+                            pm3ds_quicksave_result = 1;
+                        }
 #ifdef PM3DS_ROOM_DBG
                         { extern void pm3ds_log(int, const char*, ...); pm3ds_log(2, "ROOMDBG quicksave ok"); }
 #endif
@@ -288,9 +312,14 @@ void check_input_open_menus(void) {
 #ifdef PM3DS_ROOM_DBG
                         { extern void pm3ds_log(int, const char*, ...); pm3ds_log(2, "ROOMDBG quicksave refused in_room=%d", pm3ds_player_in_room); }
 #endif
-                        sfx_play_sound(SOUND_MENU_ERROR);
+                        if (req != 6) {
+                            sfx_play_sound(SOUND_MENU_ERROR);
+                        }
                     }
-                    return;
+                    if (req != 6 || !pm3ds_autosave_due()) {   // saved: the autosave isn't due anymore
+                        return;
+                    }
+                    // an autosave that couldn't save here (a house, riding a partner): the menus work as usual
                 } else if (req >= 0x100) {              // switch straight to partner req - 0x100
                     s32 partner = req - 0x100;
                     if (partner > 0 && partner < ARRAY_COUNT(playerData->partners) && partner != playerData->curPartner &&

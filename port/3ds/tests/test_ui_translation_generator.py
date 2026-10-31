@@ -2,7 +2,9 @@
 """Host-side smoke test for the iQue UI translation generator and C lookup."""
 from __future__ import annotations
 
+import csv
 import importlib.util
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -20,6 +22,27 @@ def main() -> int:
     spec.loader.exec_module(module)
     glyphs = module.load_ique_character_map()
     expected_glyph = glyphs["状"]
+
+    # The upstream six-language table remains its own source of truth. The
+    # iQue CSV overlays Chinese for every upstream English key without
+    # absorbing the other languages into a merge-hostile master CSV.
+    with CSV.open("r", encoding="utf-8-sig", newline="") as stream:
+        reader = csv.DictReader(stream)
+        rows = list(reader)
+    chinese_keys = {row["english_source"] for row in rows}
+    lang_table = ROOT / "port/3ds/source/platform/pm3ds_lang_table.inc"
+    english_keys = set(re.findall(r'^TR\("((?:\\.|[^"\\])*)"\s*,',
+                                  lang_table.read_text(encoding="utf-8"), re.M))
+    missing = sorted(english_keys - chinese_keys)
+    if missing:
+        raise SystemExit(f"iQue CSV is missing upstream language keys: {missing}")
+    source = (ROOT / "port/3ds/source/platform/bottom_screen.c").read_text(encoding="utf-8")
+    if "#if VERSION_IQUE\n    return ui_text(source);\n#else\n    return T(source);\n#endif" not in source:
+        raise SystemExit("menu_text must keep the iQue CSV path separate from upstream T()")
+    if "#if VERSION_IQUE\nstatic const int s_opt_list[]" not in source or "OPT_HEADER + 0, OPT_SCREEN" not in source:
+        raise SystemExit("the iQue settings list must omit the Language selector")
+    if '#if VERSION_IQUE\n        /* Chinese uses the plural-neutral wording; keep the format string to one argument. */' not in source:
+        raise SystemExit("iQue save-import notice must use its safe Chinese format string")
 
     with tempfile.TemporaryDirectory(prefix="pm3ds-ui-translation-test-") as temp:
         tempdir = Path(temp)

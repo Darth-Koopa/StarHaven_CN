@@ -60,6 +60,21 @@ typedef struct {
     pm3ds_tracker_area_t area[PM3DS_TRACKER_AREAS];
 } pm3ds_tracker_t;
 int pm3ds_tracker_query(pm3ds_tracker_t *out);
+/* one area's spots (area: an index of pm3ds_tracker_t.area): the room's first, then by room */
+#define PM3DS_TRACKER_SPOTS 64
+typedef struct {
+    int count;
+    struct {
+        char item[24];                        /* what lies there now (the randomizer's item in a seed) */
+        const void *icon;                     /* HudScript, or NULL */
+        unsigned char src;                    /* PM3DS_SPOT_* */
+        unsigned char found, here;            /* taken; in Mario's room */
+        unsigned char room;                   /* the map's number in its area (kmr_04: 4) */
+    } spot[PM3DS_TRACKER_SPOTS];
+} pm3ds_tracker_spots_t;
+enum { PM3DS_SPOT_ITEM, PM3DS_SPOT_BLOCK, PM3DS_SPOT_TREE, PM3DS_SPOT_BUSH, PM3DS_SPOT_PANEL, PM3DS_SPOT_CHEST,
+       PM3DS_SPOT_GIFT, PM3DS_SPOT_HIDDEN_BLOCK, PM3DS_SPOT_CRATE, PM3DS_SPOT_SUPER_BLOCK };
+int pm3ds_tracker_spots(int area, pm3ds_tracker_spots_t *out);
 
 /* Recipes (n64_shim/journal.c): every dish Tayce T. can cook, by name */
 #define PM3DS_RECIPE_MAX  56
@@ -72,6 +87,28 @@ typedef struct {
     char name[PM3DS_RECIPE_MAX][PM3DS_RECIPE_NAME];
 } pm3ds_recipe_list_t;
 int pm3ds_recipe_query(pm3ds_recipe_list_t *out);
+
+/* Badges (n64_shim/journal.c): the badges Mario has, in the pause menu's order,
+ * and switching one on or off from the bottom screen */
+#define PM3DS_BADGE_MAX  128
+#define PM3DS_BADGE_NAME 24
+typedef struct {
+    int count, bp_max, bp_used;
+    int can_change;                               /* in the world, no menu or battle open */
+    short item[PM3DS_BADGE_MAX];
+    unsigned char cost[PM3DS_BADGE_MAX];
+    unsigned char on[PM3DS_BADGE_MAX];            /* equipped */
+    const void *icon[PM3DS_BADGE_MAX];            /* HudScript */
+    char name[PM3DS_BADGE_MAX][PM3DS_BADGE_NAME];
+} pm3ds_badge_list_t;
+int pm3ds_badge_query(pm3ds_badge_list_t *out);
+enum { PM3DS_BADGE_REMOVED, PM3DS_BADGE_EQUIPPED, PM3DS_BADGE_NO_BP, PM3DS_BADGE_TOO_MANY, PM3DS_BADGE_NOT_NOW };
+int pm3ds_badge_toggle(int item);
+/* badge loadouts: three saved sets per save file, kept on the SD card */
+#define PM3DS_BADGE_LOADOUTS 3
+int pm3ds_badge_loadout_count(int n);          /* badges in loadout n, 0 if empty */
+int pm3ds_badge_loadout_save(int n);           /* the badges on now; returns how many */
+int pm3ds_badge_loadout_load(int n, int *skipped);   /* returns how many went on; -1 not now */
 /* one dish: what it does and every way to cook it */
 #define PM3DS_RECIPE_WAYS  48
 #define PM3DS_RECIPE_INGR  36

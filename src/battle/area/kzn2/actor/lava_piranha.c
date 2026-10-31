@@ -1350,6 +1350,14 @@ EvtScript N(EVS_Attack_FireBreath) = {
 extern s32 N(FakeoutMusicTime);
 
 API_CALLABLE(N(ManageFakeoutMusic)) {
+#ifdef _3DS
+    // 3DS port: on the N64 this battle's data was loaded fresh for every fight. Linked in, a
+    // second Lava Piranha fight in the same session (after a game over) started past 80 and
+    // 340, never ended the fake win, and softlocked until the game was restarted (#66)
+    if (isInitialCall) {
+        N(FakeoutMusicTime) = 0;
+    }
+#endif
     N(FakeoutMusicTime)++;
 
     // play 'end battle' song

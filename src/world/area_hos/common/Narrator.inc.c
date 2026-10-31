@@ -105,3 +105,12 @@ API_CALLABLE(N(SetCurtainCallback)) {
     set_curtain_draw_callback((void (*)) evt_get_variable(script, *args++));
     return ApiStatus_DONE2;
 }
+
+#ifdef _3DS
+// 3DS port: the N64 loaded this map's data fresh on every visit; linked in, a second run in one session (Quit game, a new file) started where the last one ended
+API_CALLABLE(N(ResetNarratorState)) {
+    N(IntroMessageState) = 0;
+    N(IntroMessageAlpha) = 0;
+    return ApiStatus_DONE2;
+}
+#endif

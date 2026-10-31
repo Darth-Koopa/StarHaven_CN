@@ -17,11 +17,15 @@
 #include "battle/battle.h"
 #include "hud_element.h"
 #include "map.h"
+#include "game_modes.h"
 
 #include <string.h>
 
 #include "pm3ds_hud_info.h"
 #include "pm3ds_rando.h"
+#include "pm3ds_brand.h"
+#include "pm3ds_rom_layout.h"
+#include <stdio.h>
 
 extern s32 bActorTattles[];
 void pm3ds_decode_msg(s32 msgID, char* out, s32 size, bool dialogue);   /* touch_menu.c */
@@ -145,6 +149,8 @@ static const TrackedSpot sSpots[] = {
 #include "rando_locations_us.inc"
 #elif VERSION_JP
 #include "rando_locations_jp.inc"
+#elif VERSION_IQUE
+#include "rando_locations_ique.inc"
 #else
 #include "rando_locations.inc"
 #endif
@@ -254,6 +260,56 @@ int pm3ds_tracker_query(pm3ds_tracker_t* out) {
     return out->count;
 }
 
+static const void* item_hud_script(s32 item);
+
+/* the spots of the area that is out->area[area] in pm3ds_tracker_query (areas without spots skipped) */
+int pm3ds_tracker_spots(int area, pm3ds_tracker_spots_t* out) {
+    extern s32 pm3ds_rando_spot_item(s32 flag, s32 vanillaItem);
+    memset(out, 0, sizeof(*out));
+    if (gGameStatusPtr == nullptr) {
+        return 0;
+    }
+    MapConfig* mc = gGameStatusPtr->areaID >= 0 ? get_current_map_config() : nullptr;
+    const char* mapID = mc != nullptr ? mc->id : nullptr;
+    s32 n = -1;
+    for (u32 a = 0; a < ARRAY_COUNT(sTrackedAreas); a++) {
+        bool any = false;
+        for (u32 i = 0; i < ARRAY_COUNT(sSpots) && !any; i++) {
+            any = sSpots[i].flag != 0 && strncmp(sSpots[i].map, sTrackedAreas[a].prefix, 3) == 0 && !regrows(sSpots[i].flag);
+        }
+        if (!any || ++n != area) {
+            continue;
+        }
+        for (s32 pass = 0; pass < 2; pass++) {          // Mario's room first
+            for (u32 i = 0; i < ARRAY_COUNT(sSpots) && out->count < PM3DS_TRACKER_SPOTS; i++) {
+                const TrackedSpot* s = &sSpots[i];
+                if (s->flag == 0 || strncmp(s->map, sTrackedAreas[a].prefix, 3) != 0 || regrows(s->flag)) {
+                    continue;
+                }
+                bool here = mapID != nullptr && strcmp(s->map, mapID) == 0;
+                if (here != (pass == 0)) {
+                    continue;
+                }
+                typeof(out->spot[0])* o = &out->spot[out->count++];
+                s32 item = s->item != ITEM_NONE ? pm3ds_rando_spot_item(s->flag, s->item) : ITEM_NONE;
+                if (item == ITEM_COIN) {
+                    snprintf(o->item, sizeof(o->item), "Coin");   /* its name message is empty; the menu translates */
+                    o->icon = item_hud_script(item);
+                } else if (item != ITEM_NONE) {
+                    pm3ds_decode_msg(gItemTable[item].nameMsg, o->item, sizeof(o->item), false);
+                    o->icon = item_hud_script(item);
+                }
+                o->src = s->src;
+                o->found = evt_get_variable(nullptr, s->flag) != 0;
+                o->here = here;
+                o->room = (unsigned char)atoi(s->map + 4);
+            }
+        }
+        return out->count;
+    }
+    return 0;
+}
+
 /* ---- recipes --------------------------------------------------------------- */
 /* Tayce T.'s tables (src/world/area_mac/mac_02/npc/tayce_t.inc.c, recipes.inc.c);
  * the game sets one discovered flag per dish it hands out */
@@ -357,6 +413,199 @@ int pm3ds_recipe_query(pm3ds_recipe_list_t* out) {
     }
     out->count = sNumRecipes;
     return out->count;
+}
+
+/* ---- Badges ------------------------------------------------------------------ */
+s32 pause_badges_try_equip(s16 badgeID);
+s32 pause_badges_try_remove(s16 badgeID);
+s32 pause_get_total_equipped_bp_cost(void);
+void enforce_hpfp_limits(void);
+s32 pm3ds_cheats_badge_bp(s32 bp);
+
+static char sBadgeName[ITEM_LAST_BADGE + 1][PM3DS_BADGE_NAME];   /* decoded on first use */
+
+static bool badge_can_change(void) {
+    return gGameStatusPtr != nullptr && get_game_mode() == GAME_MODE_WORLD;   /* not in battle or a menu */
+}
+
+static bool badge_on(s32 item) {
+    for (s32 i = 0; i < ARRAY_COUNT(gPlayerData.equippedBadges); i++) {
+        if (gPlayerData.equippedBadges[i] == item) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int pm3ds_badge_query(pm3ds_badge_list_t* out) {
+    out->count = 0;
+    if (gGameStatusPtr == nullptr) {
+        return 0;
+    }
+    for (s32 i = 0; i < ARRAY_COUNT(gPlayerData.badges) && out->count < PM3DS_BADGE_MAX; i++) {
+        s32 item = gPlayerData.badges[i];
+        if (!IS_BADGE(item)) {
+            continue;
+        }
+        /* in the pause menu's order (pause_badges_comparator), by insertion */
+        s32 k = out->count++;
+        while (k > 0 && gItemTable[out->item[k - 1]].sortValue > gItemTable[item].sortValue) {
+            out->item[k] = out->item[k - 1];
+            k--;
+        }
+        out->item[k] = item;
+    }
+    for (s32 k = 0; k < out->count; k++) {
+        s32 item = out->item[k];
+        if (sBadgeName[item][0] == 0) {
+            pm3ds_decode_msg(gItemTable[item].nameMsg, sBadgeName[item], PM3DS_BADGE_NAME, false);
+        }
+        memcpy(out->name[k], sBadgeName[item], PM3DS_BADGE_NAME);
+        out->cost[k] = gMoveTable[gItemTable[item].moveID].costBP;
+        out->on[k] = badge_on(item);
+        out->icon[k] = item_hud_script(item);
+    }
+    out->bp_max = pm3ds_cheats_badge_bp(gPlayerData.maxBP);
+    out->bp_used = pause_get_total_equipped_bp_cost();
+    out->can_change = badge_can_change();
+    return out->count;
+}
+
+/* Badge loadouts (Discord suggestion): three sets of equipped badges per save
+ * file, in <save name>.badges next to the save on the SD card (the save's own
+ * tail is full). A new game on a file slot clears its loadouts. */
+#define LOADOUT_MAGIC 0x5348424C   /* "SHBL" */
+#define LOADOUT_PATH PM3DS_SD_DIR "/" PM3DS_SAVE_NAME ".badges"
+typedef struct {
+    s32 magic, version;
+    s16 badge[4][PM3DS_BADGE_LOADOUTS][64];   /* file slot, loadout, equipped badges (0 ends) */
+} LoadoutFile;
+static LoadoutFile sLoadouts;
+static bool sLoadoutsRead;
+
+static void loadouts_read(void) {
+    if (sLoadoutsRead) {
+        return;
+    }
+    sLoadoutsRead = true;
+    memset(&sLoadouts, 0, sizeof(sLoadouts));
+    FILE* f = fopen(LOADOUT_PATH, "rb");
+    if (f != nullptr) {
+        if (fread(&sLoadouts, sizeof(sLoadouts), 1, f) != 1 || sLoadouts.magic != LOADOUT_MAGIC || sLoadouts.version != 1) {
+            memset(&sLoadouts, 0, sizeof(sLoadouts));
+        }
+        fclose(f);
+    }
+}
+
+static void loadouts_write(void) {
+    sLoadouts.magic = LOADOUT_MAGIC;
+    sLoadouts.version = 1;
+    FILE* f = fopen(LOADOUT_PATH, "wb");
+    if (f != nullptr) {
+        fwrite(&sLoadouts, sizeof(sLoadouts), 1, f);
+        fclose(f);
+    }
+}
+
+static s16* loadout(s32 n) {
+    s32 slot = gGameStatusPtr != nullptr ? gGameStatusPtr->saveSlot & 3 : 0;
+    loadouts_read();
+    return sLoadouts.badge[slot][n];
+}
+
+int pm3ds_badge_loadout_count(int n) {
+    if (n < 0 || n >= PM3DS_BADGE_LOADOUTS) {
+        return 0;
+    }
+    s16* l = loadout(n);
+    s32 k = 0;
+    while (k < 64 && l[k] != 0) {
+        k++;
+    }
+    return k;
+}
+
+int pm3ds_badge_loadout_save(int n) {
+    if (n < 0 || n >= PM3DS_BADGE_LOADOUTS) {
+        return 0;
+    }
+    s16* l = loadout(n);
+    s32 k = 0;
+    for (s32 i = 0; i < ARRAY_COUNT(gPlayerData.equippedBadges); i++) {
+        if (IS_BADGE(gPlayerData.equippedBadges[i])) {
+            l[k++] = gPlayerData.equippedBadges[i];
+        }
+    }
+    while (k < 64) {
+        l[k++] = 0;
+    }
+    loadouts_write();
+    sfx_play_sound(SOUND_MENU_BADGE_EQUIP);
+    return pm3ds_badge_loadout_count(n);
+}
+
+/* everything off, then the loadout's badges on in order while they fit; ones not owned
+ * anymore or past the BP are skipped */
+int pm3ds_badge_loadout_load(int n, int* skipped) {
+    *skipped = 0;
+    if (!badge_can_change() || n < 0 || n >= PM3DS_BADGE_LOADOUTS) {
+        return -1;
+    }
+    s16 want[64];
+    memcpy(want, loadout(n), sizeof(want));
+    for (s32 i = 0; i < ARRAY_COUNT(gPlayerData.equippedBadges); i++) {
+        gPlayerData.equippedBadges[i] = 0;
+    }
+    s32 on = 0;
+    for (s32 k = 0; k < 64 && want[k] != 0; k++) {
+        bool owned = false;
+        for (s32 i = 0; i < ARRAY_COUNT(gPlayerData.badges); i++) {
+            if (gPlayerData.badges[i] == want[k]) {
+                owned = true;
+                break;
+            }
+        }
+        if (owned && pause_badges_try_equip(want[k]) == 3) {   // EQUIP_RESULT_SUCCESS
+            on++;
+        } else {
+            (*skipped)++;
+        }
+    }
+    enforce_hpfp_limits();
+    sfx_play_sound(SOUND_MENU_BADGE_EQUIP);
+    return on;
+}
+
+/* src/filemenu/filemenu_yesno.c, a new file: the slot's old loadouts go */
+void pm3ds_badge_loadouts_clear_slot(s32 slot) {
+    loadouts_read();
+    memset(sLoadouts.badge[slot & 3], 0, sizeof(sLoadouts.badge[0]));
+    loadouts_write();
+}
+
+/* platform/bottom_screen.c, a badge tapped: on if it fits, off if it was on (as the pause menu does) */
+int pm3ds_badge_toggle(int item) {
+    if (!badge_can_change() || !IS_BADGE(item)) {
+        return PM3DS_BADGE_NOT_NOW;
+    }
+    switch (pause_badges_try_equip(item)) {
+        case 0:   // EQUIP_RESULT_ALREADY_EQUIPPED
+            pause_badges_try_remove(item);
+            sfx_play_sound(SOUND_MENU_BADGE_UNEQUIP);
+            enforce_hpfp_limits();
+            return PM3DS_BADGE_REMOVED;
+        case 1:   // EQUIP_RESULT_NOT_ENOUGH_BP
+            sfx_play_sound(SOUND_MENU_ERROR);
+            return PM3DS_BADGE_NO_BP;
+        case 2:   // EQUIP_RESULT_TOO_MANY_BADGES
+            sfx_play_sound(SOUND_MENU_ERROR);
+            return PM3DS_BADGE_TOO_MANY;
+        default:
+            sfx_play_sound(SOUND_MENU_BADGE_EQUIP);
+            enforce_hpfp_limits();
+            return PM3DS_BADGE_EQUIPPED;
+    }
 }
 
 /* the detail's ingredient slot for item, added on first use */

@@ -389,6 +389,9 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
                         gGameStatusPtr->mapID = 11; //TODO hardcoded area/map IDs
                         gGameStatusPtr->entryID = 0;
                         evt_set_variable(nullptr, GB_StoryProgress, STORY_INTRO);
+#ifdef _3DS
+                        { extern void pm3ds_new_game_start(void); pm3ds_new_game_start(); }   // Skip intro
+#endif
 #ifdef PM3DS_START_MAP
                         // debug builds only: New Game drops into a chosen map
                         // (EXTRA_CFLAGS="-DPM3DS_START_AREA=.. -DPM3DS_START_MAP=..
@@ -480,6 +483,12 @@ void filemenu_yesno_handle_input(MenuPanel* menu) {
                         }
                         fio_save_game(slot2);
                         gSaveSlotHasData[slot2] = true;
+#ifdef _3DS
+                        {   // 3DS port: a new file starts without the slot's old badge loadouts (n64_shim/journal.c)
+                            extern void pm3ds_badge_loadouts_clear_slot(s32 slot);
+                            pm3ds_badge_loadouts_clear_slot(slot2);
+                        }
+#endif
                         set_window_update(WIN_FILES_INPUT_FIELD, (s32)filemenu_update_hidden_name_input);
                         set_window_update(WIN_FILES_INPUT_KEYBOARD, (s32)filemenu_update_hidden_name_input);
                         set_window_update(WIN_FILES_TITLE, (s32)filemenu_update_show_with_rotation);

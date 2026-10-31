@@ -14,6 +14,7 @@
 #include "nu/nusys.h"
 #include "ld_addrs.h"
 #include "pm3ds_rom_layout.h"
+#include "game_modes.h"
 
 #include <string.h>
 
@@ -533,4 +534,25 @@ void pm3ds_tm_pick(int kind, int index) {
     sPickKind = kind;
     sPickIndex = index;
     sPickStamp = gGameStatusPtr->frameCounter;
+}
+
+/* n64_shim/os_cont.c, the "D-pad in menus" option: a menu is open and moving its cursor,
+ * so the D-pad can be the stick there instead of the C buttons it carries elsewhere */
+bool pm3ds_menu_open(void) {
+    extern s16 WorldMenuState;
+    if (gGameStatusPtr == nullptr) {
+        return false;
+    }
+    switch (get_game_mode()) {
+        case GAME_MODE_PAUSE:
+        case GAME_MODE_FILE_SELECT:
+        case GAME_MODE_LANGUAGE_SELECT:
+            return true;
+        case GAME_MODE_WORLD:
+            if (WorldMenuState != 0) {   // the item and partner popups
+                return true;
+            }
+            break;
+    }
+    return sMenu.kind != PM3DS_TM_NONE && gGameStatusPtr->frameCounter - sStamp <= 4;
 }

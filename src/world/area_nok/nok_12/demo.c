@@ -133,6 +133,11 @@ EvtScript N(EVS_MonitorDemoState2) = {
 s32 N(DemoInitState1) = 0;
 
 API_CALLABLE(N(SetupDemoScene1)) {
+#ifdef _3DS
+    if (isInitialCall) {   // 3DS port: from the start on every demo run (the N64 reloaded this map)
+        N(DemoInitState1) = 0;
+    }
+#endif
     PlayerStatus* playerStatus = &gPlayerStatus;
 
     switch (N(DemoInitState1)) {
@@ -169,6 +174,11 @@ EvtScript N(EVS_PlayDemoScene1) = {
 s32 N(DemoInitState2) = 0;
 
 API_CALLABLE(N(SetupDemoScene2)) {
+#ifdef _3DS
+    if (isInitialCall) {   // 3DS port: from the start on every demo run (the N64 reloaded this map)
+        N(DemoInitState2) = 0;
+    }
+#endif
     PlayerStatus* playerStatus = &gPlayerStatus;
 
     switch (N(DemoInitState2)) {

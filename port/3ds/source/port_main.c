@@ -131,6 +131,11 @@ static bool platform_init(void) {
     pm3ds_bc_main = "rom load";
     { extern bool pm3ds_rom_init(void); if (!pm3ds_rom_init()) return false; }
 
+    /* only now: the update check's sockets and TLS buffers, taken while the ROM
+     * loaded, left no block for the 10 MB audio bank, which then played from the
+     * SD card with the bass off (GitHub #70, half the starts in a player's log) */
+    { extern void pm3ds_update_check_start(void); pm3ds_update_check_start(); }
+
     { extern void pm3ds_convert_n64_mtx_arrays(void); pm3ds_convert_n64_mtx_arrays(); }
     return true;
 }

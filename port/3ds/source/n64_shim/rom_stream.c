@@ -20,6 +20,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <malloc.h>
+
 #include "pm3ds_log.h"
 #include "pm3ds_rom_stream.h"
 
@@ -43,6 +45,7 @@ static uint8_t *s_blocks;
 static int s_nblocks;
 static uint32_t *s_tag, *s_age, s_clock;
 static uint16_t *s_slot;   /* per ROM block: its cache slot + 1, or 0 */
+static size_t s_nslots;
 static int s_last = -1;
 static LightLock s_lock;
 static uint32_t s_hits, s_misses;
@@ -82,7 +85,8 @@ bool pm3ds_rom_stream_open(const char *path, int order, uint32_t size) {
     }
     s_tag = (uint32_t *)malloc(s_nblocks * sizeof *s_tag);
     s_age = (uint32_t *)calloc(s_nblocks, sizeof *s_age);
-    s_slot = (uint16_t *)calloc((size >> BLOCK_SHIFT) + 1, sizeof *s_slot);
+    s_nslots = (size >> BLOCK_SHIFT) + 1;
+    s_slot = (uint16_t *)calloc(s_nslots, sizeof *s_slot);
     s_file = s_blocks && s_tag && s_age && s_slot ? fopen(path, "rb") : NULL;
     if (!s_file) {
         free(s_blocks);
@@ -119,6 +123,94 @@ uint8_t *pm3ds_rom_pin(uint32_t off, uint32_t len) {
     pm3ds_log(PM3DS_LOG_INFO, "romstream: pinned 0x%lX..0x%lX (%lu KB)", (unsigned long)a, (unsigned long)b,
               (unsigned long)((b - a) >> 10));
     return data + (off - a);
+}
+
+static u32 heap_free(void) {
+    extern u32 __ctru_heap_size;
+    struct mallinfo mi = mallinfo();
+    return __ctru_heap_size - mi.arena + mi.fordblks;
+}
+
+/* os_pi.c, once the ROM is ready: what a player's log needs to tell a short heap apart */
+void pm3ds_rom_log_memory(const char *when) {
+    extern u32 __ctru_heap_size, __ctru_linear_heap_size;
+    pm3ds_log(PM3DS_LOG_WARN, "memory %s: heap %lu KB, %lu KB free; linear %lu KB, %lu KB free; ROM cache %d KB; "
+              "app region %lu KB, memtype %lu, %s", when,
+              (unsigned long)(__ctru_heap_size >> 10), (unsigned long)(heap_free() >> 10),
+              (unsigned long)(__ctru_linear_heap_size >> 10), (unsigned long)(linearSpaceFree() >> 10),
+              s_nblocks * (int)(BLOCK_SIZE >> 10), (unsigned long)(osGetMemRegionSize(MEMREGION_APPLICATION) >> 10),
+              (unsigned long)osGetApplicationMemType(), envIsHomebrew() ? "homebrew launcher" : "installed title");
+}
+
+/* platform/bottom_screen.c, the title: a New 3DS started the game with about 66 MB instead of
+ * about 128 MB (GitHub #70, an installed CIA, a restart gives it back; why is still unknown) */
+bool pm3ds_low_memory_start(void) {
+    extern u32 __ctru_heap_size, __ctru_linear_heap_size;
+    bool n3ds = false;
+    APT_CheckNew3DS(&n3ds);
+    return n3ds && __ctru_heap_size + __ctru_linear_heap_size < (40u << 20);
+}
+
+/* A pin that needs the cache's memory (the 10 MB audio bank): with the cache's 12 MB
+ * allocated first it no longer fitted on some consoles, and the samples were then read
+ * from the SD card while playing (GitHub #70). Free the cache, pin, then take the cache
+ * back as large as still fits. The rest of the game needs heap too (about 1 MB after boot,
+ * plus the texture uploads' staging buffers): when the pin would leave less than
+ * HEAP_RESERVE beside the Old 3DS cache, it is let go again and the samples come from the
+ * SD card, as before. 1.3.7 kept it and left no cache and no heap: textures went missing.
+ * Only at startup, before anything reads the ROM from another thread. */
+#define HEAP_RESERVE (4u << 20)
+
+static void alloc_cache(int want, u32 keep) {
+    u32 fr = heap_free();
+    int n = fr > keep ? (int)((fr - keep) >> BLOCK_SHIFT) : 0;
+    if (n > want) n = want;
+    s_blocks = NULL;
+    while (n >= 16 && !(s_blocks = (uint8_t *)malloc((size_t)n * BLOCK_SIZE))) n -= 16;
+    s_nblocks = s_blocks ? n : 0;
+}
+
+uint8_t *pm3ds_rom_pin_big(uint32_t off, uint32_t len) {
+#ifdef PM3DS_TEST_TIGHT_HEAP   /* test: take the heap until only PM3DS_TEST_TIGHT_HEAP MB are left */
+    {
+        static void *volatile chunk[512];
+        int k = 0;
+        while (k < 512 && (chunk[k] = malloc(1u << 20))) k++;
+        for (int j = 0; j < PM3DS_TEST_TIGHT_HEAP && k > 0; j++) free(chunk[--k]);
+        pm3ds_log(PM3DS_LOG_WARN, "test: holding %d MB of heap", k);
+    }
+#endif
+    if (!s_file) return NULL;
+    if (heap_free() >= len + HEAP_RESERVE) {
+        uint8_t *p = pm3ds_rom_pin(off, len);   /* fits beside the cache */
+        if (p) return p;
+    }
+    int want = s_nblocks;
+    LightLock_Lock(&s_lock);
+    free(s_blocks);
+    s_blocks = NULL;
+    s_nblocks = 0;
+    LightLock_Unlock(&s_lock);
+    uint8_t *p = NULL;
+    if (heap_free() >= len + HEAP_RESERVE + NBLOCKS_OLD * BLOCK_SIZE) {
+        p = pm3ds_rom_pin(off, len);
+        if (p && heap_free() < HEAP_RESERVE + NBLOCKS_OLD * BLOCK_SIZE) {   /* fragmented: let it go */
+            free(s_pins[--s_npins].data);
+            p = NULL;
+        }
+    }
+    LightLock_Lock(&s_lock);
+    alloc_cache(want, HEAP_RESERVE);
+    for (int i = 0; i < want; i++) {
+        s_tag[i] = NO_TAG;
+        s_age[i] = 0;
+    }
+    memset(s_slot, 0, s_nslots * sizeof *s_slot);
+    s_last = -1;
+    LightLock_Unlock(&s_lock);
+    pm3ds_log(PM3DS_LOG_WARN, "romstream: %s, ROM cache %d KB", p ? "pinned after making the cache smaller" :
+              "not enough memory to pin, samples come from the SD card", s_nblocks * (int)(BLOCK_SIZE >> 10));
+    return p;
 }
 
 const uint8_t *pm3ds_rom_ptr(uint32_t off, uint32_t len) {
@@ -176,6 +268,20 @@ void pm3ds_rom_read(uint32_t off, void *dst, uint32_t len) {
         return;
     }
     LightLock_Lock(&s_lock);
+    if (!s_blocks) {   /* no cache memory left at all: straight from the file */
+        static uint8_t tmp[4096];
+        for (uint32_t done = 0; done < len;) {
+            uint32_t o = (off + done) & ~3u, in = off + done - o;
+            uint32_t n = sizeof tmp - in < len - done ? sizeof tmp - in : len - done;
+            uint32_t rd = (in + n + 3) & ~3u;
+            if (o + rd > s_size) rd = s_size - o;
+            file_read(o, tmp, rd);
+            memcpy(out + done, tmp + in, n);
+            done += n;
+        }
+        LightLock_Unlock(&s_lock);
+        return;
+    }
     for (uint32_t done = 0; done < len;) {
         uint32_t o = off + done;
         uint32_t in = o & (BLOCK_SIZE - 1);
@@ -196,3 +302,15 @@ void pm3ds_rom_stream_stats(uint32_t *hits, uint32_t *misses, uint32_t *miss_ms)
     *misses = s_misses;
     *miss_ms = (uint32_t)(s_miss_ticks / (SYSCLOCK_ARM11 / 1000));
 }
+
+#ifdef PM3DS_TEST_MEMSTAT   /* test: the least free heap seen, every few seconds (call per frame) */
+void pm3ds_test_memstat(void) {
+    extern u32 __ctru_heap_size;
+    static u32 minFree = 0xFFFFFFFFu, n;
+    struct mallinfo mi = mallinfo();
+    u32 fr = __ctru_heap_size - mi.arena + mi.fordblks;
+    if (fr < minFree) minFree = fr;
+    if (++n % 300 == 0) pm3ds_log(PM3DS_LOG_WARN, "MEM heap %lu KB free %lu KB min %lu KB", (unsigned long)(__ctru_heap_size >> 10),
+                                  (unsigned long)(fr >> 10), (unsigned long)(minFree >> 10));
+}
+#endif

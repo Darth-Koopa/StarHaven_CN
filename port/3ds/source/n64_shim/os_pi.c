@@ -129,10 +129,15 @@ static void pm3ds_byteswap_mapfs_table(void) {
 void pm3ds_pi_rom_ready(void) {
     /* the audio bank: the sound engine reads samples by pointer from the
      * audio thread (audio_system.c), where an SD card wait would crackle */
-    if (!pm3ds_rom_pin(PM3DS_ROM_AUDIO, PM3DS_ROM_AUDIO_END - PM3DS_ROM_AUDIO))
+#ifdef PM3DS_NO_AUDIO_PIN   /* test: the SD card path, as on a console short of memory */
+    if (true)
+#else
+    if (!pm3ds_rom_pin_big(PM3DS_ROM_AUDIO, PM3DS_ROM_AUDIO_END - PM3DS_ROM_AUDIO))
+#endif
         pm3ds_log(PM3DS_LOG_WARN, "audio bank not pinned: samples are copied from the SD card");
     pm3ds_byteswap_mapfs_table();
     pm3ds_populate_segments();
+    { extern void pm3ds_rom_log_memory(const char *); pm3ds_rom_log_memory("at boot"); }
 }
 
 size_t pm3ds_baserom_size(void) { return pm3ds_rom_stream_size(); }

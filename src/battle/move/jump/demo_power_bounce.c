@@ -40,7 +40,17 @@ extern EvtScript N(EVS_UseMove_Basic);
 extern EvtScript N(EVS_UseMove_Super);
 extern EvtScript N(EVS_UseMove_Ultra);
 
+#ifdef _3DS
+API_CALLABLE(N(ResetHitChance)) {   // as power_bounce.c: fresh for every use
+    N(BaseHitChance) = 200;
+    return ApiStatus_DONE2;
+}
+#endif
+
 EvtScript N(EVS_UseMove) = {
+#ifdef _3DS
+    Call(N(ResetHitChance))
+#endif
     Set(LFlagA, false)
     Call(ShowActionHud, true)
     Call(SetBattleFlagBits, BS_FLAGS1_AUTO_SUCCEED_ACTION, true)

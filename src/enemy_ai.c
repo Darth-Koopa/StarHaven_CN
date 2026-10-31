@@ -351,6 +351,12 @@ s32 get_coin_drop_amount(Enemy* enemy) {
     }
 
     amt += currentEncounter->coinsEarned;
+#ifdef _3DS
+    {   // 3DS port: hard mode (GitHub #69) drops 1.5x the coins
+        extern s32 pm3ds_hard_scale(s32 v);
+        amt = pm3ds_hard_scale(amt);
+    }
+#endif
 
     if (enemy->flags & (ENEMY_FLAG_NO_DROPS | ENEMY_FLAG_NO_DELAY_AFTER_FLEE)) {
         amt = 0;
